@@ -260,30 +260,6 @@ async function startEditor({
   );
 }
 
-function parseVitestReport(reportText) {
-  const report = JSON.parse(reportText);
-  const assertions = [];
-
-  for (const suite of report.testResults ?? []) {
-    for (const assertion of suite.assertionResults ?? []) {
-      assertions.push({
-        title: assertion.title,
-        status: assertion.status,
-      });
-    }
-  }
-
-  const passed = assertions.filter((assertion) => assertion.status === "passed").length;
-  const total = assertions.length;
-
-  return {
-    assertions,
-    score: total === 0 ? 0 : Math.round((passed / total) * 100),
-    passed: total > 0 && passed === total,
-    summary: `${passed}/${total} validation checks passed`,
-  };
-}
-
 async function processSession(client, session) {
   console.log(`[runner] starting session ${session._id}`);
   await client.mutation(api.sessions.markStarting, { sessionId: session._id });
@@ -295,7 +271,6 @@ async function processSession(client, session) {
 
   const templatePath = resolve(projectRoot, lab.templatePath);
   const workspacePath = resolve(workspacesRoot, session._id);
-  const reportPath = resolve(workspacePath, ".vitest-report.json");
   const previewPort = await findAvailablePort(portFor(session._id, previewBasePort));
   const editorPort = await findAvailablePort(portFor(session._id, editorBasePort));
   const toolsPort = await findAvailablePort(portFor(session._id, toolsBasePort));
@@ -393,41 +368,7 @@ async function processSession(client, session) {
     terminalUrl: toolsUrl,
   });
 
-  await client.mutation(api.sessions.markChecking, { sessionId: session._id });
-  const validationCommand = `${lab.validationCommand} --outputFile="${reportPath}"`;
-  const validation = await run(validationCommand, workspacePath);
-
-  let result;
-  try {
-    result = parseVitestReport(await readFile(reportPath, "utf8"));
-  } catch (error) {
-    result = {
-      assertions: [],
-      score: 0,
-      passed: false,
-      summary: `Validation did not produce a readable Vitest report: ${error.message}`,
-      raw: {
-        exitCode: validation.code,
-        stdout: validation.stdout,
-        stderr: validation.stderr,
-      },
-    };
-  }
-
-  await writeFile(
-    resolve(workspacePath, ".local-runner-result.json"),
-    JSON.stringify(result, null, 2)
-  );
-
-  await client.mutation(api.sessions.recordCheck, {
-    sessionId: session._id,
-    passed: result.passed,
-    score: result.score,
-    summary: result.summary,
-    raw: result,
-  });
-
-  console.log(`[runner] session ${session._id}: ${result.summary}`);
+  console.log(`[runner] session ${session._id}: ready for learner checks`);
 }
 
 async function cleanupExpiredSessions(client) {

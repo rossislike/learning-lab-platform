@@ -83,7 +83,7 @@ For a one-shot poll:
 npm run runner:local:once
 ```
 
-The runner processes requested local sessions, creates a workspace under `lab-workspaces/`, installs dependencies, starts OpenVSCode, starts Vite preview, starts the tools/check server, runs the Vitest validation command, and writes the score back to Convex.
+The runner processes requested local sessions, creates a workspace under `lab-workspaces/`, installs dependencies, starts OpenVSCode, starts Vite preview, starts the tools/check server, and marks the session `running`. It does not run validation on startup; the learner or operator starts validation with `Run checks` from the dashboard or tools page.
 
 By default, the local runner expects Docker Desktop and starts OpenVSCode with `gitpod/openvscode-server:latest`. To use a native OpenVSCode binary instead, set:
 

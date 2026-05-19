@@ -31,7 +31,7 @@ Run it as a polling worker:
 npm run runner:local
 ```
 
-The local runner currently processes Convex sessions with `status: requested` and `runner: local`. It copies the lab template, runs `npm ci`, starts a per-session Vite preview, starts OpenVSCode for editing, starts a small per-session tools/check server, executes the lab validation command, parses the Vitest JSON report, and records the score back into Convex.
+The local runner currently processes Convex sessions with `status: requested` and `runner: local`. It copies the lab template, runs `npm ci`, starts a per-session Vite preview, starts OpenVSCode for editing, starts a small per-session tools/check server, and marks the session `running`. Validation is intentionally user-triggered from the dashboard or tools page after the learner is ready.
 
 The OpenVSCode URL is saved as `workspaceUrl`, the Vite URL is saved as `previewUrl`, and the tools/check URL is saved as `terminalUrl` for now.
 
