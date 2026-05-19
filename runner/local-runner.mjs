@@ -318,12 +318,6 @@ async function processSession(client, session) {
     throw new Error(`npm ci failed:\n${install.stderr || install.stdout}`);
   }
 
-  const previewPid = await startDetachedProcess(
-    "npm",
-    ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(previewPort)],
-    workspacePath,
-    resolve(workspacePath, ".preview.log")
-  );
   const editor = await startEditor({
     provider: editorProvider,
     sessionId: session._id,
@@ -333,6 +327,12 @@ async function processSession(client, session) {
     validationCommand: lab.validationCommand,
     logPath: resolve(workspacePath, ".openvscode.log"),
   });
+  const previewPid = await startDetachedProcess(
+    "npm",
+    ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(previewPort)],
+    workspacePath,
+    resolve(workspacePath, ".preview.log")
+  );
   const toolsPid = await startDetachedProcess(
     "node",
     [
