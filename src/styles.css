@@ -25,6 +25,14 @@ input {
   grid-template-columns: 300px minmax(0, 1fr);
 }
 
+.app-shell.workspace-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.workspace-mode .sidebar {
+  display: none;
+}
+
 .sidebar {
   background: #111827;
   color: #f9fafb;

@@ -270,7 +270,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${activeTab === "workspace" ? "workspace-mode" : ""}`}>
       <aside className="sidebar">
         <div>
           <p className="eyebrow">Learning Lab Platform</p>
