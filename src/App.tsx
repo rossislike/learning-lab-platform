@@ -72,6 +72,8 @@ type ValidationMetadata = {
   summary?: string;
 };
 
+type AppTab = "dashboard" | "workspace";
+
 export default function App({ convexUrl, missingConvexUrl = false }: AppProps) {
   if (missingConvexUrl || !convexUrl) {
     return <SetupRequiredApp />;
@@ -142,6 +144,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const [learnerLabel, setLearnerLabel] = useState("local-learner");
+  const [activeTab, setActiveTab] = useState<AppTab>(() => tabFromHash(window.location.hash));
   const [selectedSessionId, setSelectedSessionId] = useState<Id<"sessions"> | null>(
     null
   );
@@ -187,6 +190,15 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     },
     [convex]
   );
+
+  useEffect(() => {
+    function handleHashChange() {
+      setActiveTab(tabFromHash(window.location.hash));
+    }
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   useEffect(() => {
     const initial = window.setTimeout(() => {
@@ -251,6 +263,11 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     await refreshDashboard();
   }
 
+  function changeTab(tab: AppTab) {
+    setActiveTab(tab);
+    window.history.replaceState(null, "", tab === "workspace" ? "#workspace" : "#dashboard");
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -259,10 +276,8 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
           <h1>React labs, disposable sessions, AWS runners.</h1>
         </div>
         <nav className="nav-list" aria-label="Main">
-          <a href="#labs">Labs</a>
-          <a href="#sessions">Sessions</a>
-          <a href="#workspace">Workspace</a>
-          <a href="#runner">Runner</a>
+          <a href="#dashboard" onClick={() => changeTab("dashboard")}>Dashboard</a>
+          <a href="#workspace" onClick={() => changeTab("workspace")}>Workspace</a>
         </nav>
       </aside>
 
@@ -291,87 +306,156 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
           </div>
         </header>
 
-        <section className="grid" id="labs">
-          <article className="panel lab-panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Active lab</p>
-                <h3>{activeLab?.title ?? "No lab seeded yet"}</h3>
-              </div>
-              <span className="status-pill">{activeLab?.status ?? "missing"}</span>
-            </div>
+        <div className="tab-list" role="tablist" aria-label="Primary views">
+          <button
+            aria-selected={activeTab === "dashboard"}
+            className={activeTab === "dashboard" ? "active" : ""}
+            role="tab"
+            onClick={() => changeTab("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            aria-selected={activeTab === "workspace"}
+            className={activeTab === "workspace" ? "active" : ""}
+            role="tab"
+            onClick={() => changeTab("workspace")}
+          >
+            Editor and Preview
+          </button>
+        </div>
 
-            <p className="muted">
-              {activeLab?.summary ??
-                "Seed the React Product Dashboard lab to create the first scenario."}
-            </p>
-
-            <div className="meta-row">
-              <span>Vite preview</span>
-              <span>Vitest validation</span>
-              <span>Container runner</span>
-            </div>
-
-            <label className="field">
-              Learner label
-              <input
-                value={learnerLabel}
-                onChange={(event) => setLearnerLabel(event.target.value)}
-              />
-            </label>
-
-            <button className="primary-button" disabled={!activeLab} onClick={startSession}>
-              <Play size={16} />
-              Request session
-            </button>
-          </article>
-
-          <RunnerContractPanel />
-        </section>
-
-        <section className="panel" id="sessions">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Recent sessions</p>
-              <h3>Control-plane state</h3>
-            </div>
-          </div>
-
-          <div className="session-table">
-            <div className="session-row session-head">
-              <span>Learner</span>
-              <span>Status</span>
-              <span>Runner</span>
-              <span>Score</span>
-            </div>
-            {(sessions ?? []).map((session: SessionSummary) => (
-              <button
-                className={`session-row session-button ${
-                  selectedSession?._id === session._id ? "selected" : ""
-                }`}
-                key={session._id}
-                onClick={() => setSelectedSessionId(session._id)}
-              >
-                <span>{session.learnerLabel}</span>
-                <span><StatusPill status={session.status} /></span>
-                <span>{session.runner}</span>
-                <span>{session.lastCheckScore ?? "-"}</span>
-              </button>
-            ))}
-            {sessions?.length === 0 ? (
-              <p className="empty-state">No sessions yet. Request one from the lab panel.</p>
-            ) : null}
-          </div>
-        </section>
-
-        <SessionDetailPanel
-          session={selectedSession}
-          events={selectedSessionEvents}
-          onStop={stopSession}
-          onRunCheck={runSessionCheck}
-        />
+        {activeTab === "dashboard" ? (
+          <DashboardTab
+            activeLab={activeLab}
+            events={selectedSessionEvents}
+            learnerLabel={learnerLabel}
+            selectedSession={selectedSession}
+            sessions={sessions}
+            onLearnerLabelChange={setLearnerLabel}
+            onRunCheck={runSessionCheck}
+            onSelectSession={setSelectedSessionId}
+            onStartSession={startSession}
+            onStop={stopSession}
+          />
+        ) : (
+          <WorkspaceTab
+            session={selectedSession}
+            events={selectedSessionEvents}
+            onRunCheck={runSessionCheck}
+            onStop={stopSession}
+          />
+        )}
       </section>
     </main>
+  );
+}
+
+function DashboardTab({
+  activeLab,
+  events,
+  learnerLabel,
+  selectedSession,
+  sessions,
+  onLearnerLabelChange,
+  onRunCheck,
+  onSelectSession,
+  onStartSession,
+  onStop,
+}: {
+  activeLab?: LabSummary;
+  events: SessionEvent[];
+  learnerLabel: string;
+  selectedSession?: SessionSummary;
+  sessions: SessionSummary[];
+  onLearnerLabelChange: (value: string) => void;
+  onRunCheck: (session: SessionSummary) => Promise<void>;
+  onSelectSession: (sessionId: Id<"sessions">) => void;
+  onStartSession: () => Promise<void>;
+  onStop: (sessionId: Id<"sessions">) => Promise<void>;
+}) {
+  return (
+    <div className="tab-panel" id="dashboard" role="tabpanel">
+      <section className="grid">
+        <article className="panel lab-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Active lab</p>
+              <h3>{activeLab?.title ?? "No lab seeded yet"}</h3>
+            </div>
+            <span className="status-pill">{activeLab?.status ?? "missing"}</span>
+          </div>
+
+          <p className="muted">
+            {activeLab?.summary ??
+              "Seed the React Product Dashboard lab to create the first scenario."}
+          </p>
+
+          <div className="meta-row">
+            <span>Vite preview</span>
+            <span>Vitest validation</span>
+            <span>Container runner</span>
+          </div>
+
+          <label className="field">
+            Learner label
+            <input
+              value={learnerLabel}
+              onChange={(event) => onLearnerLabelChange(event.target.value)}
+            />
+          </label>
+
+          <button className="primary-button" disabled={!activeLab} onClick={onStartSession}>
+            <Play size={16} />
+            Request session
+          </button>
+        </article>
+
+        <RunnerContractPanel />
+      </section>
+
+      <section className="panel" id="sessions">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Recent sessions</p>
+            <h3>Control-plane state</h3>
+          </div>
+        </div>
+
+        <div className="session-table">
+          <div className="session-row session-head">
+            <span>Learner</span>
+            <span>Status</span>
+            <span>Runner</span>
+            <span>Score</span>
+          </div>
+          {(sessions ?? []).map((session: SessionSummary) => (
+            <button
+              className={`session-row session-button ${
+                selectedSession?._id === session._id ? "selected" : ""
+              }`}
+              key={session._id}
+              onClick={() => onSelectSession(session._id)}
+            >
+              <span>{session.learnerLabel}</span>
+              <span><StatusPill status={session.status} /></span>
+              <span>{session.runner}</span>
+              <span>{session.lastCheckScore ?? "-"}</span>
+            </button>
+          ))}
+          {sessions?.length === 0 ? (
+            <p className="empty-state">No sessions yet. Request one from the lab panel.</p>
+          ) : null}
+        </div>
+      </section>
+
+      <SessionDetailPanel
+        session={selectedSession}
+        events={events}
+        onStop={onStop}
+        onRunCheck={onRunCheck}
+      />
+    </div>
   );
 }
 
@@ -455,8 +539,6 @@ function SessionDetailPanel({
             <UrlItem icon={<Cloud size={16} />} label="Preview" value={session.previewUrl} />
           </div>
 
-          <WorkspaceSplitView session={session} />
-
           <div className="metadata-grid">
             <DetailItem label="Editor provider" value={session.editorProvider ?? "-"} />
             <DetailItem label="Container" value={session.editorContainerName ?? "-"} />
@@ -519,6 +601,89 @@ function SessionDetailPanel({
               ))}
             </ol>
           </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function WorkspaceTab({
+  session,
+  events,
+  onStop,
+  onRunCheck,
+}: {
+  session?: SessionSummary;
+  events: SessionEvent[];
+  onStop: (sessionId: Id<"sessions">) => Promise<void>;
+  onRunCheck: (session: SessionSummary) => Promise<void>;
+}) {
+  const validation = useMemo(() => latestValidation(events), [events]);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+
+  async function runAction(action: "stop" | "check") {
+    if (!session) return;
+    setActionError(null);
+    setActionBusy(action);
+    try {
+      if (action === "stop") {
+        await onStop(session._id);
+      } else {
+        await onRunCheck(session);
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  return (
+    <section className="workspace-tab tab-panel" id="workspace" role="tabpanel">
+      <div className="workspace-toolbar">
+        <div>
+          <p className="eyebrow">Workspace</p>
+          <h3>{session ? session.learnerLabel : "Select a session"}</h3>
+        </div>
+        {session ? (
+          <div className="topbar-actions">
+            <StatusPill status={session.status} />
+            <button
+              className="secondary-button"
+              disabled={!session.terminalUrl?.startsWith("http") || actionBusy !== null}
+              onClick={() => void runAction("check")}
+            >
+              <RefreshCw size={16} />
+              {actionBusy === "check" ? "Checking" : "Run checks"}
+            </button>
+            <button
+              className="danger-button"
+              disabled={["stopped", "expired"].includes(session.status) || actionBusy !== null}
+              onClick={() => void runAction("stop")}
+            >
+              Stop
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {!session ? (
+        <section className="panel">
+          <p className="empty-state">Request a session from the dashboard to open a workspace.</p>
+        </section>
+      ) : (
+        <>
+          {actionError ? <p className="error-text">{actionError}</p> : null}
+
+          <div className="workspace-meta-strip">
+            <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />
+            <DetailItem label="Validation" value={validation?.summary ?? session.lastCheckSummary ?? "Not run"} />
+            <DetailItem label="Editor" value={session.workspaceUrl ?? "not available"} />
+            <DetailItem label="Preview" value={session.previewUrl ?? "not available"} />
+          </div>
+
+          <WorkspaceSplitView session={session} />
         </>
       )}
     </section>
@@ -642,6 +807,10 @@ function formatTime(timestamp: number) {
     minute: "2-digit",
     second: "2-digit",
   }).format(timestamp);
+}
+
+function tabFromHash(hash: string): AppTab {
+  return hash === "#workspace" ? "workspace" : "dashboard";
 }
 
 function RunnerContractPanel() {
