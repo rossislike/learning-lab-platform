@@ -261,6 +261,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
         <nav className="nav-list" aria-label="Main">
           <a href="#labs">Labs</a>
           <a href="#sessions">Sessions</a>
+          <a href="#workspace">Workspace</a>
           <a href="#runner">Runner</a>
         </nav>
       </aside>
@@ -454,6 +455,8 @@ function SessionDetailPanel({
             <UrlItem icon={<Cloud size={16} />} label="Preview" value={session.previewUrl} />
           </div>
 
+          <WorkspaceSplitView session={session} />
+
           <div className="metadata-grid">
             <DetailItem label="Editor provider" value={session.editorProvider ?? "-"} />
             <DetailItem label="Container" value={session.editorContainerName ?? "-"} />
@@ -519,6 +522,55 @@ function SessionDetailPanel({
         </>
       )}
     </section>
+  );
+}
+
+function WorkspaceSplitView({ session }: { session: SessionSummary }) {
+  const editorReady = session.workspaceUrl?.startsWith("http");
+  const previewReady = session.previewUrl?.startsWith("http");
+
+  return (
+    <div className="workspace-section" id="workspace">
+      <div className="section-heading">
+        <p className="eyebrow">Workspace</p>
+        <strong>Editor and preview</strong>
+      </div>
+
+      {editorReady && previewReady ? (
+        <div className="workspace-split">
+          <div className="workspace-frame-shell editor-frame">
+            <div className="frame-header">
+              <span>OpenVSCode</span>
+              <a href={session.workspaceUrl} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            </div>
+            <iframe
+              allow="clipboard-read; clipboard-write"
+              className="workspace-frame"
+              src={session.workspaceUrl}
+              title={`${session.learnerLabel} OpenVSCode editor`}
+            />
+          </div>
+
+          <div className="workspace-frame-shell preview-frame">
+            <div className="frame-header">
+              <span>Preview</span>
+              <a href={session.previewUrl} target="_blank" rel="noreferrer">
+                Open
+              </a>
+            </div>
+            <iframe
+              className="workspace-frame"
+              src={session.previewUrl}
+              title={`${session.learnerLabel} Vite preview`}
+            />
+          </div>
+        </div>
+      ) : (
+        <p className="muted">Workspace panes appear after the local runner starts the session.</p>
+      )}
+    </div>
   );
 }
 
