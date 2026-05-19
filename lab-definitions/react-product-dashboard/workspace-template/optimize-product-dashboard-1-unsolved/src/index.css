@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+h1 {
+  @apply text-3xl;
+}
+h2 {
+  @apply text-2xl;
+}
+h3 {
+  @apply text-xl;
+}
+h4 {
+  @apply text-lg;
+}
+h5 {
+  @apply text-base;
+}
+h6 {
+  @apply text-sm;
+}
+p {
+  @apply text-base;
+}
+a {
+  @apply text-blue-500 underline;
+}
+input {
+  @apply border border-gray-300 rounded py-2 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+textarea {
+  @apply border border-gray-300 rounded py-2 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+ul {
+  @apply list-disc pl-5;
+}
+li {
+  @apply mb-2;
+}
+
+.app-container {
+  @apply flex flex-col items-center justify-center p-8 bg-gray-50 min-h-screen relative;
+}
+
+.app-header {
+  @apply flex flex-col items-center mb-4;
+}
+
+.app-title {
+  @apply text-3xl font-bold mb-2;
+}
+
+.dashboard-controls {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 w-[600px] p-6 mb-6 flex flex-wrap justify-between gap-4;
+}
+
+.filter-controls {
+  @apply flex gap-2;
+}
+
+.filter-button {
+  @apply bg-gray-200 text-gray-700 py-2 px-4 rounded cursor-pointer;
+}
+
+.filter-button:hover {
+  @apply bg-gray-300 text-gray-700;
+}
+
+.filter-button.active {
+  @apply bg-blue-500 text-white hover:bg-blue-700;
+}
+
+.refresh-button {
+  @apply bg-blue-500 text-white hover:bg-blue-700 py-2 px-4 rounded cursor-pointer;
+}
+
+.add-to-cart-button {
+  @apply bg-blue-500 text-white hover:bg-blue-700 py-2 px-4 rounded cursor-pointer;
+}
+
+.cart-button-container {
+  @apply flex items-center gap-2;
+}
+
+.cart-display {
+  @apply text-gray-800 font-medium;
+}
+
+.product-list-container {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 w-[600px] p-6 relative;
+}
+
+.product-list-header {
+  @apply flex justify-between items-center mb-4;
+}
+
+.product-grid {
+  @apply grid gap-4 grid-cols-1 md:grid-cols-2;
+}
+
+.product-card {
+  @apply bg-gray-50 rounded p-4 relative border border-gray-200;
+}
+
+.product-info {
+  @apply mb-4;
+}
+
+.product-name {
+  @apply text-lg font-semibold mb-1;
+}
+
+.product-category {
+  @apply text-sm text-gray-600 mb-2;
+}
+
+.product-pricing {
+  @apply flex gap-2 mb-4;
+}
+
+.price {
+  @apply font-bold text-gray-800;
+}
+
+.render-status {
+  @apply text-xs flex items-center gap-1;
+}
+
+.render-status-code {
+  @apply bg-gray-100 px-1 rounded text-gray-600;
+}
+
+.render-status-count {
+  @apply bg-gray-100 px-1 rounded text-blue-500;
+}

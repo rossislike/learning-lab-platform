@@ -1,0 +1,18 @@
+{
+  "slug": "react-product-dashboard",
+  "title": "Optimize Product Dashboard",
+  "difficulty": 1,
+  "tags": ["react", "rendering-optimization", "vite", "vitest"],
+  "workspaceTemplate": "workspace-template/optimize-product-dashboard-1-unsolved",
+  "solutionTemplate": "workspace-template/optimize-product-dashboard-2",
+  "previewCommand": "npm run dev -- --host 0.0.0.0",
+  "validationCommand": "npm test -- --run --reporter=json",
+  "expectedPorts": [
+    {
+      "name": "vite",
+      "containerPort": 5173,
+      "public": true
+    }
+  ],
+  "ttlSeconds": 3600
+}
