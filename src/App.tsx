@@ -196,6 +196,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
       setActiveTab(tabFromHash(window.location.hash));
     }
 
+    handleHashChange();
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
@@ -810,7 +811,7 @@ function formatTime(timestamp: number) {
 }
 
 function tabFromHash(hash: string): AppTab {
-  return hash === "#workspace" ? "workspace" : "dashboard";
+  return hash.startsWith("#workspace") ? "workspace" : "dashboard";
 }
 
 function RunnerContractPanel() {

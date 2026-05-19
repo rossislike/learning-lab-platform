@@ -67,6 +67,12 @@ function portFor(sessionId, basePort) {
   return basePort + (hash % 700);
 }
 
+function editorUrlForFolder(port, folderPath) {
+  const url = new URL(`http://127.0.0.1:${port}/`);
+  url.searchParams.set("folder", folderPath);
+  return url.toString();
+}
+
 function isPortAvailable(port) {
   return new Promise((resolvePort) => {
     const server = createServer();
@@ -206,7 +212,7 @@ async function startEditor({
     );
 
     return {
-      url: `http://127.0.0.1:${editorPort}`,
+      url: editorUrlForFolder(editorPort, workspacePath),
       processInfo: { provider, editorPid, binary },
     };
   }
@@ -245,7 +251,7 @@ async function startEditor({
     }
 
     return {
-      url: `http://127.0.0.1:${editorPort}`,
+      url: editorUrlForFolder(editorPort, "/home/workspace"),
       processInfo: {
         provider,
         containerName,
