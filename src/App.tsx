@@ -492,7 +492,11 @@ function SessionDetailPanel({
                 ))}
               </ul>
             ) : (
-              <p className="muted">Run `npm run runner:local:once` to process requested sessions.</p>
+              <p className="muted">
+                {session.status === "requested"
+                  ? "Waiting for the local runner to start this session."
+                  : "Use Run checks when the learner is ready for validation."}
+              </p>
             )}
           </div>
 
