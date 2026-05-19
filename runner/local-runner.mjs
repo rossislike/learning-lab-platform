@@ -471,6 +471,12 @@ async function tick(client) {
         sessionId: session._id,
         message: error instanceof Error ? error.message : String(error),
       });
+      const cleanupResult = await cleanupLocalSession(session);
+      await client.mutation(api.sessions.markCleaned, {
+        sessionId: session._id,
+        summary: "Cleaned up after runner error",
+        raw: cleanupResult,
+      });
     }
   }
 
