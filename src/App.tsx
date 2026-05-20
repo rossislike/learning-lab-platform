@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { ConvexHttpClient } from "convex/browser";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 
@@ -73,6 +74,13 @@ type ValidationMetadata = {
 };
 
 type AppTab = "dashboard" | "workspace";
+type WorkspaceLayout = {
+  editor: number;
+  preview: number;
+};
+
+const defaultWorkspaceLayout: WorkspaceLayout = { editor: 62, preview: 38 };
+const workspaceLayoutStorageKey = "learning-lab-workspace-layout";
 
 export default function App({ convexUrl, missingConvexUrl = false }: AppProps) {
   if (missingConvexUrl || !convexUrl) {
@@ -694,6 +702,19 @@ function WorkspaceTab({
 function WorkspaceSplitView({ session }: { session: SessionSummary }) {
   const editorReady = session.workspaceUrl?.startsWith("http");
   const previewReady = session.previewUrl?.startsWith("http");
+  const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
+
+  function saveLayout(nextLayout: Record<string, number>) {
+    if (typeof nextLayout.editor !== "number" || typeof nextLayout.preview !== "number") {
+      return;
+    }
+    const next: WorkspaceLayout = {
+      editor: nextLayout.editor,
+      preview: nextLayout.preview,
+    };
+    setLayout(next);
+    window.localStorage.setItem(workspaceLayoutStorageKey, JSON.stringify(next));
+  }
 
   return (
     <div className="workspace-section" id="workspace">
@@ -703,36 +724,50 @@ function WorkspaceSplitView({ session }: { session: SessionSummary }) {
       </div>
 
       {editorReady && previewReady ? (
-        <div className="workspace-split">
-          <div className="workspace-frame-shell editor-frame">
-            <div className="frame-header">
-              <span>OpenVSCode</span>
-              <a href={session.workspaceUrl} target="_blank" rel="noreferrer">
-                Open
-              </a>
+        <Group
+          className="workspace-split"
+          defaultLayout={layout}
+          onLayoutChanged={saveLayout}
+          orientation="horizontal"
+        >
+          <Panel className="workspace-panel" defaultSize={`${layout.editor}%`} id="editor" minSize="35%">
+            <div className="workspace-frame-shell editor-frame">
+              <div className="frame-header">
+                <span>OpenVSCode</span>
+                <a href={session.workspaceUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              </div>
+              <iframe
+                allow="clipboard-read; clipboard-write"
+                className="workspace-frame"
+                src={session.workspaceUrl}
+                title={`${session.learnerLabel} OpenVSCode editor`}
+              />
             </div>
-            <iframe
-              allow="clipboard-read; clipboard-write"
-              className="workspace-frame"
-              src={session.workspaceUrl}
-              title={`${session.learnerLabel} OpenVSCode editor`}
-            />
-          </div>
+          </Panel>
 
-          <div className="workspace-frame-shell preview-frame">
-            <div className="frame-header">
-              <span>Preview</span>
-              <a href={session.previewUrl} target="_blank" rel="noreferrer">
-                Open
-              </a>
+          <Separator
+            aria-label="Resize editor and preview panes"
+            className="workspace-resize-handle"
+          />
+
+          <Panel className="workspace-panel" defaultSize={`${layout.preview}%`} id="preview" minSize="25%">
+            <div className="workspace-frame-shell preview-frame">
+              <div className="frame-header">
+                <span>Preview</span>
+                <a href={session.previewUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              </div>
+              <iframe
+                className="workspace-frame"
+                src={session.previewUrl}
+                title={`${session.learnerLabel} Vite preview`}
+              />
             </div>
-            <iframe
-              className="workspace-frame"
-              src={session.previewUrl}
-              title={`${session.learnerLabel} Vite preview`}
-            />
-          </div>
-        </div>
+          </Panel>
+        </Group>
       ) : (
         <p className="muted">Workspace panes appear after the local runner starts the session.</p>
       )}
@@ -812,6 +847,28 @@ function formatTime(timestamp: number) {
 
 function tabFromHash(hash: string): AppTab {
   return hash.startsWith("#workspace") ? "workspace" : "dashboard";
+}
+
+function readWorkspaceLayout(): WorkspaceLayout {
+  try {
+    const saved = JSON.parse(
+      window.localStorage.getItem(workspaceLayoutStorageKey) ?? "null"
+    ) as Partial<WorkspaceLayout> | null;
+
+    if (
+      saved &&
+      typeof saved.editor === "number" &&
+      typeof saved.preview === "number" &&
+      Number.isFinite(saved.editor) &&
+      Number.isFinite(saved.preview)
+    ) {
+      return { editor: saved.editor, preview: saved.preview };
+    }
+  } catch {
+    return defaultWorkspaceLayout;
+  }
+
+  return defaultWorkspaceLayout;
 }
 
 function RunnerContractPanel() {

@@ -456,14 +456,61 @@ input {
 }
 
 .workspace-split {
-  display: grid;
-  grid-template-columns: minmax(420px, 1.35fr) minmax(320px, 0.85fr);
-  gap: 12px;
+  display: flex;
+  gap: 0;
   min-height: min(760px, calc(100vh - 300px));
+}
+
+.workspace-panel {
+  min-width: 0;
+  padding: 0;
+}
+
+.workspace-panel:first-child {
+  padding-right: 6px;
+}
+
+.workspace-panel:last-child {
+  padding-left: 6px;
+}
+
+.workspace-resize-handle {
+  position: relative;
+  width: 14px;
+  min-width: 14px;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.workspace-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: 0 5px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.workspace-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 40px;
+  border-radius: 999px;
+  background: #64748b;
+  transform: translate(-50%, -50%);
+}
+
+.workspace-resize-handle:hover::before,
+.workspace-resize-handle[data-separator="active"]::before {
+  background: #94a3b8;
 }
 
 .workspace-frame-shell {
   min-width: 0;
+  height: 100%;
   border: 1px solid #d7dee8;
   border-radius: 8px;
   overflow: hidden;
@@ -567,7 +614,17 @@ input {
   }
 
   .workspace-split {
-    grid-template-columns: 1fr;
+    display: grid;
+    gap: 12px;
+  }
+
+  .workspace-panel:first-child,
+  .workspace-panel:last-child {
+    padding: 0;
+  }
+
+  .workspace-resize-handle {
+    display: none;
   }
 
   .workspace-meta-strip {
