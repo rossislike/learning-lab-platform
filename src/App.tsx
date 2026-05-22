@@ -398,6 +398,10 @@ function DashboardTab({
   onStartSession: () => Promise<void>;
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
 }) {
+  const requestedLocalSessions = sessions.filter(
+    (session) => session.runner === "local" && session.status === "requested"
+  );
+
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
       <ScenarioCatalog
@@ -405,6 +409,17 @@ function DashboardTab({
         selectedScenario={selectedScenario}
         onSelectScenario={onSelectScenario}
       />
+
+      {requestedLocalSessions.length > 0 ? (
+        <div className="notice runner-notice">
+          <strong>Local runner required.</strong>
+          <span>
+            {requestedLocalSessions.length} requested session
+            {requestedLocalSessions.length === 1 ? "" : "s"} will stay queued until
+            <code>npm run runner:local</code> is running in this project.
+          </span>
+        </div>
+      ) : null}
 
       <section className="grid request-grid">
         <article className="panel request-panel">

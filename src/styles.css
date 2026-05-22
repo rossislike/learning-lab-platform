@@ -236,6 +236,12 @@ input {
   border-color: #fed7aa;
 }
 
+.notice code {
+  margin: 0 4px;
+  color: #111827;
+  font-weight: 800;
+}
+
 .eyebrow {
   margin: 0;
   color: #6b7280;
