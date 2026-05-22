@@ -93,6 +93,7 @@ function parseVitestReport(reportText) {
       assertions.push({
         title: assertion.title,
         status: assertion.status,
+        message: formatFailureMessage(assertion.failureMessages?.[0]),
       });
     }
   }
@@ -106,6 +107,25 @@ function parseVitestReport(reportText) {
     passed: total > 0 && passed === total,
     summary: `${passed}/${total} validation checks passed`,
   };
+}
+
+function formatFailureMessage(message) {
+  if (!message) return undefined;
+
+  const ansiEscape = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+  const cleanMessage = message.replace(ansiEscape, "");
+  const expectedRole = cleanMessage.match(
+    /Unable to find an accessible element with the role "([^"]+)" and name "([^"]+)"/
+  );
+  const actualHeading = cleanMessage.match(/heading:\s+Name "([^"]*)":/);
+
+  if (expectedRole?.[1] === "heading") {
+    const expected = expectedRole[2];
+    const actual = actualHeading?.[1] ?? "no heading found";
+    return `Expected heading "${expected}", but found "${actual}". Save src/App.jsx and run checks again.`;
+  }
+
+  return cleanMessage.split("\n").find((line) => line.trim())?.trim();
 }
 
 async function runCheck() {

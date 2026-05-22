@@ -68,6 +68,7 @@ type SessionEvent = {
 type ValidationAssertion = {
   title?: string;
   status?: string;
+  message?: string;
 };
 
 type ValidationMetadata = {
@@ -704,7 +705,12 @@ function SessionDetailPanel({
                     ) : (
                       <XCircle size={16} className="fail-icon" />
                     )}
-                    <span>{assertion.title}</span>
+                    <span>
+                      {assertion.title}
+                      {assertion.message ? (
+                        <small className="assertion-message">{assertion.message}</small>
+                      ) : null}
+                    </span>
                   </li>
                 ))}
               </ul>

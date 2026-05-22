@@ -688,6 +688,13 @@ input {
   display: block;
 }
 
+.assertion-message {
+  display: block;
+  margin-top: 4px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
 @media (max-width: 900px) {
   .app-shell,
   .grid {
