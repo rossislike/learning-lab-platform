@@ -27,6 +27,10 @@ type LabSummary = {
   title: string;
   summary: string;
   status: string;
+  domainTitle?: string;
+  domainSummary?: string;
+  displayOrder?: number;
+  scenarioLabel?: string;
 };
 
 type SessionSummary = {
@@ -153,16 +157,21 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const [learnerLabel, setLearnerLabel] = useState("local-learner");
   const [activeTab, setActiveTab] = useState<AppTab>(() => tabFromHash(window.location.hash));
+  const [selectedLabId, setSelectedLabId] = useState<Id<"labs"> | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<Id<"sessions"> | null>(
     null
   );
 
-  const activeLab = useMemo(
+  const scenarios = useMemo(
     () =>
-      labs?.find((lab: LabSummary) => lab.slug === "react-product-dashboard") ??
-      labs?.[0],
+      [...labs].sort((a, b) => {
+        const orderDelta = (a.displayOrder ?? 999) - (b.displayOrder ?? 999);
+        return orderDelta || a.title.localeCompare(b.title);
+      }),
     [labs]
   );
+  const selectedScenario =
+    scenarios.find((lab) => lab._id === selectedLabId) ?? scenarios[0];
   const selectedSession =
     sessions?.find((session) => session._id === selectedSessionId) ?? sessions?.[0];
 
@@ -236,9 +245,9 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   }, [refreshEvents, selectedSession?._id]);
 
   async function startSession() {
-    if (!activeLab) return;
+    if (!selectedScenario) return;
     await convex.mutation(api.sessions.request, {
-      labId: activeLab._id,
+      labId: selectedScenario._id,
       learnerLabel,
       runner: "local",
       ttlSeconds: 60 * 60,
@@ -267,8 +276,8 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     await refreshEvents(session._id);
   }
 
-  async function seedReactLab() {
-    await convex.mutation(api.labs.seedReactProductDashboard, {});
+  async function seedScenarios() {
+    await convex.mutation(api.labs.seedScenarios, {});
     await refreshDashboard();
   }
 
@@ -293,8 +302,8 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
       <section className="content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">First milestone</p>
-            <h2>Optimize Product Dashboard</h2>
+            <p className="eyebrow">Local MVP</p>
+            <h2>React Scenario Catalog</h2>
           </div>
           <div className="topbar-actions">
             <span className="refresh-state">
@@ -308,9 +317,9 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
               <RefreshCw size={16} />
               Refresh
             </button>
-            <button className="secondary-button" onClick={() => seedReactLab()}>
+            <button className="secondary-button" onClick={() => seedScenarios()}>
               <RefreshCw size={16} />
-              Seed lab
+              Seed scenarios
             </button>
           </div>
         </header>
@@ -336,13 +345,15 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 
         {activeTab === "dashboard" ? (
           <DashboardTab
-            activeLab={activeLab}
             events={selectedSessionEvents}
             learnerLabel={learnerLabel}
+            scenarios={scenarios}
+            selectedScenario={selectedScenario}
             selectedSession={selectedSession}
             sessions={sessions}
             onLearnerLabelChange={setLearnerLabel}
             onRunCheck={runSessionCheck}
+            onSelectScenario={setSelectedLabId}
             onSelectSession={setSelectedSessionId}
             onStartSession={startSession}
             onStop={stopSession}
@@ -361,43 +372,53 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 }
 
 function DashboardTab({
-  activeLab,
   events,
   learnerLabel,
+  scenarios,
+  selectedScenario,
   selectedSession,
   sessions,
   onLearnerLabelChange,
   onRunCheck,
+  onSelectScenario,
   onSelectSession,
   onStartSession,
   onStop,
 }: {
-  activeLab?: LabSummary;
   events: SessionEvent[];
   learnerLabel: string;
+  scenarios: LabSummary[];
+  selectedScenario?: LabSummary;
   selectedSession?: SessionSummary;
   sessions: SessionSummary[];
   onLearnerLabelChange: (value: string) => void;
   onRunCheck: (session: SessionSummary) => Promise<void>;
+  onSelectScenario: (labId: Id<"labs">) => void;
   onSelectSession: (sessionId: Id<"sessions">) => void;
   onStartSession: () => Promise<void>;
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
 }) {
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
-      <section className="grid">
-        <article className="panel lab-panel">
+      <ScenarioCatalog
+        scenarios={scenarios}
+        selectedScenario={selectedScenario}
+        onSelectScenario={onSelectScenario}
+      />
+
+      <section className="grid request-grid">
+        <article className="panel request-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Active lab</p>
-              <h3>{activeLab?.title ?? "No lab seeded yet"}</h3>
+              <p className="eyebrow">Request session</p>
+              <h3>{selectedScenario?.title ?? "No scenario selected"}</h3>
             </div>
-            <span className="status-pill">{activeLab?.status ?? "missing"}</span>
+            <span className="status-pill">{selectedScenario?.status ?? "missing"}</span>
           </div>
 
           <p className="muted">
-            {activeLab?.summary ??
-              "Seed the React Product Dashboard lab to create the first scenario."}
+            {selectedScenario?.summary ??
+              "Seed scenarios, then select a card to request a local learner session."}
           </p>
 
           <div className="meta-row">
@@ -414,7 +435,7 @@ function DashboardTab({
             />
           </label>
 
-          <button className="primary-button" disabled={!activeLab} onClick={onStartSession}>
+          <button className="primary-button" disabled={!selectedScenario} onClick={onStartSession}>
             <Play size={16} />
             Request session
           </button>
@@ -465,6 +486,93 @@ function DashboardTab({
         onRunCheck={onRunCheck}
       />
     </div>
+  );
+}
+
+function ScenarioCatalog({
+  scenarios,
+  selectedScenario,
+  onSelectScenario,
+}: {
+  scenarios: LabSummary[];
+  selectedScenario?: LabSummary;
+  onSelectScenario: (labId: Id<"labs">) => void;
+}) {
+  const groupedScenarios = useMemo(() => {
+    const groups = new Map<
+      string,
+      { title: string; summary: string; order: number; scenarios: LabSummary[] }
+    >();
+
+    for (const scenario of scenarios) {
+      const title = scenario.domainTitle ?? "React Scenarios";
+      const group = groups.get(title) ?? {
+        title,
+        summary: scenario.domainSummary ?? "Hands-on React practice scenarios",
+        order: scenario.displayOrder ?? 999,
+        scenarios: [],
+      };
+      group.order = Math.min(group.order, scenario.displayOrder ?? 999);
+      if (!group.summary && scenario.domainSummary) {
+        group.summary = scenario.domainSummary;
+      }
+      group.scenarios.push(scenario);
+      groups.set(title, group);
+    }
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        scenarios: group.scenarios.sort((a, b) => {
+          const orderDelta = (a.displayOrder ?? 999) - (b.displayOrder ?? 999);
+          return orderDelta || a.title.localeCompare(b.title);
+        }),
+      }))
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+  }, [scenarios]);
+
+  return (
+    <section className="scenario-catalog" id="labs">
+      {groupedScenarios.length === 0 ? (
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Scenarios</p>
+              <h3>No scenarios seeded yet</h3>
+            </div>
+          </div>
+          <p className="muted">Use Seed scenarios to load the React MVP scenarios.</p>
+        </article>
+      ) : (
+        groupedScenarios.map((group) => (
+          <div className="domain-section" key={group.title}>
+            <div className="domain-heading">
+              <h3>{group.title}</h3>
+              <p>{group.summary}</p>
+            </div>
+            <div className="scenario-card-grid">
+              {group.scenarios.map((scenario) => {
+                const selected = selectedScenario?._id === scenario._id;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={`scenario-card ${selected ? "selected" : ""}`}
+                    key={scenario._id}
+                    onClick={() => onSelectScenario(scenario._id)}
+                  >
+                    <span className="scenario-title">{scenario.title}</span>
+                    <span className="scenario-summary">{scenario.summary}</span>
+                    {scenario.scenarioLabel ? (
+                      <span className="scenario-label">{scenario.scenarioLabel}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      )}
+    </section>
   );
 }
 

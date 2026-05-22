@@ -1,0 +1,17 @@
+{
+  "slug": "react-welcome-message",
+  "title": "Update Welcome Message",
+  "difficulty": 1,
+  "tags": ["react", "fundamentals", "vite", "vitest"],
+  "workspaceTemplate": "workspace-template/update-welcome-message-1",
+  "previewCommand": "npm run dev -- --host 0.0.0.0",
+  "validationCommand": "npm test -- --run --reporter=json",
+  "expectedPorts": [
+    {
+      "name": "vite",
+      "containerPort": 5173,
+      "public": true
+    }
+  ],
+  "ttlSeconds": 3600
+}

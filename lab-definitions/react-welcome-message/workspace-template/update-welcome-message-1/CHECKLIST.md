@@ -1,0 +1,1 @@
+- "The page heading says 'Welcome to React Labs'"
