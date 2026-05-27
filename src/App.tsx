@@ -35,6 +35,7 @@ type LabSummary = {
 
 type SessionSummary = {
   _id: Id<"sessions">;
+  labId: Id<"labs">;
   learnerLabel: string;
   status: string;
   runner: string;
@@ -471,6 +472,7 @@ function DashboardTab({
         <div className="session-table">
           <div className="session-row session-head">
             <span>Learner</span>
+            <span>Scenario</span>
             <span>Status</span>
             <span>Runner</span>
             <span>Score</span>
@@ -484,6 +486,7 @@ function DashboardTab({
               onClick={() => onSelectSession(session._id)}
             >
               <span>{session.learnerLabel}</span>
+              <span>{formatScenarioTitle(session, scenarios)}</span>
               <span><StatusPill status={session.status} /></span>
               <span>{session.runner}</span>
               <span>{session.lastCheckScore ?? "-"}</span>
@@ -497,6 +500,7 @@ function DashboardTab({
 
       <SessionDetailPanel
         session={selectedSession}
+        scenario={selectedSession ? scenarioForSession(selectedSession, scenarios) : undefined}
         events={events}
         onStop={onStop}
         onRunCheck={onRunCheck}
@@ -594,11 +598,13 @@ function ScenarioCatalog({
 
 function SessionDetailPanel({
   session,
+  scenario,
   events,
   onStop,
   onRunCheck,
 }: {
   session?: SessionSummary;
+  scenario?: LabSummary;
   events: SessionEvent[];
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
   onRunCheck: (session: SessionSummary) => Promise<void>;
@@ -658,6 +664,8 @@ function SessionDetailPanel({
       ) : (
         <>
           <div className="detail-grid">
+            <DetailItem label="Scenario" value={scenario?.title ?? "Unknown scenario"} />
+            <DetailItem label="Domain" value={scenario?.domainTitle ?? "-"} />
             <DetailItem label="Runner" value={session.runner} />
             <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />
             <DetailItem label="Created" value={formatTime(session.createdAt)} />
@@ -941,6 +949,14 @@ function UrlItem({
 
 function StatusPill({ status }: { status: string }) {
   return <span className={`status-pill status-${status}`}>{status}</span>;
+}
+
+function scenarioForSession(session: SessionSummary, scenarios: LabSummary[]) {
+  return scenarios.find((scenario) => scenario._id === session.labId);
+}
+
+function formatScenarioTitle(session: SessionSummary, scenarios: LabSummary[]) {
+  return scenarioForSession(session, scenarios)?.title ?? "Unknown scenario";
 }
 
 function latestValidation(events: SessionEvent[]): ValidationMetadata | null {

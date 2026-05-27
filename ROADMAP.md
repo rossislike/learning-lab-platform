@@ -29,7 +29,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 ## Near-Term Stabilization
 
 - [x] Update README wording and screenshots to match the current multi-scenario flow, including `Seed scenarios`.
-- [ ] Add the scenario title/domain to session rows and session detail.
+- [x] Add the scenario title/domain to session rows and session detail.
 - [ ] Improve current-session selection so the Workspace tab always opens the intended selected session.
 - [ ] Add a first-class runner health block that shows whether the local runner is actively polling.
 - [ ] Add clearer queued, running, passed, failed, stopped, and expired empty states.
