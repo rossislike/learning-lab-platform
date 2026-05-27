@@ -1,19 +1,37 @@
 # Learning Lab Platform
 
-Browser-based coding labs backed by Convex for control-plane state and AWS for disposable execution environments.
+Browser-based coding labs backed by Convex for control-plane state and local Docker/OpenVSCode for disposable execution environments.
 
-The first target lab is the React rendering optimization exercise at:
+The current MVP is a single-operator local platform for React scenarios. It lets you seed scenarios, request a session, open OpenVSCode, view the Vite preview, run learner-triggered checks, inspect validation results/events, and stop or expire sessions.
 
-`/Users/stratus/dev/react/sen-cert/ch2-Rendering-Optimization/5-Optimize-Product-Dashboard/`
+AWS remains the intended hosted runner path, but the working MVP is local-first.
 
-## Initial Architecture
+## Screenshots
+
+Scenario catalog and session request flow:
+
+![Scenario catalog dashboard](docs/screenshots/scenario-catalog-dashboard.jpg)
+
+Editor and preview workspace:
+
+![Editor and preview workspace](docs/screenshots/editor-preview-workspace.jpg)
+
+## Architecture
 
 - React/Vite frontend for the learner/admin UI.
 - Convex schema and functions for labs, sessions, and session events.
 - Lab manifests under `lab-definitions/`.
-- AWS runner integration isolated under `runner/` and `infra/`.
+- Local runner integration under `runner/`.
+- Future AWS infrastructure isolated under `infra/`.
 
-The first runnable lab should be container-backed: a Node workspace, browser editor, Vite preview, terminal, and a `Check` action that runs Vitest. Kubernetes deployment should be an extension step, not the first platform dependency.
+Each local session is container/process-backed: a copied Node workspace, OpenVSCode editor, Vite preview, tools/check server, and a `Run checks` action that runs Vitest.
+
+## Current Scenarios
+
+Use `Seed scenarios` in the dashboard to create or update the MVP scenarios in Convex:
+
+- `Update Welcome Message`: React Fundamentals smoke scenario. Change one heading to `Welcome to React Labs`.
+- `Optimize Product Dashboard`: Rendering Optimization scenario based on the existing React performance lab.
 
 ## Local Setup
 
@@ -28,15 +46,15 @@ After `convex dev` starts, set `VITE_CONVEX_URL` in `.env.local` to the URL it p
 
 Docker Desktop must be running before processing sessions because the default local editor provider starts OpenVSCode with `gitpod/openvscode-server:latest`.
 
-## Import The First React Lab
+## Optional: Reimport The Product Dashboard Lab
 
 ```bash
 npm run import:react-lab
 ```
 
-This copies the starter and solution exercise folders into `lab-definitions/react-product-dashboard/workspace-template/` so runner experiments can mount or package them without depending on the original path.
+This copies the starter and solution exercise folders into `lab-definitions/react-product-dashboard/workspace-template/` so runner experiments can mount or package them without depending on the original path. The checked-in MVP already includes the current scenario templates, so this command is only needed when refreshing the product dashboard lab from its source.
 
-## Control Plane
+## Control Plane And Runner
 
 Convex owns durable state:
 
@@ -46,32 +64,39 @@ Convex owns durable state:
 - validation results
 - event timeline
 
-AWS owns ephemeral execution:
+The local runner owns ephemeral execution:
 
-- one session container/task per learner
+- one session workspace per learner
+- OpenVSCode Docker container
 - workspace filesystem
 - Vite preview
-- terminal/editor processes
+- tools/check server
 - validation command execution
+
+The future AWS runner should preserve this boundary: Convex remains the control plane, and hosted runner infrastructure owns per-session execution.
 
 ## Complete Local MVP Workflow
 
 1. Start Convex: `npx convex dev`.
 2. Start the dashboard: `npm run dev`.
 3. Confirm Docker Desktop is running.
-4. Open the dashboard and click `Seed lab`.
-5. Click `Request session`.
-6. Process sessions with `npm run runner:local` or `npm run runner:local:once`.
-7. Open the session detail links:
+4. Start the local runner: `npm run runner:local`.
+5. Open the dashboard at `http://127.0.0.1:5174/`.
+6. Click `Seed scenarios`.
+7. Select a scenario card.
+8. Click `Request session`.
+9. Wait for the session to move from `requested` to `running`.
+10. Open the `Editor and Preview` tab or the session detail links:
    - `Workspace` opens OpenVSCode.
    - `Preview` opens the Vite app.
    - `Tools` opens validation controls.
-8. Use `Run checks` from either the dashboard or tools page.
-9. Use `Stop` from the dashboard to request cleanup, then run the local runner so it stops Docker/process resources.
+11. Complete the exercise in OpenVSCode and save the file.
+12. Use `Run checks` from either the dashboard or tools page.
+13. Use `Stop` from the dashboard to request cleanup. The running local runner performs actual Docker/process cleanup on its next poll.
 
 ## Run The Local Runner
 
-After Convex is configured and the lab is seeded from the UI:
+After Convex is configured and scenarios are seeded from the UI:
 
 ```bash
 npm run runner:local
@@ -84,6 +109,8 @@ npm run runner:local:once
 ```
 
 The runner processes requested local sessions, creates a workspace under `lab-workspaces/`, installs dependencies, starts OpenVSCode, starts Vite preview, starts the tools/check server, and marks the session `running`. It does not run validation on startup; the learner or operator starts validation with `Run checks` from the dashboard or tools page.
+
+If a requested local session stays queued, confirm `npm run runner:local` is still running. The dashboard shows a queued-session notice when local sessions are waiting for the runner.
 
 By default, the local runner expects Docker Desktop and starts OpenVSCode with `gitpod/openvscode-server:latest`. To use a native OpenVSCode binary instead, set:
 
@@ -109,4 +136,6 @@ Expired sessions are handled the same way. The runner marks them `expired`, clea
 - Port already in use: the local runner scans for the next available port near the deterministic session port; rerun the runner if a stale process still occupies a port.
 - OpenVSCode image pull/start failures: run `docker pull gitpod/openvscode-server:latest`, or switch to `LOCAL_EDITOR_PROVIDER=openvscode-native`.
 - Convex URL mismatch: confirm `.env.local` has the same `VITE_CONVEX_URL` printed by `npx convex dev`.
+- Session stuck in `requested`: start or restart `npm run runner:local`; Convex has queued the session, but no local runner is polling.
+- Check fails after editing: save the file in OpenVSCode and read the validation failure message. The welcome scenario reports the actual heading found by Vitest.
 - Stale sessions/containers: click `Stop`, run `npm run runner:local:once`, then verify with `docker ps`.
