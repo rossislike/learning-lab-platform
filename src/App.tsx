@@ -87,6 +87,7 @@ type WorkspaceLayout = {
 
 const defaultWorkspaceLayout: WorkspaceLayout = { editor: 62, preview: 38 };
 const workspaceLayoutStorageKey = "learning-lab-workspace-layout";
+const selectedSessionStorageKey = "learning-lab-selected-session-id";
 
 export default function App({ convexUrl, missingConvexUrl = false }: AppProps) {
   if (missingConvexUrl || !convexUrl) {
@@ -161,7 +162,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const [activeTab, setActiveTab] = useState<AppTab>(() => tabFromHash(window.location.hash));
   const [selectedLabId, setSelectedLabId] = useState<Id<"labs"> | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<Id<"sessions"> | null>(
-    null
+    () => readSelectedSessionId()
   );
 
   const scenarios = useMemo(
@@ -174,8 +175,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   );
   const selectedScenario =
     scenarios.find((lab) => lab._id === selectedLabId) ?? scenarios[0];
-  const selectedSession =
-    sessions?.find((session) => session._id === selectedSessionId) ?? sessions?.[0];
+  const selectedSession = sessions.find((session) => session._id === selectedSessionId);
 
   const refreshDashboard = useCallback(async () => {
     try {
@@ -246,14 +246,31 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     };
   }, [refreshEvents, selectedSession?._id]);
 
+  useEffect(() => {
+    if (sessions.length === 0) {
+      if (selectedSessionId !== null) {
+        selectSession(null);
+      }
+      return;
+    }
+
+    const selectedSessionExists = sessions.some(
+      (session) => session._id === selectedSessionId
+    );
+    if (!selectedSessionExists) {
+      selectSession(sessions[0]._id);
+    }
+  }, [selectedSessionId, sessions]);
+
   async function startSession() {
     if (!selectedScenario) return;
-    await convex.mutation(api.sessions.request, {
+    const sessionId = await convex.mutation(api.sessions.request, {
       labId: selectedScenario._id,
       learnerLabel,
       runner: "local",
       ttlSeconds: 60 * 60,
     });
+    selectSession(sessionId as Id<"sessions">);
     await refreshDashboard();
   }
 
@@ -286,6 +303,15 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   function changeTab(tab: AppTab) {
     setActiveTab(tab);
     window.history.replaceState(null, "", tab === "workspace" ? "#workspace" : "#dashboard");
+  }
+
+  function selectSession(sessionId: Id<"sessions"> | null) {
+    setSelectedSessionId(sessionId);
+    if (sessionId) {
+      window.localStorage.setItem(selectedSessionStorageKey, sessionId);
+    } else {
+      window.localStorage.removeItem(selectedSessionStorageKey);
+    }
   }
 
   return (
@@ -356,7 +382,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             onLearnerLabelChange={setLearnerLabel}
             onRunCheck={runSessionCheck}
             onSelectScenario={setSelectedLabId}
-            onSelectSession={setSelectedSessionId}
+            onSelectSession={selectSession}
             onStartSession={startSession}
             onStop={stopSession}
           />
@@ -1014,6 +1040,10 @@ function readWorkspaceLayout(): WorkspaceLayout {
   }
 
   return defaultWorkspaceLayout;
+}
+
+function readSelectedSessionId(): Id<"sessions"> | null {
+  return window.localStorage.getItem(selectedSessionStorageKey) as Id<"sessions"> | null;
 }
 
 function RunnerContractPanel() {
