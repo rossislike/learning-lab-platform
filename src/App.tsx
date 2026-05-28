@@ -66,6 +66,18 @@ type SessionEvent = {
   createdAt: number;
 };
 
+type RunnerHeartbeat = {
+  _id: Id<"runnerHeartbeats">;
+  runner: string;
+  runnerId: string;
+  pollMs: number;
+  pid?: number;
+  hostname?: string;
+  lastSeenAt: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type ValidationAssertion = {
   title?: string;
   status?: string;
@@ -155,6 +167,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const convex = useMemo(() => new ConvexHttpClient(convexUrl), [convexUrl]);
   const [labs, setLabs] = useState<LabSummary[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [runnerHeartbeat, setRunnerHeartbeat] = useState<RunnerHeartbeat | null>(null);
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<SessionEvent[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
@@ -179,12 +192,14 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 
   const refreshDashboard = useCallback(async () => {
     try {
-      const [nextLabs, nextSessions] = await Promise.all([
+      const [nextLabs, nextSessions, nextRunnerHeartbeat] = await Promise.all([
         convex.query(api.labs.list, {}),
         convex.query(api.sessions.list, {}),
+        convex.query(api.runners.latest, { runner: "local" }),
       ]);
       setLabs(nextLabs as LabSummary[]);
       setSessions(nextSessions as SessionSummary[]);
+      setRunnerHeartbeat(nextRunnerHeartbeat as RunnerHeartbeat | null);
       setLastRefreshAt(Date.now());
       setLoadError(null);
     } catch (error) {
@@ -375,6 +390,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
           <DashboardTab
             events={selectedSessionEvents}
             learnerLabel={learnerLabel}
+            runnerHeartbeat={runnerHeartbeat}
             scenarios={scenarios}
             selectedScenario={selectedScenario}
             selectedSession={selectedSession}
@@ -402,6 +418,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 function DashboardTab({
   events,
   learnerLabel,
+  runnerHeartbeat,
   scenarios,
   selectedScenario,
   selectedSession,
@@ -415,6 +432,7 @@ function DashboardTab({
 }: {
   events: SessionEvent[];
   learnerLabel: string;
+  runnerHeartbeat: RunnerHeartbeat | null;
   scenarios: LabSummary[];
   selectedScenario?: LabSummary;
   selectedSession?: SessionSummary;
@@ -484,7 +502,10 @@ function DashboardTab({
           </button>
         </article>
 
-        <RunnerContractPanel />
+        <RunnerHealthPanel
+          heartbeat={runnerHeartbeat}
+          requestedCount={requestedLocalSessions.length}
+        />
       </section>
 
       <section className="panel" id="sessions">
@@ -1016,6 +1037,31 @@ function formatTime(timestamp: number) {
   }).format(timestamp);
 }
 
+function formatMilliseconds(value?: number) {
+  if (typeof value !== "number") return "-";
+  if (value < 1000) return `${value}ms`;
+  return `${Math.round(value / 100) / 10}s`;
+}
+
+function formatAge(milliseconds: number) {
+  if (milliseconds < 1000) return "just now";
+  if (milliseconds < 60_000) return `${Math.floor(milliseconds / 1000)}s ago`;
+  return `${Math.floor(milliseconds / 60_000)}m ago`;
+}
+
+function runnerHealthFor(heartbeat: RunnerHeartbeat | null) {
+  if (!heartbeat) {
+    return { active: false, ageLabel: "-" };
+  }
+
+  const ageMs = Date.now() - heartbeat.lastSeenAt;
+  const staleAfterMs = Math.max(heartbeat.pollMs * 3, 10_000);
+  return {
+    active: ageMs <= staleAfterMs,
+    ageLabel: formatAge(ageMs),
+  };
+}
+
 function tabFromHash(hash: string): AppTab {
   return hash.startsWith("#workspace") ? "workspace" : "dashboard";
 }
@@ -1044,6 +1090,66 @@ function readWorkspaceLayout(): WorkspaceLayout {
 
 function readSelectedSessionId(): Id<"sessions"> | null {
   return window.localStorage.getItem(selectedSessionStorageKey) as Id<"sessions"> | null;
+}
+
+function RunnerHealthPanel({
+  heartbeat,
+  requestedCount,
+}: {
+  heartbeat: RunnerHeartbeat | null;
+  requestedCount: number;
+}) {
+  const health = runnerHealthFor(heartbeat);
+  const statusLabel = heartbeat
+    ? health.active
+      ? "polling"
+      : "stale"
+    : "not seen";
+
+  return (
+    <article className="panel runner-health-panel" id="runner">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Runner health</p>
+          <h3>Local runner</h3>
+        </div>
+        <span
+          className={`status-pill ${
+            health.active ? "status-running" : "status-stopped"
+          }`}
+        >
+          {statusLabel}
+        </span>
+      </div>
+
+      <p className="muted">
+        {health.active
+          ? "The local runner is actively polling Convex for requested sessions."
+          : requestedCount > 0
+            ? "Requested sessions are queued until the local runner is polling."
+            : "Start the local runner before requesting a session to avoid queued work."}
+      </p>
+
+      <div className="runner-health-grid">
+        <DetailItem
+          label="Last poll"
+          value={heartbeat ? `${formatTime(heartbeat.lastSeenAt)} (${health.ageLabel})` : "-"}
+        />
+        <DetailItem label="Poll interval" value={formatMilliseconds(heartbeat?.pollMs)} />
+        <DetailItem label="Runner ID" value={heartbeat?.runnerId ?? "-"} />
+        <DetailItem
+          label="Process"
+          value={
+            heartbeat
+              ? [heartbeat.hostname, heartbeat.pid ? `pid ${heartbeat.pid}` : undefined]
+                  .filter(Boolean)
+                  .join(" / ") || "-"
+              : "-"
+          }
+        />
+      </div>
+    </article>
+  );
 }
 
 function RunnerContractPanel() {

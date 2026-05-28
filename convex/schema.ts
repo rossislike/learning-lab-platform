@@ -66,4 +66,17 @@ export default defineSchema({
     metadata: v.optional(v.any()),
     createdAt: v.number(),
   }).index("by_session", ["sessionId"]),
+
+  runnerHeartbeats: defineTable({
+    runner: v.union(v.literal("local"), v.literal("aws-ecs-fargate")),
+    runnerId: v.string(),
+    pollMs: v.number(),
+    pid: v.optional(v.number()),
+    hostname: v.optional(v.string()),
+    lastSeenAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_runner", ["runner"])
+    .index("by_runner_id", ["runnerId"]),
 });

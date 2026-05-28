@@ -3,6 +3,7 @@ import { closeSync, openSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { cp, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { hostname } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { api } from "../convex/_generated/api.js";
@@ -16,6 +17,8 @@ const previewBasePort = Number(process.env.LOCAL_PREVIEW_BASE_PORT ?? 6200);
 const editorBasePort = Number(process.env.LOCAL_EDITOR_BASE_PORT ?? 7200);
 const toolsBasePort = Number(process.env.LOCAL_TOOLS_BASE_PORT ?? 8200);
 const editorProvider = process.env.LOCAL_EDITOR_PROVIDER ?? "openvscode-docker";
+const runnerHostname = hostname();
+const runnerId = process.env.LOCAL_RUNNER_ID ?? `local:${runnerHostname}:${process.pid}`;
 const openVSCodeImage =
   process.env.OPENVSCODE_SERVER_IMAGE ?? "gitpod/openvscode-server:latest";
 
@@ -405,7 +408,24 @@ async function cleanupStoppedSessions(client) {
   }
 }
 
+async function sendHeartbeat(client) {
+  try {
+    await client.mutation(api.runners.heartbeat, {
+      runner: "local",
+      runnerId,
+      pollMs,
+      pid: process.pid,
+      hostname: runnerHostname,
+    });
+  } catch (error) {
+    console.warn(
+      `[runner] heartbeat failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 async function tick(client) {
+  await sendHeartbeat(client);
   await cleanupExpiredSessions(client);
   const sessions = await client.query(api.sessions.listRequested, { runner: "local" });
 

@@ -219,6 +219,18 @@ input {
   align-content: start;
 }
 
+.runner-health-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.runner-health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .panel,
 .notice {
   background: #ffffff;
