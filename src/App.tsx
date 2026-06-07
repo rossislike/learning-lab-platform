@@ -97,6 +97,13 @@ type WorkspaceLayout = {
   preview: number;
 };
 
+type EmptyStateTone = "neutral" | "info" | "success" | "warning" | "danger";
+type EmptyStateCopy = {
+  title: string;
+  body: string;
+  tone: EmptyStateTone;
+};
+
 const defaultWorkspaceLayout: WorkspaceLayout = { editor: 62, preview: 38 };
 const workspaceLayoutStorageKey = "learning-lab-workspace-layout";
 const selectedSessionStorageKey = "learning-lab-selected-session-id";
@@ -540,7 +547,10 @@ function DashboardTab({
             </button>
           ))}
           {sessions?.length === 0 ? (
-            <p className="empty-state">No sessions yet. Request one from the lab panel.</p>
+            <EmptyState
+              title="No sessions yet"
+              body="Select a scenario, confirm the learner label, and request a local session."
+            />
           ) : null}
         </div>
       </section>
@@ -707,9 +717,14 @@ function SessionDetailPanel({
       </div>
 
       {!session ? (
-        <p className="empty-state">Request or select a session to inspect runner output.</p>
+        <EmptyState
+          title="No session selected"
+          body="Request or select a session to inspect runner output, workspace links, checks, and events."
+        />
       ) : (
         <>
+          <SessionStatusState session={session} />
+
           <div className="detail-grid">
             <DetailItem label="Scenario" value={scenario?.title ?? "Unknown scenario"} />
             <DetailItem label="Domain" value={scenario?.domainTitle ?? "-"} />
@@ -770,11 +785,7 @@ function SessionDetailPanel({
                 ))}
               </ul>
             ) : (
-              <p className="muted">
-                {session.status === "requested"
-                  ? "Waiting for the local runner to start this session."
-                  : "Use Run checks when the learner is ready for validation."}
-              </p>
+              <ValidationEmptyState session={session} />
             )}
           </div>
 
@@ -782,17 +793,21 @@ function SessionDetailPanel({
             <div className="section-heading">
               <p className="eyebrow">Event timeline</p>
             </div>
-            <ol className="event-list">
-              {events.map((event) => (
-                <li key={event._id}>
-                  <span className={`event-dot ${event.level}`} />
-                  <div>
-                    <strong>{event.message}</strong>
-                    <small>{formatTime(event.createdAt)}</small>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            {events.length > 0 ? (
+              <ol className="event-list">
+                {events.map((event) => (
+                  <li key={event._id}>
+                    <span className={`event-dot ${event.level}`} />
+                    <div>
+                      <strong>{event.message}</strong>
+                      <small>{formatTime(event.createdAt)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EventEmptyState session={session} />
+            )}
           </div>
         </>
       )}
@@ -863,7 +878,10 @@ function WorkspaceTab({
 
       {!session ? (
         <section className="panel">
-          <p className="empty-state">Request a session from the dashboard to open a workspace.</p>
+          <EmptyState
+            title="No workspace selected"
+            body="Request or select a session on the Dashboard tab to open its editor and preview here."
+          />
         </section>
       ) : (
         <>
@@ -953,10 +971,47 @@ function WorkspaceSplitView({ session }: { session: SessionSummary }) {
           </Panel>
         </Group>
       ) : (
-        <p className="muted">Workspace panes appear after the local runner starts the session.</p>
+        <WorkspaceEmptyState session={session} />
       )}
     </div>
   );
+}
+
+function EmptyState({
+  title,
+  body,
+  tone = "neutral",
+}: {
+  title: string;
+  body: string;
+  tone?: EmptyStateTone;
+}) {
+  return (
+    <div className={`empty-state empty-state-${tone}`}>
+      <strong>{title}</strong>
+      <span>{body}</span>
+    </div>
+  );
+}
+
+function SessionStatusState({ session }: { session: SessionSummary }) {
+  const state = sessionStateCopy(session);
+  return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
+}
+
+function ValidationEmptyState({ session }: { session: SessionSummary }) {
+  const state = validationStateCopy(session);
+  return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
+}
+
+function EventEmptyState({ session }: { session: SessionSummary }) {
+  const state = eventStateCopy(session);
+  return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
+}
+
+function WorkspaceEmptyState({ session }: { session: SessionSummary }) {
+  const state = workspaceStateCopy(session);
+  return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
 }
 
 function DetailItem({ label, value }: { label: string; value: string }) {
@@ -1015,6 +1070,183 @@ function latestValidation(events: SessionEvent[]): ValidationMetadata | null {
   }
 
   return null;
+}
+
+function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
+  switch (session.status) {
+    case "requested":
+      return {
+        title: "Queued for local runner",
+        body: "The session request is saved. Keep the local runner polling to create the editor, preview, and tools.",
+        tone: "warning",
+      };
+    case "starting":
+      return {
+        title: "Workspace is starting",
+        body: "The runner is preparing the starter files, dependencies, editor, preview, and tools endpoints.",
+        tone: "info",
+      };
+    case "running":
+      return {
+        title: "Workspace is ready",
+        body: "The learner can work in OpenVSCode and run checks when they are ready for validation.",
+        tone: "info",
+      };
+    case "checking":
+      return {
+        title: "Checks are running",
+        body: "Validation is in progress. The result will update this session when the tools server reports back.",
+        tone: "info",
+      };
+    case "passed":
+      return {
+        title: "Scenario passed",
+        body: "The latest validation passed. The workspace remains available until it is stopped or expires.",
+        tone: "success",
+      };
+    case "failed":
+      return {
+        title: "Checks need attention",
+        body: "The latest validation failed. Review the checklist, update the exercise files, then run checks again.",
+        tone: "danger",
+      };
+    case "stopped":
+      return {
+        title: "Session stopped",
+        body: "The operator stopped this session. Local runner cleanup removes the editor, preview, and tools resources.",
+        tone: "neutral",
+      };
+    case "expired":
+      return {
+        title: "Session expired",
+        body: "The TTL elapsed. Start a new session if the learner needs another workspace.",
+        tone: "neutral",
+      };
+    case "errored":
+      return {
+        title: "Runner error",
+        body: "The runner could not complete this session. Check the event timeline and local runner logs for the failure.",
+        tone: "danger",
+      };
+    default:
+      return {
+        title: "Session state unknown",
+        body: "Refresh the dashboard to reload the latest control-plane state.",
+        tone: "neutral",
+      };
+  }
+}
+
+function validationStateCopy(session: SessionSummary): EmptyStateCopy {
+  switch (session.status) {
+    case "requested":
+    case "starting":
+      return {
+        title: "Checks unavailable",
+        body: "Validation becomes available after the runner starts the tools server for this session.",
+        tone: "warning",
+      };
+    case "running":
+      return {
+        title: "No checks run yet",
+        body: "Run checks after the learner has made and saved their changes.",
+        tone: "info",
+      };
+    case "checking":
+      return {
+        title: "Waiting for check results",
+        body: "The tools server is running validation and will publish the checklist when it finishes.",
+        tone: "info",
+      };
+    case "passed":
+      return {
+        title: "Passed without checklist details",
+        body: "The session is marked passed, but no checklist payload is attached to the current event stream.",
+        tone: "success",
+      };
+    case "failed":
+      return {
+        title: "Failed without checklist details",
+        body: "The session is marked failed, but no checklist payload is attached. Run checks again to refresh details.",
+        tone: "danger",
+      };
+    case "stopped":
+    case "expired":
+      return {
+        title: "Validation closed",
+        body: "This session is no longer active. Request a new session to run validation again.",
+        tone: "neutral",
+      };
+    case "errored":
+      return {
+        title: "Validation unavailable",
+        body: "The session errored before checks could complete. Inspect the event timeline for startup or runner errors.",
+        tone: "danger",
+      };
+    default:
+      return {
+        title: "No validation state",
+        body: "Refresh the dashboard to reload the latest check state.",
+        tone: "neutral",
+      };
+  }
+}
+
+function eventStateCopy(session: SessionSummary): EmptyStateCopy {
+  if (["requested", "starting"].includes(session.status)) {
+    return {
+      title: "No runner events yet",
+      body: "Events will appear as the local runner claims and starts this session.",
+      tone: "warning",
+    };
+  }
+
+  return {
+    title: "No events recorded",
+    body: "The control plane has no timeline entries for this session yet.",
+    tone: "neutral",
+  };
+}
+
+function workspaceStateCopy(session: SessionSummary): EmptyStateCopy {
+  switch (session.status) {
+    case "requested":
+      return {
+        title: "Workspace queued",
+        body: "The editor and preview will appear after the local runner picks up the requested session.",
+        tone: "warning",
+      };
+    case "starting":
+      return {
+        title: "Workspace booting",
+        body: "The runner is still starting OpenVSCode, Vite preview, and the tools server.",
+        tone: "info",
+      };
+    case "stopped":
+      return {
+        title: "Workspace stopped",
+        body: "The editor and preview are no longer active for this session.",
+        tone: "neutral",
+      };
+    case "expired":
+      return {
+        title: "Workspace expired",
+        body: "The session TTL elapsed and local resources should be cleaned up by the runner.",
+        tone: "neutral",
+      };
+    case "errored":
+      return {
+        title: "Workspace failed to start",
+        body: "The runner did not publish usable editor and preview URLs. Check the event timeline for the error.",
+        tone: "danger",
+      };
+    default:
+      return {
+        title: "Workspace URLs unavailable",
+        body: "Refresh the dashboard or check runner health if the editor and preview should already be running.",
+        tone: "info",
+      };
+  }
 }
 
 function formatScore(score?: number) {

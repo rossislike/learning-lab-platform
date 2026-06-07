@@ -446,9 +446,43 @@ input {
 }
 
 .empty-state {
+  display: grid;
+  gap: 6px;
   margin: 0;
-  padding: 18px 14px;
+  padding: 16px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
   color: #6b7280;
+}
+
+.empty-state strong {
+  color: #111827;
+  overflow-wrap: anywhere;
+}
+
+.empty-state span {
+  line-height: 1.5;
+}
+
+.empty-state-info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.empty-state-success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.empty-state-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.empty-state-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .session-detail {
