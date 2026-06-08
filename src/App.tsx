@@ -54,6 +54,7 @@ type SessionSummary = {
   expiresAt: number;
   stoppedAt?: number;
   stopReason?: string;
+  cleanupRequestedAt?: number;
   cleanedAt?: number;
   cleanupSummary?: string;
 };
@@ -342,6 +343,12 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     await refreshEvents(sessionId);
   }
 
+  async function requestCleanup(sessionId: Id<"sessions">) {
+    await convex.mutation(api.sessions.requestCleanup, { sessionId });
+    await refreshDashboard();
+    await refreshEvents(sessionId);
+  }
+
   async function runSessionCheck(session: SessionSummary) {
     if (!session.terminalUrl?.startsWith("http")) return;
 
@@ -442,6 +449,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             sessions={sessions}
             onLearnerLabelChange={setLearnerLabel}
             onRunCheck={runSessionCheck}
+            onRequestCleanup={requestCleanup}
             onSelectScenario={setSelectedLabId}
             onSelectSession={selectSession}
             onStartSession={startSession}
@@ -453,6 +461,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             session={selectedSession}
             events={selectedSessionEvents}
             onRunCheck={runSessionCheck}
+            onRequestCleanup={requestCleanup}
             onStop={stopSession}
           />
         )}
@@ -472,6 +481,7 @@ function DashboardTab({
   sessions,
   onLearnerLabelChange,
   onRunCheck,
+  onRequestCleanup,
   onSelectScenario,
   onSelectSession,
   onStartSession,
@@ -487,6 +497,7 @@ function DashboardTab({
   sessions: SessionSummary[];
   onLearnerLabelChange: (value: string) => void;
   onRunCheck: (session: SessionSummary) => Promise<void>;
+  onRequestCleanup: (sessionId: Id<"sessions">) => Promise<void>;
   onSelectScenario: (labId: Id<"labs">) => void;
   onSelectSession: (sessionId: Id<"sessions">) => void;
   onStartSession: () => Promise<void>;
@@ -603,6 +614,7 @@ function DashboardTab({
         events={events}
         onStop={onStop}
         onRunCheck={onRunCheck}
+        onRequestCleanup={onRequestCleanup}
       />
     </div>
   );
@@ -702,6 +714,7 @@ function SessionDetailPanel({
   events,
   onStop,
   onRunCheck,
+  onRequestCleanup,
 }: {
   endpointHealth: SessionEndpointHealth;
   session?: SessionSummary;
@@ -709,18 +722,21 @@ function SessionDetailPanel({
   events: SessionEvent[];
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
   onRunCheck: (session: SessionSummary) => Promise<void>;
+  onRequestCleanup: (sessionId: Id<"sessions">) => Promise<void>;
 }) {
   const validation = useMemo(() => latestValidation(events), [events]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
-  async function runAction(action: "stop" | "check") {
+  async function runAction(action: "stop" | "check" | "cleanup") {
     if (!session) return;
     setActionError(null);
     setActionBusy(action);
     try {
       if (action === "stop") {
         await onStop(session._id);
+      } else if (action === "cleanup") {
+        await onRequestCleanup(session._id);
       } else {
         await onRunCheck(session);
       }
@@ -755,6 +771,13 @@ function SessionDetailPanel({
               onClick={() => void runAction("stop")}
             >
               Stop
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!canRequestCleanup(session) || actionBusy !== null}
+              onClick={() => void runAction("cleanup")}
+            >
+              {actionBusy === "cleanup" ? "Requesting cleanup" : "Request cleanup"}
             </button>
           </div>
         ) : null}
@@ -809,6 +832,7 @@ function SessionDetailPanel({
             <DetailItem label="Tools port" value={formatNumber(session.toolsPort)} />
             <DetailItem label="Workspace path" value={session.workspacePath ?? "-"} />
             <DetailItem label="Stopped" value={formatOptionalTime(session.stoppedAt)} />
+            <DetailItem label="Cleanup requested" value={formatOptionalTime(session.cleanupRequestedAt)} />
             <DetailItem label="Cleaned" value={formatOptionalTime(session.cleanedAt)} />
           </div>
 
@@ -880,24 +904,28 @@ function WorkspaceTab({
   events,
   onStop,
   onRunCheck,
+  onRequestCleanup,
 }: {
   endpointHealth: SessionEndpointHealth;
   session?: SessionSummary;
   events: SessionEvent[];
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
   onRunCheck: (session: SessionSummary) => Promise<void>;
+  onRequestCleanup: (sessionId: Id<"sessions">) => Promise<void>;
 }) {
   const validation = useMemo(() => latestValidation(events), [events]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
-  async function runAction(action: "stop" | "check") {
+  async function runAction(action: "stop" | "check" | "cleanup") {
     if (!session) return;
     setActionError(null);
     setActionBusy(action);
     try {
       if (action === "stop") {
         await onStop(session._id);
+      } else if (action === "cleanup") {
+        await onRequestCleanup(session._id);
       } else {
         await onRunCheck(session);
       }
@@ -932,6 +960,13 @@ function WorkspaceTab({
               onClick={() => void runAction("stop")}
             >
               Stop
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!canRequestCleanup(session) || actionBusy !== null}
+              onClick={() => void runAction("cleanup")}
+            >
+              {actionBusy === "cleanup" ? "Requesting cleanup" : "Request cleanup"}
             </button>
           </div>
         ) : null}
@@ -1266,6 +1301,14 @@ function canRunChecks(session: SessionSummary, endpointHealth: SessionEndpointHe
     session.terminalUrl?.startsWith("http") &&
     !["stopped", "expired", "errored"].includes(session.status) &&
       endpointHealth.tools.status !== "stale"
+  );
+}
+
+function canRequestCleanup(session: SessionSummary) {
+  return Boolean(
+    ["stopped", "expired"].includes(session.status) &&
+      !session.cleanedAt &&
+      !session.cleanupRequestedAt
   );
 }
 

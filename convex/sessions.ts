@@ -309,6 +309,35 @@ export const markExpired = mutation({
   },
 });
 
+export const requestCleanup = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    if (!["stopped", "expired"].includes(session.status)) {
+      throw new Error("Only stopped or expired sessions can be cleaned up");
+    }
+    if (session.cleanedAt) {
+      return;
+    }
+
+    const timestamp = now();
+    await ctx.db.patch(args.sessionId, {
+      cleanupRequestedAt: timestamp,
+      cleanupSummary: "Cleanup requested; waiting for local runner.",
+      updatedAt: timestamp,
+    });
+    await ctx.db.insert("sessionEvents", {
+      sessionId: args.sessionId,
+      level: "info",
+      message: "Cleanup requested",
+      createdAt: timestamp,
+    });
+  },
+});
+
 export const markCleaned = mutation({
   args: {
     sessionId: v.id("sessions"),
