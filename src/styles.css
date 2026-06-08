@@ -410,10 +410,11 @@ input {
 
 .session-row {
   display: grid;
-  grid-template-columns: 1.2fr 1.5fr 1fr 0.8fr 0.5fr;
+  grid-template-columns: 1.2fr 1.5fr 1fr 0.8fr 0.5fr 0.8fr;
   gap: 12px;
   padding: 12px 14px;
   border-top: 1px solid #e5e7eb;
+  align-items: center;
 }
 
 .session-row span {
@@ -422,8 +423,6 @@ input {
 }
 
 .session-button {
-  width: 100%;
-  border: 0;
   background: #ffffff;
   color: inherit;
   text-align: left;
@@ -431,8 +430,38 @@ input {
 }
 
 .session-button:hover,
-.session-button.selected {
+.session-button.selected,
+.session-button:focus-visible {
   background: #f0fdfa;
+}
+
+.session-button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+}
+
+.session-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.table-action-button {
+  min-height: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.table-action-button:hover,
+.table-action-button:focus-visible {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fff1f2;
 }
 
 .session-row:first-child {

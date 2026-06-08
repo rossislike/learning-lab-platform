@@ -55,6 +55,7 @@ export default defineSchema({
     cleanupRequestedAt: v.optional(v.number()),
     cleanedAt: v.optional(v.number()),
     cleanupSummary: v.optional(v.string()),
+    removedFromListAt: v.optional(v.number()),
   })
     .index("by_lab", ["labId"])
     .index("by_status", ["status"])

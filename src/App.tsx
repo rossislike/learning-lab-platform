@@ -57,6 +57,7 @@ type SessionSummary = {
   cleanupRequestedAt?: number;
   cleanedAt?: number;
   cleanupSummary?: string;
+  removedFromListAt?: number;
 };
 
 type SessionEvent = {
@@ -349,6 +350,14 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     await refreshEvents(sessionId);
   }
 
+  async function removeSessionFromList(sessionId: Id<"sessions">) {
+    await convex.mutation(api.sessions.removeFromList, { sessionId });
+    if (selectedSessionId === sessionId) {
+      selectSession(null);
+    }
+    await refreshDashboard();
+  }
+
   async function runSessionCheck(session: SessionSummary) {
     if (!session.terminalUrl?.startsWith("http")) return;
 
@@ -450,6 +459,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             onLearnerLabelChange={setLearnerLabel}
             onRunCheck={runSessionCheck}
             onRequestCleanup={requestCleanup}
+            onRemoveSessionFromList={removeSessionFromList}
             onSelectScenario={setSelectedLabId}
             onSelectSession={selectSession}
             onStartSession={startSession}
@@ -482,6 +492,7 @@ function DashboardTab({
   onLearnerLabelChange,
   onRunCheck,
   onRequestCleanup,
+  onRemoveSessionFromList,
   onSelectScenario,
   onSelectSession,
   onStartSession,
@@ -498,6 +509,7 @@ function DashboardTab({
   onLearnerLabelChange: (value: string) => void;
   onRunCheck: (session: SessionSummary) => Promise<void>;
   onRequestCleanup: (sessionId: Id<"sessions">) => Promise<void>;
+  onRemoveSessionFromList: (sessionId: Id<"sessions">) => Promise<void>;
   onSelectScenario: (labId: Id<"labs">) => void;
   onSelectSession: (sessionId: Id<"sessions">) => void;
   onStartSession: () => Promise<void>;
@@ -582,21 +594,41 @@ function DashboardTab({
             <span>Status</span>
             <span>Runner</span>
             <span>Score</span>
+            <span>Actions</span>
           </div>
           {(sessions ?? []).map((session: SessionSummary) => (
-            <button
+            <div
               className={`session-row session-button ${
                 selectedSession?._id === session._id ? "selected" : ""
               }`}
               key={session._id}
               onClick={() => onSelectSession(session._id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectSession(session._id);
+                }
+              }}
+              role="button"
+              tabIndex={0}
             >
               <span>{session.learnerLabel}</span>
               <span>{formatScenarioTitle(session, scenarios)}</span>
               <span><StatusPill status={session.status} /></span>
               <span>{session.runner}</span>
               <span>{session.lastCheckScore ?? "-"}</span>
-            </button>
+              <span className="session-actions">
+                <button
+                  className="table-action-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onRemoveSessionFromList(session._id);
+                  }}
+                >
+                  Remove
+                </button>
+              </span>
+            </div>
           ))}
           {sessions?.length === 0 ? (
             <EmptyState

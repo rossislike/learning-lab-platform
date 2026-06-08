@@ -7,7 +7,10 @@ const now = () => Date.now();
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("sessions").order("desc").take(50);
+    const sessions = await ctx.db.query("sessions").order("desc").take(100);
+    return sessions
+      .filter((session) => !session.removedFromListAt)
+      .slice(0, 50);
   },
 });
 
@@ -289,6 +292,23 @@ export const stop = mutation({
 });
 
 export const markStopped = stop;
+
+export const removeFromList = mutation({
+  args: { sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    const timestamp = now();
+    await ctx.db.patch(args.sessionId, {
+      removedFromListAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await ctx.db.insert("sessionEvents", {
+      sessionId: args.sessionId,
+      level: "info",
+      message: "Session removed from recent sessions list",
+      createdAt: timestamp,
+    });
+  },
+});
 
 export const markExpired = mutation({
   args: { sessionId: v.id("sessions"), reason: v.optional(v.string()) },
