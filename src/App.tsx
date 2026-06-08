@@ -777,7 +777,7 @@ function SessionDetailPanel({
               disabled={!canRequestCleanup(session) || actionBusy !== null}
               onClick={() => void runAction("cleanup")}
             >
-              {actionBusy === "cleanup" ? "Requesting cleanup" : "Request cleanup"}
+              {cleanupButtonLabel(session, actionBusy)}
             </button>
           </div>
         ) : null}
@@ -966,7 +966,7 @@ function WorkspaceTab({
               disabled={!canRequestCleanup(session) || actionBusy !== null}
               onClick={() => void runAction("cleanup")}
             >
-              {actionBusy === "cleanup" ? "Requesting cleanup" : "Request cleanup"}
+              {cleanupButtonLabel(session, actionBusy)}
             </button>
           </div>
         ) : null}
@@ -1312,6 +1312,14 @@ function canRequestCleanup(session: SessionSummary) {
   );
 }
 
+function cleanupButtonLabel(session: SessionSummary, actionBusy: string | null) {
+  if (actionBusy === "cleanup") return "Requesting cleanup";
+  if (session.cleanedAt) return "Cleaned";
+  if (session.cleanupRequestedAt) return "Cleanup requested";
+  if (["stopped", "expired"].includes(session.status)) return "Request cleanup";
+  return "Cleanup unavailable";
+}
+
 function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
   switch (session.status) {
     case "requested":
@@ -1351,12 +1359,26 @@ function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
         tone: "danger",
       };
     case "stopped":
+      if (session.cleanedAt) {
+        return {
+          title: "Session stopped and cleaned",
+          body: "The operator stopped this session and the local runner has cleaned up its editor, preview, and tools resources.",
+          tone: "neutral",
+        };
+      }
       return {
         title: "Session stopped",
         body: "The operator stopped this session. Local runner cleanup removes the editor, preview, and tools resources.",
         tone: "neutral",
       };
     case "expired":
+      if (session.cleanedAt) {
+        return {
+          title: "Session expired and cleaned",
+          body: "The TTL elapsed and the local runner has cleaned up this session's editor, preview, and tools resources.",
+          tone: "neutral",
+        };
+      }
       return {
         title: "Session expired",
         body: "The TTL elapsed. Start a new session if the learner needs another workspace.",
