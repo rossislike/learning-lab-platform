@@ -891,9 +891,15 @@ function SessionDetailPanel({
                       <XCircle size={16} className="fail-icon" />
                     )}
                     <span>
-                      {assertion.title}
+                      <strong>{friendlyAssertionTitle(assertion)}</strong>
+                      <small className="assertion-message">
+                        {friendlyAssertionMessage(assertion)}
+                      </small>
                       {assertion.message ? (
-                        <small className="assertion-message">{assertion.message}</small>
+                        <details className="technical-detail">
+                          <summary>Technical detail</summary>
+                          <code>{assertion.message}</code>
+                        </details>
                       ) : null}
                     </span>
                   </li>
@@ -1223,6 +1229,33 @@ function latestValidation(events: SessionEvent[]): ValidationMetadata | null {
   }
 
   return null;
+}
+
+function friendlyAssertionTitle(assertion: ValidationAssertion) {
+  if (assertion.title?.trim()) {
+    return humanizeValidationText(assertion.title);
+  }
+
+  return assertion.status === "passed" ? "Check passed" : "Check needs attention";
+}
+
+function friendlyAssertionMessage(assertion: ValidationAssertion) {
+  if (assertion.status === "passed") {
+    return "This requirement is complete.";
+  }
+
+  if (assertion.message?.startsWith("Expected heading")) {
+    return assertion.message;
+  }
+
+  return "This requirement is not passing yet. Review the task, update the app, save your changes, and run checks again.";
+}
+
+function humanizeValidationText(value: string) {
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function emptyEndpointHealth(): SessionEndpointHealth {

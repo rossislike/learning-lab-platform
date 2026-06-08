@@ -802,6 +802,31 @@ input {
   line-height: 1.4;
 }
 
+.technical-detail {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 0.82rem;
+}
+
+.technical-detail summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #374151;
+  font-weight: 800;
+}
+
+.technical-detail code {
+  display: block;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #111827;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
   .app-shell,
   .grid {
