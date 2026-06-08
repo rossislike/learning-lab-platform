@@ -33,6 +33,18 @@ Use `Seed scenarios` in the dashboard to create or update the MVP scenarios in C
 - `Update Welcome Message`: React Fundamentals smoke scenario. Change one heading to `Welcome to React Labs`.
 - `Optimize Product Dashboard`: Rendering Optimization scenario based on the existing React performance lab.
 
+Scenario manifests are documented in [docs/scenario-authoring.md](docs/scenario-authoring.md). After changing a manifest, run:
+
+```bash
+npm run scenarios:import
+```
+
+Before marking a new scenario ready, run its starter/solution smoke test:
+
+```bash
+npm run scenarios:smoke -- --scenario react-button-label
+```
+
 ## Local Setup
 
 ```bash

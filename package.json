@@ -11,6 +11,9 @@
     "convex:deploy": "convex deploy",
     "lint": "eslint .",
     "import:react-lab": "node scripts/import-react-product-dashboard.mjs",
+    "scenarios:import": "node scripts/import-scenarios.mjs",
+    "scenarios:check": "node scripts/import-scenarios.mjs --check",
+    "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
     "runner:local": "node runner/local-runner.mjs",
     "runner:local:once": "node runner/local-runner.mjs --once"
   },

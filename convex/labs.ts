@@ -1,43 +1,8 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { scenarioSeedData } from "./scenarioSeedData";
 
 const now = () => Date.now();
-
-const scenarioSeedData = [
-  {
-    slug: "react-welcome-message",
-    title: "Update Welcome Message",
-    summary: "Make one heading text change and verify it with a single test.",
-    domainTitle: "Domain 1: React Fundamentals",
-    domainSummary: "Components, JSX, props, state, events, and small UI changes",
-    displayOrder: 10,
-    scenarioLabel: "One-change smoke test",
-    difficulty: 1,
-    tags: ["react", "fundamentals", "vite", "vitest"],
-    templatePath:
-      "lab-definitions/react-welcome-message/workspace-template/update-welcome-message-1",
-    validationCommand: "npm test -- --run --reporter=json",
-    previewCommand: "npm run dev -- --host 0.0.0.0",
-    status: "active" as const,
-  },
-  {
-    slug: "react-product-dashboard",
-    title: "Optimize Product Dashboard",
-    summary:
-      "Fix unnecessary React re-renders with memo, useMemo, and useCallback.",
-    domainTitle: "Domain 2: Rendering Optimization",
-    domainSummary: "Memoization, render counts, expensive calculations, and stable callbacks",
-    displayOrder: 20,
-    scenarioLabel: "React performance scenario",
-    difficulty: 1,
-    tags: ["react", "rendering-optimization", "vite", "vitest"],
-    templatePath:
-      "lab-definitions/react-product-dashboard/workspace-template/optimize-product-dashboard-1-unsolved",
-    validationCommand: "npm test -- --run --reporter=json",
-    previewCommand: "npm run dev -- --host 0.0.0.0",
-    status: "active" as const,
-  },
-];
 
 export const list = query({
   args: {},
@@ -77,6 +42,7 @@ export const seedReactProductDashboard = mutation({
 
       const lab = {
         ...scenario,
+        tags: [...scenario.tags],
         updatedAt: timestamp,
       };
 

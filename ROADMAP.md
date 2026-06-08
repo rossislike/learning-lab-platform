@@ -40,13 +40,13 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## Scenario Authoring
 
-- [ ] Define and document the stable scenario manifest contract.
-- [ ] Standardize starter README, checklist, tests, expected commands, and difficulty metadata across scenarios.
-- [ ] Add an authoring/import script for new scenarios.
-- [ ] Add at least two more easy React scenarios to prove the scenario model scales.
-- [ ] Add a scenario smoke-test command that copies a template, installs dependencies, runs the initial failing check, applies a known solution, and confirms the passing check.
-- [ ] Add lint/build/test expectations for scenario templates.
-- [ ] Decide whether scenarios need solutions committed alongside starters for author verification.
+- [x] Define and document the stable scenario manifest contract.
+- [x] Standardize starter README, checklist, tests, expected commands, and difficulty metadata across scenarios.
+- [x] Add an authoring/import script for new scenarios.
+- [x] Add at least two more easy React scenarios to prove the scenario model scales.
+- [x] Add a scenario smoke-test command that copies a template, installs dependencies, runs the initial failing check, applies a known solution, and confirms the passing check.
+- [x] Add lint/build/test expectations for scenario templates.
+- [x] Decide whether scenarios need solutions committed alongside starters for author verification.
 
 ## Workspace UX
 

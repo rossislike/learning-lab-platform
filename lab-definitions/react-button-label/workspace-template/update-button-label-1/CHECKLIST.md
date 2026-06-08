@@ -1,0 +1,1 @@
+- "The primary action button says 'Join Newsletter'"
