@@ -103,6 +103,14 @@ type EmptyStateCopy = {
   body: string;
   tone: EmptyStateTone;
 };
+type EndpointKey = "workspace" | "tools" | "preview";
+type EndpointStatus = "missing" | "checking" | "reachable" | "stale";
+type EndpointHealth = {
+  status: EndpointStatus;
+  checkedAt?: number;
+  message: string;
+};
+type SessionEndpointHealth = Record<EndpointKey, EndpointHealth>;
 
 const defaultWorkspaceLayout: WorkspaceLayout = { editor: 62, preview: 38 };
 const workspaceLayoutStorageKey = "learning-lab-workspace-layout";
@@ -176,6 +184,8 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [runnerHeartbeat, setRunnerHeartbeat] = useState<RunnerHeartbeat | null>(null);
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<SessionEvent[]>([]);
+  const [selectedEndpointHealth, setSelectedEndpointHealth] =
+    useState<SessionEndpointHealth>(() => emptyEndpointHealth());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const [learnerLabel, setLearnerLabel] = useState("local-learner");
@@ -267,6 +277,33 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
       window.clearInterval(interval);
     };
   }, [refreshEvents, selectedSession?._id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkEndpoints() {
+      if (!selectedSession) {
+        setSelectedEndpointHealth(emptyEndpointHealth());
+        return;
+      }
+
+      setSelectedEndpointHealth(checkingEndpointHealth(selectedSession));
+      const nextHealth = await probeSessionEndpoints(selectedSession);
+      if (!cancelled) {
+        setSelectedEndpointHealth(nextHealth);
+      }
+    }
+
+    void checkEndpoints();
+    const interval = window.setInterval(() => {
+      void checkEndpoints();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedSession]);
 
   useEffect(() => {
     if (sessions.length === 0) {
@@ -395,6 +432,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 
         {activeTab === "dashboard" ? (
           <DashboardTab
+            endpointHealth={selectedEndpointHealth}
             events={selectedSessionEvents}
             learnerLabel={learnerLabel}
             runnerHeartbeat={runnerHeartbeat}
@@ -411,6 +449,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
           />
         ) : (
           <WorkspaceTab
+            endpointHealth={selectedEndpointHealth}
             session={selectedSession}
             events={selectedSessionEvents}
             onRunCheck={runSessionCheck}
@@ -423,6 +462,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 }
 
 function DashboardTab({
+  endpointHealth,
   events,
   learnerLabel,
   runnerHeartbeat,
@@ -437,6 +477,7 @@ function DashboardTab({
   onStartSession,
   onStop,
 }: {
+  endpointHealth: SessionEndpointHealth;
   events: SessionEvent[];
   learnerLabel: string;
   runnerHeartbeat: RunnerHeartbeat | null;
@@ -556,6 +597,7 @@ function DashboardTab({
       </section>
 
       <SessionDetailPanel
+        endpointHealth={endpointHealth}
         session={selectedSession}
         scenario={selectedSession ? scenarioForSession(selectedSession, scenarios) : undefined}
         events={events}
@@ -654,12 +696,14 @@ function ScenarioCatalog({
 }
 
 function SessionDetailPanel({
+  endpointHealth,
   session,
   scenario,
   events,
   onStop,
   onRunCheck,
 }: {
+  endpointHealth: SessionEndpointHealth;
   session?: SessionSummary;
   scenario?: LabSummary;
   events: SessionEvent[];
@@ -699,7 +743,7 @@ function SessionDetailPanel({
             <StatusPill status={session.status} />
             <button
               className="secondary-button"
-              disabled={!session.terminalUrl?.startsWith("http") || actionBusy !== null}
+              disabled={!canRunChecks(session, endpointHealth) || actionBusy !== null}
               onClick={() => void runAction("check")}
             >
               <RefreshCw size={16} />
@@ -737,9 +781,24 @@ function SessionDetailPanel({
           {actionError ? <p className="error-text">{actionError}</p> : null}
 
           <div className="url-grid">
-            <UrlItem icon={<Folder size={16} />} label="Workspace" value={session.workspaceUrl} />
-            <UrlItem icon={<SquareTerminal size={16} />} label="Tools" value={session.terminalUrl} />
-            <UrlItem icon={<Cloud size={16} />} label="Preview" value={session.previewUrl} />
+            <UrlItem
+              health={endpointHealth.workspace}
+              icon={<Folder size={16} />}
+              label="Workspace"
+              value={session.workspaceUrl}
+            />
+            <UrlItem
+              health={endpointHealth.tools}
+              icon={<SquareTerminal size={16} />}
+              label="Tools"
+              value={session.terminalUrl}
+            />
+            <UrlItem
+              health={endpointHealth.preview}
+              icon={<Cloud size={16} />}
+              label="Preview"
+              value={session.previewUrl}
+            />
           </div>
 
           <div className="metadata-grid">
@@ -816,11 +875,13 @@ function SessionDetailPanel({
 }
 
 function WorkspaceTab({
+  endpointHealth,
   session,
   events,
   onStop,
   onRunCheck,
 }: {
+  endpointHealth: SessionEndpointHealth;
   session?: SessionSummary;
   events: SessionEvent[];
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
@@ -859,7 +920,7 @@ function WorkspaceTab({
             <StatusPill status={session.status} />
             <button
               className="secondary-button"
-              disabled={!session.terminalUrl?.startsWith("http") || actionBusy !== null}
+              disabled={!canRunChecks(session, endpointHealth) || actionBusy !== null}
               onClick={() => void runAction("check")}
             >
               <RefreshCw size={16} />
@@ -894,16 +955,24 @@ function WorkspaceTab({
             <DetailItem label="Preview" value={session.previewUrl ?? "not available"} />
           </div>
 
-          <WorkspaceSplitView session={session} />
+          <WorkspaceSplitView endpointHealth={endpointHealth} session={session} />
         </>
       )}
     </section>
   );
 }
 
-function WorkspaceSplitView({ session }: { session: SessionSummary }) {
+function WorkspaceSplitView({
+  endpointHealth,
+  session,
+}: {
+  endpointHealth: SessionEndpointHealth;
+  session: SessionSummary;
+}) {
   const editorReady = session.workspaceUrl?.startsWith("http");
   const previewReady = session.previewUrl?.startsWith("http");
+  const editorReachable = endpointHealth.workspace.status !== "stale";
+  const previewReachable = endpointHealth.preview.status !== "stale";
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
 
   function saveLayout(nextLayout: Record<string, number>) {
@@ -925,7 +994,7 @@ function WorkspaceSplitView({ session }: { session: SessionSummary }) {
         <strong>Editor and preview</strong>
       </div>
 
-      {editorReady && previewReady ? (
+      {editorReady && previewReady && editorReachable && previewReachable ? (
         <Group
           className="workspace-split"
           defaultLayout={layout}
@@ -971,7 +1040,7 @@ function WorkspaceSplitView({ session }: { session: SessionSummary }) {
           </Panel>
         </Group>
       ) : (
-        <WorkspaceEmptyState session={session} />
+        <WorkspaceEmptyState endpointHealth={endpointHealth} session={session} />
       )}
     </div>
   );
@@ -1009,8 +1078,14 @@ function EventEmptyState({ session }: { session: SessionSummary }) {
   return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
 }
 
-function WorkspaceEmptyState({ session }: { session: SessionSummary }) {
-  const state = workspaceStateCopy(session);
+function WorkspaceEmptyState({
+  endpointHealth,
+  session,
+}: {
+  endpointHealth?: SessionEndpointHealth;
+  session: SessionSummary;
+}) {
+  const state = workspaceStateCopy(session, endpointHealth);
   return <EmptyState title={state.title} body={state.body} tone={state.tone} />;
 }
 
@@ -1024,10 +1099,12 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 }
 
 function UrlItem({
+  health,
   icon,
   label,
   value,
 }: {
+  health?: EndpointHealth;
   icon: ReactNode;
   label: string;
   value?: string;
@@ -1044,8 +1121,17 @@ function UrlItem({
         ) : (
           <code>{value ?? "not available yet"}</code>
         )}
+        {health ? <EndpointHealthPill health={health} /> : null}
       </div>
     </div>
+  );
+}
+
+function EndpointHealthPill({ health }: { health: EndpointHealth }) {
+  return (
+    <small className={`endpoint-health endpoint-health-${health.status}`}>
+      {endpointStatusLabel(health)}
+    </small>
   );
 }
 
@@ -1070,6 +1156,117 @@ function latestValidation(events: SessionEvent[]): ValidationMetadata | null {
   }
 
   return null;
+}
+
+function emptyEndpointHealth(): SessionEndpointHealth {
+  return {
+    workspace: {
+      status: "missing",
+      message: "No workspace URL published",
+    },
+    tools: {
+      status: "missing",
+      message: "No tools URL published",
+    },
+    preview: {
+      status: "missing",
+      message: "No preview URL published",
+    },
+  };
+}
+
+function checkingEndpointHealth(session: SessionSummary): SessionEndpointHealth {
+  return {
+    workspace: checkingEndpoint("workspace", session.workspaceUrl),
+    tools: checkingEndpoint("tools", session.terminalUrl),
+    preview: checkingEndpoint("preview", session.previewUrl),
+  };
+}
+
+function checkingEndpoint(label: string, url?: string): EndpointHealth {
+  if (!url?.startsWith("http")) {
+    return {
+      status: "missing",
+      message: `No ${label} URL published`,
+    };
+  }
+
+  return {
+    status: "checking",
+    message: "Checking endpoint reachability",
+  };
+}
+
+async function probeSessionEndpoints(
+  session: SessionSummary
+): Promise<SessionEndpointHealth> {
+  const [workspace, tools, preview] = await Promise.all([
+    probeEndpoint("workspace", session.workspaceUrl),
+    probeEndpoint("tools", session.terminalUrl),
+    probeEndpoint("preview", session.previewUrl),
+  ]);
+
+  return { workspace, tools, preview };
+}
+
+async function probeEndpoint(label: string, url?: string): Promise<EndpointHealth> {
+  if (!url?.startsWith("http")) {
+    return {
+      status: "missing",
+      message: `No ${label} URL published`,
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 1500);
+
+  try {
+    await fetch(url, {
+      cache: "no-store",
+      mode: "no-cors",
+      signal: controller.signal,
+    });
+
+    return {
+      status: "reachable",
+      checkedAt: Date.now(),
+      message: `${label} endpoint responded`,
+    };
+  } catch (error) {
+    return {
+      status: "stale",
+      checkedAt: Date.now(),
+      message:
+        error instanceof DOMException && error.name === "AbortError"
+          ? `${label} endpoint timed out`
+          : `${label} endpoint is not responding`,
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function endpointStatusLabel(health: EndpointHealth) {
+  const checked = health.checkedAt ? ` at ${formatTime(health.checkedAt)}` : "";
+
+  switch (health.status) {
+    case "reachable":
+      return `reachable${checked}`;
+    case "checking":
+      return "checking";
+    case "stale":
+      return `${health.message}${checked}`;
+    case "missing":
+      return health.message;
+  }
+}
+
+function canRunChecks(session: SessionSummary, endpointHealth: SessionEndpointHealth) {
+  return Boolean(
+    session.terminalUrl?.startsWith("http") &&
+    !["stopped", "expired", "errored"].includes(session.status) &&
+      endpointHealth.tools.status !== "stale"
+  );
 }
 
 function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
@@ -1208,7 +1405,29 @@ function eventStateCopy(session: SessionSummary): EmptyStateCopy {
   };
 }
 
-function workspaceStateCopy(session: SessionSummary): EmptyStateCopy {
+function workspaceStateCopy(
+  session: SessionSummary,
+  endpointHealth?: SessionEndpointHealth
+): EmptyStateCopy {
+  const staleEndpoints = endpointHealth
+    ? ([
+        ["editor", endpointHealth.workspace],
+        ["preview", endpointHealth.preview],
+      ] as const)
+        .filter(([, health]) => health.status === "stale")
+        .map(([label]) => label)
+    : [];
+
+  if (staleEndpoints.length > 0) {
+    return {
+      title: "Workspace endpoint stale",
+      body: `The ${staleEndpoints.join(" and ")} endpoint ${
+        staleEndpoints.length === 1 ? "is" : "are"
+      } no longer responding. Check runner health or stop and recreate the session.`,
+      tone: "danger",
+    };
+  }
+
   switch (session.status) {
     case "requested":
       return {

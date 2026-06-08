@@ -33,7 +33,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Improve current-session selection so the Workspace tab always opens the intended selected session.
 - [x] Add a first-class runner health block that shows whether the local runner is actively polling.
 - [x] Add clearer queued, running, passed, failed, stopped, and expired empty states.
-- [ ] Add stale-session detection for editor/preview/tools URLs that no longer respond.
+- [x] Add stale-session detection for editor/preview/tools URLs that no longer respond.
 - [ ] Add a one-click cleanup affordance for stopped/expired local sessions.
 - [ ] Make validation results easier for learners to read without exposing raw test-runner language first.
 

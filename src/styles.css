@@ -566,6 +566,33 @@ input {
   color: #2563eb;
 }
 
+.endpoint-health {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.endpoint-health-reachable {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.endpoint-health-checking {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.endpoint-health-stale {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .workspace-section,
 .validation-section,
 .event-section {
