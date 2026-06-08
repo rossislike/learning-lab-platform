@@ -35,6 +35,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Add clearer queued, running, passed, failed, stopped, and expired empty states.
 - [x] Add stale-session detection for editor/preview/tools URLs that no longer respond.
 - [x] Add a one-click cleanup affordance for stopped/expired local sessions.
+- [ ] Add a "Remove Session from list" button in the Recent Sessions table, with a dedicated actions column.
 - [ ] Make validation results easier for learners to read without exposing raw test-runner language first.
 
 ## Scenario Authoring
