@@ -60,7 +60,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## Runner Reliability
 
-- [ ] Add a runner heartbeat in Convex.
+- [x] Add a runner heartbeat in Convex.
 - [ ] Display runner heartbeat and last poll time in the dashboard.
 - [ ] Detect and report dead editor, preview, or tools processes.
 - [ ] Make local runner startup idempotent across process restarts.
