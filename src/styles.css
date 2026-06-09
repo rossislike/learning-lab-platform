@@ -782,6 +782,52 @@ input {
   color: #374151;
 }
 
+.pass-next-steps {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.pass-next-steps h3,
+.pass-next-steps p,
+.pass-next-steps ol {
+  margin: 0;
+}
+
+.pass-next-steps h3 {
+  color: #166534;
+  font-size: 1rem;
+}
+
+.pass-next-steps ol {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 20px;
+  color: #166534;
+  line-height: 1.4;
+}
+
+.pass-next-step-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pass-next-step-links a {
+  color: #166534;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .workspace-link-strip {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

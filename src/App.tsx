@@ -1034,6 +1034,7 @@ function WorkspaceTab({
             session={session}
             validation={validation}
           />
+          <PassStateNextSteps endpointHealth={endpointHealth} session={session} validation={validation} />
           <section className="workspace-link-strip url-grid" aria-label="Standalone workspace links">
             <UrlItem
               health={endpointHealth.workspace}
@@ -1068,6 +1069,49 @@ function WorkspaceTab({
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+function PassStateNextSteps({
+  endpointHealth,
+  session,
+  validation,
+}: {
+  endpointHealth: SessionEndpointHealth;
+  session: SessionSummary;
+  validation: ValidationMetadata | null;
+}) {
+  const passed = session.status === "passed" || validation?.passed;
+
+  if (!passed) {
+    return null;
+  }
+
+  return (
+    <section className="pass-next-steps" aria-labelledby="pass-next-steps-title">
+      <CheckCircle2 size={20} />
+      <div>
+        <p className="eyebrow">Complete</p>
+        <h3 id="pass-next-steps-title">Scenario passed</h3>
+        <ol>
+          <li>Review the passing preview and checklist while the workspace is still available.</li>
+          <li>Capture any notes or code you want to keep outside the disposable session.</li>
+          <li>Stop the session when review is finished so the local runner can clean it up.</li>
+        </ol>
+        <div className="pass-next-step-links">
+          {session.previewUrl?.startsWith("http") ? (
+            <a href={session.previewUrl} target="_blank" rel="noreferrer">
+              Open preview
+            </a>
+          ) : null}
+          {session.terminalUrl?.startsWith("http") && endpointHealth.tools.status !== "stale" ? (
+            <a href={session.terminalUrl} target="_blank" rel="noreferrer">
+              Open tools
+            </a>
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }
