@@ -1034,6 +1034,26 @@ function WorkspaceTab({
             session={session}
             validation={validation}
           />
+          <section className="workspace-link-strip url-grid" aria-label="Standalone workspace links">
+            <UrlItem
+              health={endpointHealth.workspace}
+              icon={<Folder size={16} />}
+              label="OpenVSCode"
+              value={session.workspaceUrl}
+            />
+            <UrlItem
+              health={endpointHealth.preview}
+              icon={<Cloud size={16} />}
+              label="Preview"
+              value={session.previewUrl}
+            />
+            <UrlItem
+              health={endpointHealth.tools}
+              icon={<SquareTerminal size={16} />}
+              label="Tools"
+              value={session.terminalUrl}
+            />
+          </section>
 
           <div className="workspace-meta-strip">
             <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />

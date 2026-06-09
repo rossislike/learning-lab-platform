@@ -782,6 +782,14 @@ input {
   color: #374151;
 }
 
+.workspace-link-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workspace-link-strip .url-item {
+  background: #ffffff;
+}
+
 .workspace-live-area {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
@@ -1048,6 +1056,10 @@ input {
   }
 
   .workspace-live-area {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-link-strip {
     grid-template-columns: 1fr;
   }
 
