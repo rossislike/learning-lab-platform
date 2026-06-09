@@ -1035,7 +1035,10 @@ function WorkspaceTab({
             <DetailItem label="Preview" value={session.previewUrl ?? "not available"} />
           </div>
 
-          <WorkspaceSplitView endpointHealth={endpointHealth} session={session} />
+          <div className="workspace-live-area">
+            <WorkspaceSplitView endpointHealth={endpointHealth} session={session} />
+            <ChecklistProgressPanel session={session} validation={validation} />
+          </div>
         </>
       )}
     </section>
@@ -1161,6 +1164,58 @@ function WorkspaceSplitView({
         <WorkspaceEmptyState endpointHealth={endpointHealth} session={session} />
       )}
     </div>
+  );
+}
+
+function ChecklistProgressPanel({
+  session,
+  validation,
+}: {
+  session: SessionSummary;
+  validation: ValidationMetadata | null;
+}) {
+  const assertions = validation?.assertions ?? [];
+  const total = assertions.length;
+  const passed = assertions.filter((assertion) => assertion.status === "passed").length;
+  const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  return (
+    <aside className="checklist-progress-panel" aria-labelledby="checklist-progress-title">
+      <div className="section-heading">
+        <p className="eyebrow">Checklist</p>
+        <strong id="checklist-progress-title">
+          {total > 0 ? `${passed}/${total} complete` : "Not checked yet"}
+        </strong>
+      </div>
+
+      <div
+        aria-label={`Checklist progress ${percent}%`}
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={percent}
+        className="checklist-progress-meter"
+        role="progressbar"
+      >
+        <span style={{ width: `${percent}%` }} />
+      </div>
+
+      {total > 0 ? (
+        <ol className="checklist-progress-list">
+          {assertions.map((assertion, index) => (
+            <li key={`${assertion.title}-${index}`}>
+              {assertion.status === "passed" ? (
+                <CheckCircle2 size={16} className="pass-icon" />
+              ) : (
+                <XCircle size={16} className="fail-icon" />
+              )}
+              <span>{friendlyAssertionTitle(assertion)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <ValidationEmptyState session={session} />
+      )}
+    </aside>
   );
 }
 

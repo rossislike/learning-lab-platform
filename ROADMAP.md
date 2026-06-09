@@ -51,7 +51,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 ## Workspace UX
 
 - [x] Add a task/instructions panel inside the Workspace tab.
-- [ ] Show checklist progress next to the editor/preview.
+- [x] Show checklist progress next to the editor/preview.
 - [ ] Add a visible save/check guidance state for OpenVSCode edits.
 - [ ] Keep standalone OpenVSCode, preview, and tools links available from the workspace.
 - [ ] Add pass-state next steps after a learner completes a scenario.

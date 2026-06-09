@@ -709,6 +709,55 @@ input {
   font-weight: 800;
 }
 
+.workspace-live-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.checklist-progress-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.checklist-progress-meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.checklist-progress-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #16a34a;
+}
+
+.checklist-progress-list {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.checklist-progress-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: #374151;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
 .workspace-split {
   display: flex;
   gap: 0;
@@ -922,6 +971,10 @@ input {
   }
 
   .task-instructions-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-live-area {
     grid-template-columns: 1fr;
   }
 
