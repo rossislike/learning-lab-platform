@@ -8,6 +8,7 @@ import {
   Folder,
   Play,
   RefreshCw,
+  Save,
   SquareTerminal,
   XCircle,
 } from "lucide-react";
@@ -1027,6 +1028,12 @@ function WorkspaceTab({
           {actionError ? <p className="error-text">{actionError}</p> : null}
 
           <TaskInstructionsPanel scenario={scenario} session={session} />
+          <WorkspaceGuidanceState
+            actionBusy={actionBusy}
+            endpointHealth={endpointHealth}
+            session={session}
+            validation={validation}
+          />
 
           <div className="workspace-meta-strip">
             <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />
@@ -1041,6 +1048,31 @@ function WorkspaceTab({
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+function WorkspaceGuidanceState({
+  actionBusy,
+  endpointHealth,
+  session,
+  validation,
+}: {
+  actionBusy: string | null;
+  endpointHealth: SessionEndpointHealth;
+  session: SessionSummary;
+  validation: ValidationMetadata | null;
+}) {
+  const state = workspaceGuidanceState(session, endpointHealth, validation, actionBusy);
+  const Icon = state.icon;
+
+  return (
+    <section className={`workspace-guidance-state ${state.tone}`}>
+      <Icon size={18} />
+      <div>
+        <strong>{state.title}</strong>
+        <span>{state.body}</span>
+      </div>
     </section>
   );
 }
@@ -1617,6 +1649,83 @@ function validationStateCopy(session: SessionSummary): EmptyStateCopy {
         tone: "neutral",
       };
   }
+}
+
+function workspaceGuidanceState(
+  session: SessionSummary,
+  endpointHealth: SessionEndpointHealth,
+  validation: ValidationMetadata | null,
+  actionBusy: string | null
+): EmptyStateCopy & { icon: typeof Save } {
+  if (actionBusy === "check" || session.status === "checking") {
+    return {
+      title: "Checks running",
+      body: "Keep the editor open while validation reads the saved workspace files.",
+      tone: "info",
+      icon: RefreshCw,
+    };
+  }
+
+  if (["requested", "starting"].includes(session.status)) {
+    return {
+      title: "Workspace starting",
+      body: "The editor, preview, and tools links will appear after the local runner finishes setup.",
+      tone: "warning",
+      icon: Clock3,
+    };
+  }
+
+  if (["stopped", "expired"].includes(session.status)) {
+    return {
+      title: "Session closed",
+      body: "Request a new session before making more OpenVSCode edits.",
+      tone: "neutral",
+      icon: XCircle,
+    };
+  }
+
+  if (session.status === "errored") {
+    return {
+      title: "Workspace unavailable",
+      body: "Check the event timeline and runner logs before editing this session.",
+      tone: "danger",
+      icon: XCircle,
+    };
+  }
+
+  if (endpointHealth.tools.status === "stale" || !session.terminalUrl) {
+    return {
+      title: "Checks unavailable",
+      body: "You can keep editing, but validation needs the tools server to respond.",
+      tone: "warning",
+      icon: SquareTerminal,
+    };
+  }
+
+  if (session.status === "passed" || validation?.passed) {
+    return {
+      title: "Scenario passed",
+      body: "The latest saved workspace state satisfies the checklist.",
+      tone: "success",
+      icon: CheckCircle2,
+    };
+  }
+
+  if (session.status === "failed") {
+    return {
+      title: "Save edits, then run checks again",
+      body: "Update the files in OpenVSCode, save them, and rerun validation when the preview reflects the change.",
+      tone: "danger",
+      icon: Save,
+    };
+  }
+
+  return {
+    title: "Save edits before running checks",
+    body: "OpenVSCode changes must be saved before validation can read the latest workspace files.",
+    tone: "info",
+    icon: Save,
+  };
 }
 
 function eventStateCopy(session: SessionSummary): EmptyStateCopy {
