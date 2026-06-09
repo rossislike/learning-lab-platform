@@ -17,6 +17,8 @@
   "solutionTemplate": "workspace-template/update-welcome-message-2",
   "previewCommand": "npm run dev -- --host 0.0.0.0",
   "validationCommand": "npm test -- --run --reporter=json",
+  "remediationFile": "src/App.jsx",
+  "expectedBehavior": "The page heading says exactly 'Welcome to React Labs'.",
   "expectedCommands": {
     "install": "npm ci",
     "dev": "npm run dev -- --host 0.0.0.0",

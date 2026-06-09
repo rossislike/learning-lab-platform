@@ -17,6 +17,8 @@
   "solutionTemplate": "workspace-template/optimize-product-dashboard-2",
   "previewCommand": "npm run dev -- --host 0.0.0.0",
   "validationCommand": "npm test -- --run --reporter=json",
+  "remediationFile": "src/components/ProductList.jsx, src/components/ProductCard.jsx, and src/components/CartButton.jsx",
+  "expectedBehavior": "Filtering only recalculates when product data or filters change, product cards avoid unrelated cart re-renders, and the cart button only re-renders when cart count changes.",
   "expectedCommands": {
     "install": "npm ci",
     "dev": "npm run dev -- --host 0.0.0.0",

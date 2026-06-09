@@ -828,6 +828,46 @@ input {
   text-decoration: none;
 }
 
+.fail-remediation {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.fail-remediation h3,
+.fail-remediation p {
+  margin: 0;
+}
+
+.fail-remediation h3 {
+  color: #991b1b;
+  font-size: 1rem;
+}
+
+.fail-remediation-grid {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.fail-remediation .detail-item {
+  background: #ffffff;
+}
+
+.fail-remediation-message {
+  margin-top: 10px;
+  color: #7f1d1d;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .workspace-link-strip {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1106,6 +1146,10 @@ input {
   }
 
   .workspace-link-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .fail-remediation-grid {
     grid-template-columns: 1fr;
   }
 

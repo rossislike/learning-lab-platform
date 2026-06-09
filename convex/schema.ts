@@ -15,6 +15,8 @@ export default defineSchema({
     templatePath: v.string(),
     validationCommand: v.string(),
     previewCommand: v.string(),
+    remediationFile: v.optional(v.string()),
+    expectedBehavior: v.optional(v.string()),
     status: v.union(v.literal("draft"), v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),

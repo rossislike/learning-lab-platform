@@ -22,6 +22,8 @@ Required fields:
 - `workspaceTemplate`: path from the scenario folder to the learner starter workspace.
 - `previewCommand`: command used by the platform to start the app preview.
 - `validationCommand`: command used by the platform to run learner checks.
+- `remediationFile`: learner-facing file or files to inspect after a failed check.
+- `expectedBehavior`: plain-language behavior the failed scenario should satisfy.
 - `expectedCommands`: author-facing install, dev, validate, lint, and build commands.
 - `expectedPorts`: named container ports exposed by the starter.
 - `ttlSeconds`: default local session lifetime.

@@ -30,6 +30,8 @@ type LabSummary = {
   status: string;
   difficulty: number;
   tags: string[];
+  remediationFile?: string;
+  expectedBehavior?: string;
   domainTitle?: string;
   domainSummary?: string;
   displayOrder?: number;
@@ -1035,6 +1037,7 @@ function WorkspaceTab({
             validation={validation}
           />
           <PassStateNextSteps endpointHealth={endpointHealth} session={session} validation={validation} />
+          <FailStateRemediation scenario={scenario} session={session} validation={validation} />
           <section className="workspace-link-strip url-grid" aria-label="Standalone workspace links">
             <UrlItem
               health={endpointHealth.workspace}
@@ -1069,6 +1072,52 @@ function WorkspaceTab({
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+function FailStateRemediation({
+  scenario,
+  session,
+  validation,
+}: {
+  scenario?: LabSummary;
+  session: SessionSummary;
+  validation: ValidationMetadata | null;
+}) {
+  const failed = session.status === "failed" || validation?.passed === false;
+  const failingAssertion = validation?.assertions?.find(
+    (assertion) => assertion.status !== "passed"
+  );
+
+  if (!failed) {
+    return null;
+  }
+
+  return (
+    <section className="fail-remediation" aria-labelledby="fail-remediation-title">
+      <XCircle size={20} />
+      <div>
+        <p className="eyebrow">Remediation</p>
+        <h3 id="fail-remediation-title">Check the expected behavior</h3>
+        <div className="fail-remediation-grid">
+          <DetailItem label="File" value={scenario?.remediationFile ?? "Scenario file not published"} />
+          <DetailItem
+            label="Expected"
+            value={
+              scenario?.expectedBehavior ??
+              (failingAssertion
+                ? friendlyAssertionTitle(failingAssertion)
+                : "Review the scenario requirement.")
+            }
+          />
+        </div>
+        {failingAssertion ? (
+          <p className="fail-remediation-message">
+            {friendlyAssertionMessage(failingAssertion)}
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }

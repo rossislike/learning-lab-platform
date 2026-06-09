@@ -119,6 +119,8 @@ async function validateManifest(manifestPath) {
     "workspaceTemplate",
     "previewCommand",
     "validationCommand",
+    "remediationFile",
+    "expectedBehavior",
   ]) {
     assertString(manifest[field], field, manifestPath);
   }
@@ -207,6 +209,8 @@ async function validateManifest(manifestPath) {
     templatePath: relative(projectRoot, resolve(labRoot, manifest.workspaceTemplate)),
     validationCommand: manifest.validationCommand,
     previewCommand: manifest.previewCommand,
+    remediationFile: manifest.remediationFile,
+    expectedBehavior: manifest.expectedBehavior,
     status: manifest.status,
   };
 }

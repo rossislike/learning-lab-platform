@@ -19,6 +19,8 @@ export const scenarioSeedData = [
     "templatePath": "lab-definitions/react-welcome-message/workspace-template/update-welcome-message-1",
     "validationCommand": "npm test -- --run --reporter=json",
     "previewCommand": "npm run dev -- --host 0.0.0.0",
+    "remediationFile": "src/App.jsx",
+    "expectedBehavior": "The page heading says exactly 'Welcome to React Labs'.",
     "status": "active"
   },
   {
@@ -40,6 +42,8 @@ export const scenarioSeedData = [
     "templatePath": "lab-definitions/react-button-label/workspace-template/update-button-label-1",
     "validationCommand": "npm test -- --run --reporter=json",
     "previewCommand": "npm run dev -- --host 0.0.0.0",
+    "remediationFile": "src/App.jsx",
+    "expectedBehavior": "The primary action button says exactly 'Join Newsletter'.",
     "status": "active"
   },
   {
@@ -61,6 +65,8 @@ export const scenarioSeedData = [
     "templatePath": "lab-definitions/react-empty-state/workspace-template/add-empty-state-1",
     "validationCommand": "npm test -- --run --reporter=json",
     "previewCommand": "npm run dev -- --host 0.0.0.0",
+    "remediationFile": "src/App.jsx",
+    "expectedBehavior": "An empty task list shows 'No tasks yet. Add your first task to get started.'.",
     "status": "active"
   },
   {
@@ -81,6 +87,8 @@ export const scenarioSeedData = [
     "templatePath": "lab-definitions/react-product-dashboard/workspace-template/optimize-product-dashboard-1-unsolved",
     "validationCommand": "npm test -- --run --reporter=json",
     "previewCommand": "npm run dev -- --host 0.0.0.0",
+    "remediationFile": "src/components/ProductList.jsx, src/components/ProductCard.jsx, and src/components/CartButton.jsx",
+    "expectedBehavior": "Filtering only recalculates when product data or filters change, product cards avoid unrelated cart re-renders, and the cart button only re-renders when cart count changes.",
     "status": "active"
   }
 ] as const;
