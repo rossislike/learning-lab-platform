@@ -1237,8 +1237,11 @@ function WorkspaceSplitView({
 }) {
   const editorReady = session.workspaceUrl?.startsWith("http");
   const previewReady = session.previewUrl?.startsWith("http");
+  const editorUrl = session.workspaceUrl ?? "";
+  const previewUrl = session.previewUrl ?? "";
   const editorReachable = endpointHealth.workspace.status !== "stale";
   const previewReachable = endpointHealth.preview.status !== "stale";
+  const compactLayout = useMediaQuery("(max-width: 900px)");
   const [layout, setLayout] = useState<WorkspaceLayout>(() => readWorkspaceLayout());
 
   function saveLayout(nextLayout: Record<string, number>) {
@@ -1261,6 +1264,23 @@ function WorkspaceSplitView({
       </div>
 
       {editorReady && previewReady && editorReachable && previewReachable ? (
+        compactLayout ? (
+          <div className="workspace-split workspace-split-stacked">
+            <WorkspaceFrame
+              allowClipboard
+              className="editor-frame"
+              label="OpenVSCode"
+              title={`${session.learnerLabel} OpenVSCode editor`}
+              url={editorUrl}
+            />
+            <WorkspaceFrame
+              className="preview-frame"
+              label="Preview"
+              title={`${session.learnerLabel} Vite preview`}
+              url={previewUrl}
+            />
+          </div>
+        ) : (
         <Group
           className="workspace-split"
           defaultLayout={layout}
@@ -1268,20 +1288,13 @@ function WorkspaceSplitView({
           orientation="horizontal"
         >
           <Panel className="workspace-panel" defaultSize={`${layout.editor}%`} id="editor" minSize="35%">
-            <div className="workspace-frame-shell editor-frame">
-              <div className="frame-header">
-                <span>OpenVSCode</span>
-                <a href={session.workspaceUrl} target="_blank" rel="noreferrer">
-                  Open
-                </a>
-              </div>
-              <iframe
-                allow="clipboard-read; clipboard-write"
-                className="workspace-frame"
-                src={session.workspaceUrl}
-                title={`${session.learnerLabel} OpenVSCode editor`}
-              />
-            </div>
+            <WorkspaceFrame
+              allowClipboard
+              className="editor-frame"
+              label="OpenVSCode"
+              title={`${session.learnerLabel} OpenVSCode editor`}
+              url={editorUrl}
+            />
           </Panel>
 
           <Separator
@@ -1290,24 +1303,49 @@ function WorkspaceSplitView({
           />
 
           <Panel className="workspace-panel" defaultSize={`${layout.preview}%`} id="preview" minSize="25%">
-            <div className="workspace-frame-shell preview-frame">
-              <div className="frame-header">
-                <span>Preview</span>
-                <a href={session.previewUrl} target="_blank" rel="noreferrer">
-                  Open
-                </a>
-              </div>
-              <iframe
-                className="workspace-frame"
-                src={session.previewUrl}
-                title={`${session.learnerLabel} Vite preview`}
-              />
-            </div>
+            <WorkspaceFrame
+              className="preview-frame"
+              label="Preview"
+              title={`${session.learnerLabel} Vite preview`}
+              url={previewUrl}
+            />
           </Panel>
         </Group>
+        )
       ) : (
         <WorkspaceEmptyState endpointHealth={endpointHealth} session={session} />
       )}
+    </div>
+  );
+}
+
+function WorkspaceFrame({
+  allowClipboard = false,
+  className,
+  label,
+  title,
+  url,
+}: {
+  allowClipboard?: boolean;
+  className: string;
+  label: string;
+  title: string;
+  url: string;
+}) {
+  return (
+    <div className={`workspace-frame-shell ${className}`}>
+      <div className="frame-header">
+        <span>{label}</span>
+        <a href={url} target="_blank" rel="noreferrer">
+          Open
+        </a>
+      </div>
+      <iframe
+        allow={allowClipboard ? "clipboard-read; clipboard-write" : undefined}
+        className="workspace-frame"
+        src={url}
+        title={title}
+      />
     </div>
   );
 }
@@ -1993,6 +2031,22 @@ function readWorkspaceLayout(): WorkspaceLayout {
   }
 
   return defaultWorkspaceLayout;
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia(query).matches
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = () => setMatches(mediaQuery.matches);
+    updateMatches();
+    mediaQuery.addEventListener("change", updateMatches);
+    return () => mediaQuery.removeEventListener("change", updateMatches);
+  }, [query]);
+
+  return matches;
 }
 
 function readSelectedSessionId(): Id<"sessions"> | null {

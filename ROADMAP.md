@@ -56,7 +56,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Keep standalone OpenVSCode, preview, and tools links available from the workspace.
 - [x] Add pass-state next steps after a learner completes a scenario.
 - [x] Add fail-state remediation that points to the relevant file and expected behavior.
-- [ ] Improve responsive layout for smaller screens.
+- [x] Improve responsive layout for smaller screens.
 
 ## Runner Reliability
 

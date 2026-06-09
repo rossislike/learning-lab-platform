@@ -931,6 +931,12 @@ input {
   min-height: min(760px, calc(100vh - 300px));
 }
 
+.workspace-split-stacked {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
 .workspace-panel {
   min-width: 0;
   padding: 0;
@@ -1107,6 +1113,18 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .workspace-toolbar,
+  .topbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar-actions button,
+  .topbar-actions .status-pill {
+    justify-content: center;
+    width: 100%;
+  }
+
   .scenario-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1122,6 +1140,7 @@ input {
   .workspace-split {
     display: grid;
     gap: 12px;
+    min-height: 0;
   }
 
   .workspace-panel:first-child,
@@ -1131,6 +1150,14 @@ input {
 
   .workspace-resize-handle {
     display: none;
+  }
+
+  .workspace-frame-shell {
+    min-height: 440px;
+  }
+
+  .workspace-frame {
+    min-height: 398px;
   }
 
   .workspace-meta-strip {
@@ -1174,5 +1201,17 @@ input {
 
   .tab-list button {
     flex: 1;
+  }
+
+  .workspace-tab {
+    min-height: auto;
+  }
+
+  .workspace-frame-shell {
+    min-height: 360px;
+  }
+
+  .workspace-frame {
+    min-height: 318px;
   }
 }
