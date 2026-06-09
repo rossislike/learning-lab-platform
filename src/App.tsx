@@ -27,6 +27,8 @@ type LabSummary = {
   title: string;
   summary: string;
   status: string;
+  difficulty: number;
+  tags: string[];
   domainTitle?: string;
   domainSummary?: string;
   displayOrder?: number;
@@ -469,6 +471,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
           <WorkspaceTab
             endpointHealth={selectedEndpointHealth}
             session={selectedSession}
+            scenario={selectedSession ? scenarioForSession(selectedSession, scenarios) : undefined}
             events={selectedSessionEvents}
             onRunCheck={runSessionCheck}
             onRequestCleanup={requestCleanup}
@@ -939,6 +942,7 @@ function SessionDetailPanel({
 function WorkspaceTab({
   endpointHealth,
   session,
+  scenario,
   events,
   onStop,
   onRunCheck,
@@ -946,6 +950,7 @@ function WorkspaceTab({
 }: {
   endpointHealth: SessionEndpointHealth;
   session?: SessionSummary;
+  scenario?: LabSummary;
   events: SessionEvent[];
   onStop: (sessionId: Id<"sessions">) => Promise<void>;
   onRunCheck: (session: SessionSummary) => Promise<void>;
@@ -1021,6 +1026,8 @@ function WorkspaceTab({
         <>
           {actionError ? <p className="error-text">{actionError}</p> : null}
 
+          <TaskInstructionsPanel scenario={scenario} session={session} />
+
           <div className="workspace-meta-strip">
             <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />
             <DetailItem label="Validation" value={validation?.summary ?? session.lastCheckSummary ?? "Not run"} />
@@ -1031,6 +1038,44 @@ function WorkspaceTab({
           <WorkspaceSplitView endpointHealth={endpointHealth} session={session} />
         </>
       )}
+    </section>
+  );
+}
+
+function TaskInstructionsPanel({
+  scenario,
+  session,
+}: {
+  scenario?: LabSummary;
+  session: SessionSummary;
+}) {
+  const tags = scenario?.tags.slice(0, 5) ?? [];
+
+  return (
+    <section className="task-instructions-panel" aria-labelledby="task-instructions-title">
+      <div className="task-instructions-main">
+        <p className="eyebrow">Task</p>
+        <h3 id="task-instructions-title">
+          {scenario?.title ?? "Scenario details unavailable"}
+        </h3>
+        <p>{scenario?.summary ?? "Select a seeded scenario to view its task details."}</p>
+        <p className="task-guidance">
+          Make the requested change in the editor, save it, then run checks for this session.
+        </p>
+      </div>
+      <div className="task-instructions-meta">
+        <DetailItem label="Domain" value={scenario?.domainTitle ?? "Unknown"} />
+        <DetailItem label="Difficulty" value={formatDifficulty(scenario?.difficulty)} />
+        <DetailItem label="Session" value={session.learnerLabel} />
+        <DetailItem label="Status" value={session.status} />
+      </div>
+      {tags.length > 0 ? (
+        <div className="task-tag-list" aria-label="Scenario tags">
+          {tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1600,6 +1645,10 @@ function workspaceStateCopy(
 
 function formatScore(score?: number) {
   return typeof score === "number" ? `${score}%` : "-";
+}
+
+function formatDifficulty(difficulty?: number) {
+  return typeof difficulty === "number" ? `Level ${difficulty}` : "-";
 }
 
 function formatNumber(value?: number) {
