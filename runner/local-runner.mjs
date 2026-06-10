@@ -129,6 +129,17 @@ async function stopPid(pid) {
   }
 }
 
+function isPidRunning(pid) {
+  if (!pid) return false;
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
 async function readProcessInfo(workspacePath) {
   try {
     return JSON.parse(
@@ -137,6 +148,81 @@ async function readProcessInfo(workspacePath) {
   } catch {
     return {};
   }
+}
+
+async function isContainerRunning(containerName) {
+  if (!containerName) return false;
+
+  const result = await run(
+    `docker inspect -f '{{.State.Running}}' ${containerName}`,
+    projectRoot
+  );
+  return result.code === 0 && result.stdout.trim() === "true";
+}
+
+async function inspectLocalSessionProcesses(session) {
+  if (!session.workspacePath) {
+    return {
+      ok: false,
+      failures: ["workspace path is missing"],
+      processInfo: {},
+    };
+  }
+
+  const processInfo = await readProcessInfo(session.workspacePath);
+  const checks = [];
+
+  if (processInfo.previewPid) {
+    checks.push({
+      name: "preview",
+      pid: processInfo.previewPid,
+      running: isPidRunning(processInfo.previewPid),
+    });
+  } else {
+    checks.push({ name: "preview", running: false, reason: "missing pid" });
+  }
+
+  if (processInfo.toolsPid) {
+    checks.push({
+      name: "tools",
+      pid: processInfo.toolsPid,
+      running: isPidRunning(processInfo.toolsPid),
+    });
+  } else {
+    checks.push({ name: "tools", running: false, reason: "missing pid" });
+  }
+
+  if (processInfo.editor?.provider === "openvscode-docker") {
+    const containerName =
+      session.editorContainerName ?? processInfo.editor?.containerName;
+    checks.push({
+      name: "editor",
+      containerName,
+      running: await isContainerRunning(containerName),
+      reason: containerName ? undefined : "missing container name",
+    });
+  } else if (processInfo.editor?.editorPid) {
+    checks.push({
+      name: "editor",
+      pid: processInfo.editor.editorPid,
+      running: isPidRunning(processInfo.editor.editorPid),
+    });
+  } else {
+    checks.push({ name: "editor", running: false, reason: "missing pid" });
+  }
+
+  const failures = checks
+    .filter((check) => !check.running)
+    .map((check) =>
+      check.reason ? `${check.name} (${check.reason})` : check.name
+    );
+
+  return {
+    ok: failures.length === 0,
+    failures,
+    processInfo,
+    checks,
+  };
 }
 
 async function cleanupLocalSession(session) {
@@ -408,6 +494,36 @@ async function cleanupStoppedSessions(client) {
   }
 }
 
+async function detectDeadSessionProcesses(client) {
+  const sessions = await client.query(api.sessions.listActive, {});
+  const inspectableStatuses = new Set(["running", "checking", "passed", "failed"]);
+
+  for (const session of sessions) {
+    if (session.runner !== "local" || !inspectableStatuses.has(session.status)) {
+      continue;
+    }
+
+    const result = await inspectLocalSessionProcesses(session);
+    if (result.ok) {
+      continue;
+    }
+
+    const message = `Local runner detected dead workspace process: ${result.failures.join(", ")}`;
+    console.warn(`[runner] session ${session._id}: ${message}`);
+    await client.mutation(api.sessions.markErrored, {
+      sessionId: session._id,
+      message,
+      raw: result,
+    });
+    const cleanupResult = await cleanupLocalSession(session);
+    await client.mutation(api.sessions.markCleaned, {
+      sessionId: session._id,
+      summary: "Cleaned up after dead workspace process detection",
+      raw: cleanupResult,
+    });
+  }
+}
+
 async function sendHeartbeat(client) {
   try {
     await client.mutation(api.runners.heartbeat, {
@@ -427,6 +543,7 @@ async function sendHeartbeat(client) {
 async function tick(client) {
   await sendHeartbeat(client);
   await cleanupExpiredSessions(client);
+  await detectDeadSessionProcesses(client);
   const sessions = await client.query(api.sessions.listRequested, { runner: "local" });
 
   for (const session of sessions) {
