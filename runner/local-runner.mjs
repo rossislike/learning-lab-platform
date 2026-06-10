@@ -512,7 +512,7 @@ async function cleanupStoppedSessions(client) {
   }
 }
 
-async function detectDeadSessionProcesses(client) {
+async function reconcileLocalSessionState(client) {
   const sessions = await client.query(api.sessions.listActive, {});
   const inspectableStatuses = new Set(["running", "checking", "passed", "failed"]);
 
@@ -561,7 +561,7 @@ async function sendHeartbeat(client) {
 async function tick(client) {
   await sendHeartbeat(client);
   await cleanupExpiredSessions(client);
-  await detectDeadSessionProcesses(client);
+  await reconcileLocalSessionState(client);
   const sessions = await client.query(api.sessions.listStartable, { runner: "local" });
 
   for (const session of sessions) {
