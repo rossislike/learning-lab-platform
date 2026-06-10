@@ -63,7 +63,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Add a runner heartbeat in Convex.
 - [x] Display runner heartbeat and last poll time in the dashboard.
 - [x] Detect and report dead editor, preview, or tools processes.
-- [ ] Make local runner startup idempotent across process restarts.
+- [x] Make local runner startup idempotent across process restarts.
 - [ ] Reconcile Convex session state with actual local Docker/process state on each poll.
 - [ ] Improve logs for Docker image pull failures, port allocation, dependency install failures, and validation command failures.
 - [ ] Add a supervised local development mode that starts Convex, dashboard, and runner together.

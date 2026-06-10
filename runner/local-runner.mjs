@@ -150,6 +150,14 @@ async function readProcessInfo(workspacePath) {
   }
 }
 
+function defaultWorkspacePath(sessionId) {
+  return resolve(workspacesRoot, sessionId);
+}
+
+function defaultEditorContainerName(sessionId) {
+  return `llp-${sessionId}`.replace(/[^a-zA-Z0-9_.-]/g, "-");
+}
+
 async function isContainerRunning(containerName) {
   if (!containerName) return false;
 
@@ -226,10 +234,19 @@ async function inspectLocalSessionProcesses(session) {
 }
 
 async function cleanupLocalSession(session) {
-  const workspacePath = session.workspacePath;
+  const workspacePath = session.workspacePath ?? defaultWorkspacePath(session._id);
   const processInfo = workspacePath ? await readProcessInfo(workspacePath) : {};
-  const containerName =
-    session.editorContainerName ?? processInfo.editor?.containerName;
+  const shouldCleanContainer =
+    session.editorProvider === "openvscode-docker" ||
+    processInfo.editor?.provider === "openvscode-docker" ||
+    (!session.editorProvider &&
+      !processInfo.editor?.provider &&
+      editorProvider === "openvscode-docker");
+  const containerName = shouldCleanContainer
+    ? session.editorContainerName ??
+      processInfo.editor?.containerName ??
+      defaultEditorContainerName(session._id)
+    : undefined;
   const stopped = {
     previewPid: await stopPid(processInfo.previewPid),
     toolsPid: await stopPid(processInfo.toolsPid),
@@ -307,7 +324,7 @@ async function startEditor({
   }
 
   if (provider === "openvscode-docker") {
-    const containerName = `llp-${sessionId}`.replace(/[^a-zA-Z0-9_.-]/g, "-");
+    const containerName = defaultEditorContainerName(sessionId);
     await run(`docker rm -f ${containerName}`, workspacePath);
     const start = await run(
       [
@@ -357,6 +374,7 @@ async function startEditor({
 
 async function processSession(client, session) {
   console.log(`[runner] starting session ${session._id}`);
+  await cleanupLocalSession(session);
   await client.mutation(api.sessions.markStarting, { sessionId: session._id });
 
   const lab = await client.query(api.labs.get, { labId: session.labId });
@@ -365,7 +383,7 @@ async function processSession(client, session) {
   }
 
   const templatePath = resolve(projectRoot, lab.templatePath);
-  const workspacePath = resolve(workspacesRoot, session._id);
+  const workspacePath = defaultWorkspacePath(session._id);
   const previewPort = await findAvailablePort(portFor(session._id, previewBasePort));
   const editorPort = await findAvailablePort(portFor(session._id, editorBasePort));
   const toolsPort = await findAvailablePort(portFor(session._id, toolsBasePort));
@@ -544,7 +562,7 @@ async function tick(client) {
   await sendHeartbeat(client);
   await cleanupExpiredSessions(client);
   await detectDeadSessionProcesses(client);
-  const sessions = await client.query(api.sessions.listRequested, { runner: "local" });
+  const sessions = await client.query(api.sessions.listStartable, { runner: "local" });
 
   for (const session of sessions) {
     try {

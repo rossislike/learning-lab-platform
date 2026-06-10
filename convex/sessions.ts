@@ -44,6 +44,20 @@ export const listRequested = query({
   },
 });
 
+export const listStartable = query({
+  args: {
+    runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
+  },
+  handler: async (ctx, args) => {
+    const sessions = await ctx.db.query("sessions").order("asc").take(100);
+    return sessions.filter((session) => {
+      if (!["requested", "starting"].includes(session.status)) return false;
+      if (args.runner && session.runner !== args.runner) return false;
+      return true;
+    });
+  },
+});
+
 export const listActive = query({
   args: {},
   handler: async (ctx) => {
