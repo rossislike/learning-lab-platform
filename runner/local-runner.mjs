@@ -62,6 +62,20 @@ function run(command, cwd) {
   });
 }
 
+function formatCommandFailure({ title, command, cwd, result, hint }) {
+  return [
+    title,
+    hint,
+    `Command: ${command}`,
+    `Working directory: ${cwd}`,
+    `Exit code: ${result.code}`,
+    result.stdout ? `stdout:\n${result.stdout.trim()}` : undefined,
+    result.stderr ? `stderr:\n${result.stderr.trim()}` : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function portFor(sessionId, basePort) {
   const hash = [...sessionId].reduce(
     (sum, char, index) => sum + char.charCodeAt(0) * (index + 1),
@@ -87,7 +101,7 @@ function isPortAvailable(port) {
   });
 }
 
-async function findAvailablePort(preferredPort) {
+async function findAvailablePort(preferredPort, label) {
   for (let offset = 0; offset < 100; offset += 1) {
     const port = preferredPort + offset;
     if (await isPortAvailable(port)) {
@@ -95,7 +109,13 @@ async function findAvailablePort(preferredPort) {
     }
   }
 
-  throw new Error(`No available port found starting at ${preferredPort}`);
+  const endPort = preferredPort + 99;
+  throw new Error(
+    [
+      `No available ${label} port found in range ${preferredPort}-${endPort}.`,
+      "Stop stale local sessions or adjust LOCAL_EDITOR_BASE_PORT, LOCAL_PREVIEW_BASE_PORT, or LOCAL_TOOLS_BASE_PORT.",
+    ].join("\n")
+  );
 }
 
 async function appendLog(path, line) {
@@ -326,18 +346,19 @@ async function startEditor({
   if (provider === "openvscode-docker") {
     const containerName = defaultEditorContainerName(sessionId);
     await run(`docker rm -f ${containerName}`, workspacePath);
+    const dockerCommand = [
+      "docker run -d --rm",
+      `--name ${containerName}`,
+      `-p 127.0.0.1:${editorPort}:3000`,
+      `-v "${workspacePath}:/home/workspace:rw"`,
+      openVSCodeImage,
+      "--host 0.0.0.0",
+      "--port 3000",
+      "--without-connection-token",
+      "/home/workspace",
+    ].join(" ");
     const start = await run(
-      [
-        "docker run -d --rm",
-        `--name ${containerName}`,
-        `-p 127.0.0.1:${editorPort}:3000`,
-        `-v "${workspacePath}:/home/workspace:rw"`,
-        openVSCodeImage,
-        "--host 0.0.0.0",
-        "--port 3000",
-        "--without-connection-token",
-        "/home/workspace",
-      ].join(" "),
+      dockerCommand,
       workspacePath
     );
 
@@ -348,11 +369,17 @@ async function startEditor({
 
     if (start.code !== 0) {
       throw new Error(
-        [
-          "OpenVSCode Docker editor failed to start.",
-          "Make sure Docker Desktop is running, or set LOCAL_EDITOR_PROVIDER=openvscode-native with OPENVSCODE_SERVER_BIN.",
-          start.stderr || start.stdout,
-        ].join("\n")
+        formatCommandFailure({
+          title: "OpenVSCode Docker editor failed to start.",
+          command: dockerCommand,
+          cwd: workspacePath,
+          result: start,
+          hint: [
+            `Image: ${openVSCodeImage}`,
+            "If this is an image pull failure, run `docker pull gitpod/openvscode-server:latest` or set OPENVSCODE_SERVER_IMAGE.",
+            "If Docker Desktop is unavailable, set LOCAL_EDITOR_PROVIDER=lightweight or LOCAL_EDITOR_PROVIDER=openvscode-native.",
+          ].join("\n"),
+        })
       );
     }
 
@@ -384,9 +411,18 @@ async function processSession(client, session) {
 
   const templatePath = resolve(projectRoot, lab.templatePath);
   const workspacePath = defaultWorkspacePath(session._id);
-  const previewPort = await findAvailablePort(portFor(session._id, previewBasePort));
-  const editorPort = await findAvailablePort(portFor(session._id, editorBasePort));
-  const toolsPort = await findAvailablePort(portFor(session._id, toolsBasePort));
+  const previewPort = await findAvailablePort(
+    portFor(session._id, previewBasePort),
+    "preview"
+  );
+  const editorPort = await findAvailablePort(
+    portFor(session._id, editorBasePort),
+    "editor"
+  );
+  const toolsPort = await findAvailablePort(
+    portFor(session._id, toolsBasePort),
+    "tools"
+  );
   const previewUrl = `http://127.0.0.1:${previewPort}`;
   const toolsUrl = `http://127.0.0.1:${toolsPort}/tools`;
 
@@ -403,7 +439,15 @@ async function processSession(client, session) {
 
   const install = await run("npm ci", workspacePath);
   if (install.code !== 0) {
-    throw new Error(`npm ci failed:\n${install.stderr || install.stdout}`);
+    throw new Error(
+      formatCommandFailure({
+        title: "Dependency install failed.",
+        command: "npm ci",
+        cwd: workspacePath,
+        result: install,
+        hint: "Check the scenario package-lock.json and npm registry access.",
+      })
+    );
   }
 
   const editor = await startEditor({

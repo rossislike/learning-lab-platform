@@ -84,6 +84,20 @@ function run(command, cwd) {
   });
 }
 
+function formatCommandFailure({ title, command, cwd, result, error }) {
+  return [
+    title,
+    `Command: ${command}`,
+    `Working directory: ${cwd}`,
+    `Exit code: ${result.code}`,
+    error ? `Report error: ${error.message}` : undefined,
+    result.stdout ? `stdout:\n${result.stdout.trim()}` : undefined,
+    result.stderr ? `stderr:\n${result.stderr.trim()}` : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function parseVitestReport(reportText) {
   const report = JSON.parse(reportText);
   const assertions = [];
@@ -142,12 +156,22 @@ async function runCheck() {
   try {
     result = parseVitestReport(await readFile(reportPath, "utf8"));
   } catch (error) {
+    const summary = formatCommandFailure({
+      title: "Validation command did not produce a readable Vitest report.",
+      command,
+      cwd: workspace,
+      result: validation,
+      error,
+    });
+    console.error(summary);
     result = {
       assertions: [],
       score: 0,
       passed: false,
-      summary: `Validation did not produce a readable Vitest report: ${error.message}`,
+      summary,
       raw: {
+        command,
+        cwd: workspace,
         exitCode: validation.code,
         stdout: validation.stdout,
         stderr: validation.stderr,

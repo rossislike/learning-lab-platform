@@ -65,7 +65,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Detect and report dead editor, preview, or tools processes.
 - [x] Make local runner startup idempotent across process restarts.
 - [x] Reconcile Convex session state with actual local Docker/process state on each poll.
-- [ ] Improve logs for Docker image pull failures, port allocation, dependency install failures, and validation command failures.
+- [x] Improve logs for Docker image pull failures, port allocation, dependency install failures, and validation command failures.
 - [ ] Add a supervised local development mode that starts Convex, dashboard, and runner together.
 
 ## Session And Progress Model
