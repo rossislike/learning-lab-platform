@@ -114,6 +114,14 @@ After Convex is configured and scenarios are seeded from the UI:
 npm run runner:local
 ```
 
+For supervised local development, start Convex, the dashboard, and the local runner together:
+
+```bash
+npm run dev:all
+```
+
+By default this supervised mode uses `LOCAL_EDITOR_PROVIDER=lightweight` so it can run without Docker. Set `LOCAL_EDITOR_PROVIDER=openvscode-docker` if you want the full OpenVSCode Docker editor while using the supervisor.
+
 For a one-shot poll:
 
 ```bash

@@ -66,7 +66,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Make local runner startup idempotent across process restarts.
 - [x] Reconcile Convex session state with actual local Docker/process state on each poll.
 - [x] Improve logs for Docker image pull failures, port allocation, dependency install failures, and validation command failures.
-- [ ] Add a supervised local development mode that starts Convex, dashboard, and runner together.
+- [x] Add a supervised local development mode that starts Convex, dashboard, and runner together.
 
 ## Session And Progress Model
 
