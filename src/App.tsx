@@ -57,6 +57,7 @@ type SessionSummary = {
   lastCheckScore?: number;
   createdAt: number;
   expiresAt: number;
+  completedAt?: number;
   stoppedAt?: number;
   stopReason?: string;
   cleanupRequestedAt?: number;
@@ -783,6 +784,7 @@ function ScenarioSessionHistory({
             <span>Status</span>
             <span>Score</span>
             <span>Started</span>
+            <span>Completed</span>
             <span>Latest check</span>
           </div>
           {sessions.map((session) => (
@@ -797,6 +799,7 @@ function ScenarioSessionHistory({
               <span><StatusPill status={session.status} /></span>
               <span>{formatScore(session.lastCheckScore)}</span>
               <span>{formatTime(session.createdAt)}</span>
+              <span>{formatOptionalTime(session.completedAt)}</span>
               <span>{session.lastCheckSummary ?? "Not run"}</span>
             </button>
           ))}
@@ -984,6 +987,7 @@ function SessionDetailPanel({
             <DetailItem label="Runner" value={session.runner} />
             <DetailItem label="Score" value={formatScore(session.lastCheckScore)} />
             <DetailItem label="Created" value={formatTime(session.createdAt)} />
+            <DetailItem label="Completed" value={formatOptionalTime(session.completedAt)} />
             <DetailItem label="Expires" value={formatTime(session.expiresAt)} />
           </div>
 

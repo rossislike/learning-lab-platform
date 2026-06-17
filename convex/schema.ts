@@ -52,6 +52,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     expiresAt: v.number(),
+    completedAt: v.optional(v.number()),
     stoppedAt: v.optional(v.number()),
     stopReason: v.optional(v.string()),
     cleanupRequestedAt: v.optional(v.number()),

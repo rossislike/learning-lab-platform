@@ -274,6 +274,7 @@ export const recordCheck = mutation({
       status: args.passed ? "passed" : "failed",
       lastCheckScore: args.score,
       lastCheckSummary: args.summary,
+      ...(args.passed ? { completedAt: timestamp } : {}),
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
