@@ -15,7 +15,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -334,6 +335,32 @@ input {
   border-radius: 6px;
   padding: 10px 12px;
   min-height: 42px;
+}
+
+.session-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(180px, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+  color: #374151;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.filter-field input,
+.filter-field select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  padding: 8px 10px;
 }
 
 .primary-button,
@@ -1190,6 +1217,7 @@ input {
   .metadata-grid,
   .task-instructions-meta,
   .workspace-meta-strip,
+  .session-filter-bar,
   .session-row,
   .scenario-card-grid {
     grid-template-columns: 1fr;

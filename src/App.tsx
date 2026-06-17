@@ -524,6 +524,28 @@ function DashboardTab({
   const requestedLocalSessions = sessions.filter(
     (session) => session.runner === "local" && session.status === "requested"
   );
+  const [sessionScenarioFilter, setSessionScenarioFilter] = useState("all");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
+  const [sessionLearnerFilter, setSessionLearnerFilter] = useState("");
+  const sessionStatuses = useMemo(
+    () => [...new Set(sessions.map((session) => session.status))].sort(),
+    [sessions]
+  );
+  const filteredSessions = useMemo(() => {
+    const learnerQuery = sessionLearnerFilter.trim().toLocaleLowerCase();
+
+    return sessions.filter((session) => {
+      const matchesScenario =
+        sessionScenarioFilter === "all" || session.labId === sessionScenarioFilter;
+      const matchesStatus =
+        sessionStatusFilter === "all" || session.status === sessionStatusFilter;
+      const matchesLearner =
+        learnerQuery.length === 0 ||
+        session.learnerLabel.toLocaleLowerCase().includes(learnerQuery);
+
+      return matchesScenario && matchesStatus && matchesLearner;
+    });
+  }, [sessionLearnerFilter, sessionScenarioFilter, sessionStatusFilter, sessions]);
 
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
@@ -593,6 +615,45 @@ function DashboardTab({
           </div>
         </div>
 
+        <div className="session-filter-bar" aria-label="Session filters">
+          <label className="filter-field">
+            Scenario
+            <select
+              value={sessionScenarioFilter}
+              onChange={(event) => setSessionScenarioFilter(event.target.value)}
+            >
+              <option value="all">All scenarios</option>
+              {scenarios.map((scenario) => (
+                <option key={scenario._id} value={scenario._id}>
+                  {scenario.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field">
+            Status
+            <select
+              value={sessionStatusFilter}
+              onChange={(event) => setSessionStatusFilter(event.target.value)}
+            >
+              <option value="all">All statuses</option>
+              {sessionStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field">
+            Learner
+            <input
+              placeholder="Filter by label"
+              value={sessionLearnerFilter}
+              onChange={(event) => setSessionLearnerFilter(event.target.value)}
+            />
+          </label>
+        </div>
+
         <div className="session-table">
           <div className="session-row session-head">
             <span>Learner</span>
@@ -602,7 +663,7 @@ function DashboardTab({
             <span>Score</span>
             <span>Actions</span>
           </div>
-          {(sessions ?? []).map((session: SessionSummary) => (
+          {filteredSessions.map((session: SessionSummary) => (
             <div
               className={`session-row session-button ${
                 selectedSession?._id === session._id ? "selected" : ""
@@ -636,10 +697,16 @@ function DashboardTab({
               </span>
             </div>
           ))}
-          {sessions?.length === 0 ? (
+          {sessions.length === 0 ? (
             <EmptyState
               title="No sessions yet"
               body="Select a scenario, confirm the learner label, and request a local session."
+            />
+          ) : null}
+          {sessions.length > 0 && filteredSessions.length === 0 ? (
+            <EmptyState
+              title="No matching sessions"
+              body="Adjust the scenario, status, or learner filter to show more sessions."
             />
           ) : null}
         </div>
