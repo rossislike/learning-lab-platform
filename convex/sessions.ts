@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
+const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
 
 export const list = query({
@@ -270,11 +271,26 @@ export const recordCheck = mutation({
   },
   handler: async (ctx, args) => {
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
     await ctx.db.patch(args.sessionId, {
       status: args.passed ? "passed" : "failed",
       lastCheckScore: args.score,
       lastCheckSummary: args.summary,
-      ...(args.passed ? { completedAt: timestamp } : {}),
+      ...(args.passed
+        ? {
+            completedAt: timestamp,
+            ...(session.runner === "local"
+              ? {
+                  expiresAt:
+                    timestamp + LOCAL_COMPLETED_INSPECTABLE_SECONDS * 1000,
+                }
+              : {}),
+          }
+        : {}),
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
