@@ -501,6 +501,70 @@ select {
   color: #374151;
 }
 
+.history-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #374151;
+  background: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.scenario-history-list {
+  margin-top: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scenario-history-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.6fr 1fr 1.8fr;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: inherit;
+  text-align: left;
+  align-items: center;
+}
+
+.scenario-history-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+button.scenario-history-row {
+  cursor: pointer;
+}
+
+button.scenario-history-row:hover,
+button.scenario-history-row.selected,
+button.scenario-history-row:focus-visible {
+  background: #f0fdfa;
+}
+
+button.scenario-history-row:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+}
+
+.scenario-history-row:first-child {
+  border-top: 0;
+}
+
+.scenario-history-head {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 800;
+}
+
 .empty-state {
   display: grid;
   gap: 6px;
@@ -1219,6 +1283,7 @@ select {
   .workspace-meta-strip,
   .session-filter-bar,
   .session-row,
+  .scenario-history-row,
   .scenario-card-grid {
     grid-template-columns: 1fr;
   }

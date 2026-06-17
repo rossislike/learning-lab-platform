@@ -546,6 +546,15 @@ function DashboardTab({
       return matchesScenario && matchesStatus && matchesLearner;
     });
   }, [sessionLearnerFilter, sessionScenarioFilter, sessionStatusFilter, sessions]);
+  const selectedScenarioSessions = useMemo(() => {
+    if (!selectedScenario) {
+      return [];
+    }
+
+    return sessions
+      .filter((session) => session.labId === selectedScenario._id)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [selectedScenario, sessions]);
 
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
@@ -606,6 +615,13 @@ function DashboardTab({
           requestedCount={requestedLocalSessions.length}
         />
       </section>
+
+      <ScenarioSessionHistory
+        scenario={selectedScenario}
+        selectedSession={selectedSession}
+        sessions={selectedScenarioSessions}
+        onSelectSession={onSelectSession}
+      />
 
       <section className="panel" id="sessions">
         <div className="panel-header">
@@ -722,6 +738,71 @@ function DashboardTab({
         onRequestCleanup={onRequestCleanup}
       />
     </div>
+  );
+}
+
+function ScenarioSessionHistory({
+  scenario,
+  selectedSession,
+  sessions,
+  onSelectSession,
+}: {
+  scenario?: LabSummary;
+  selectedSession?: SessionSummary;
+  sessions: SessionSummary[];
+  onSelectSession: (sessionId: Id<"sessions">) => void;
+}) {
+  return (
+    <section className="panel scenario-session-history">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Scenario history</p>
+          <h3>{scenario?.title ?? "Select a scenario"}</h3>
+        </div>
+        {scenario ? (
+          <span className="history-count">
+            {sessions.length} session{sessions.length === 1 ? "" : "s"}
+          </span>
+        ) : null}
+      </div>
+
+      {!scenario ? (
+        <EmptyState
+          title="No scenario selected"
+          body="Select a scenario to review its previous sessions."
+        />
+      ) : sessions.length === 0 ? (
+        <EmptyState
+          title="No sessions for this scenario"
+          body="Request a session to begin this scenario history."
+        />
+      ) : (
+        <div className="scenario-history-list">
+          <div className="scenario-history-row scenario-history-head">
+            <span>Learner</span>
+            <span>Status</span>
+            <span>Score</span>
+            <span>Started</span>
+            <span>Latest check</span>
+          </div>
+          {sessions.map((session) => (
+            <button
+              className={`scenario-history-row ${
+                selectedSession?._id === session._id ? "selected" : ""
+              }`}
+              key={session._id}
+              onClick={() => onSelectSession(session._id)}
+            >
+              <span>{session.learnerLabel}</span>
+              <span><StatusPill status={session.status} /></span>
+              <span>{formatScore(session.lastCheckScore)}</span>
+              <span>{formatTime(session.createdAt)}</span>
+              <span>{session.lastCheckSummary ?? "Not run"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
