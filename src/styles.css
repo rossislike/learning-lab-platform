@@ -211,6 +211,27 @@ select {
   font-weight: 800;
 }
 
+.scenario-attempt-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.scenario-attempt-summary span,
+.history-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: #374151;
+  background: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .request-grid {
   align-items: stretch;
 }
@@ -501,17 +522,11 @@ select {
   color: #374151;
 }
 
-.history-count {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  border: 1px solid #d1d5db;
-  border-radius: 999px;
-  padding: 0 10px;
-  color: #374151;
-  background: #ffffff;
-  font-size: 0.82rem;
-  font-weight: 800;
+.history-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .scenario-history-list {

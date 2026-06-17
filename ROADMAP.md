@@ -74,7 +74,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Add per-scenario session history.
 - [x] Add completed-at timestamps.
 - [x] Decide how long completed local workspaces should remain inspectable.
-- [ ] Add attempt summaries per scenario.
+- [x] Add attempt summaries per scenario.
 - [ ] Add durable progress records separate from disposable sessions.
 
 ## Product Readiness

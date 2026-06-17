@@ -66,6 +66,14 @@ type SessionSummary = {
   removedFromListAt?: number;
 };
 
+type ScenarioAttemptSummary = {
+  attempts: number;
+  passed: number;
+  failed: number;
+  bestScore?: number;
+  lastAttemptAt?: number;
+};
+
 type SessionEvent = {
   _id: Id<"sessionEvents">;
   level: "info" | "warn" | "error";
@@ -556,10 +564,15 @@ function DashboardTab({
       .filter((session) => session.labId === selectedScenario._id)
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [selectedScenario, sessions]);
+  const scenarioAttemptSummaries = useMemo(
+    () => summarizeScenarioAttempts(sessions),
+    [sessions]
+  );
 
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
       <ScenarioCatalog
+        attemptSummaries={scenarioAttemptSummaries}
         scenarios={scenarios}
         selectedScenario={selectedScenario}
         onSelectScenario={onSelectScenario}
@@ -618,6 +631,9 @@ function DashboardTab({
       </section>
 
       <ScenarioSessionHistory
+        attemptSummary={
+          selectedScenario ? scenarioAttemptSummaries.get(selectedScenario._id) : undefined
+        }
         scenario={selectedScenario}
         selectedSession={selectedSession}
         sessions={selectedScenarioSessions}
@@ -743,11 +759,13 @@ function DashboardTab({
 }
 
 function ScenarioSessionHistory({
+  attemptSummary,
   scenario,
   selectedSession,
   sessions,
   onSelectSession,
 }: {
+  attemptSummary?: ScenarioAttemptSummary;
   scenario?: LabSummary;
   selectedSession?: SessionSummary;
   sessions: SessionSummary[];
@@ -761,9 +779,11 @@ function ScenarioSessionHistory({
           <h3>{scenario?.title ?? "Select a scenario"}</h3>
         </div>
         {scenario ? (
-          <span className="history-count">
-            {sessions.length} session{sessions.length === 1 ? "" : "s"}
-          </span>
+          <div className="history-summary">
+            <span>{formatAttemptCount(attemptSummary?.attempts ?? 0)}</span>
+            <span>{attemptSummary?.passed ?? 0} passed</span>
+            <span>{formatBestScore(attemptSummary?.bestScore)}</span>
+          </div>
         ) : null}
       </div>
 
@@ -810,10 +830,12 @@ function ScenarioSessionHistory({
 }
 
 function ScenarioCatalog({
+  attemptSummaries,
   scenarios,
   selectedScenario,
   onSelectScenario,
 }: {
+  attemptSummaries: Map<string, ScenarioAttemptSummary>;
   scenarios: LabSummary[];
   selectedScenario?: LabSummary;
   onSelectScenario: (labId: Id<"labs">) => void;
@@ -873,6 +895,7 @@ function ScenarioCatalog({
             <div className="scenario-card-grid">
               {group.scenarios.map((scenario) => {
                 const selected = selectedScenario?._id === scenario._id;
+                const attemptSummary = attemptSummaries.get(scenario._id);
                 return (
                   <button
                     aria-pressed={selected}
@@ -885,6 +908,11 @@ function ScenarioCatalog({
                     {scenario.scenarioLabel ? (
                       <span className="scenario-label">{scenario.scenarioLabel}</span>
                     ) : null}
+                    <span className="scenario-attempt-summary">
+                      <span>{formatAttemptCount(attemptSummary?.attempts ?? 0)}</span>
+                      <span>{attemptSummary?.passed ?? 0} passed</span>
+                      <span>{formatBestScore(attemptSummary?.bestScore)}</span>
+                    </span>
                   </button>
                 );
               })}
@@ -1655,6 +1683,40 @@ function formatScenarioTitle(session: SessionSummary, scenarios: LabSummary[]) {
   return scenarioForSession(session, scenarios)?.title ?? "Unknown scenario";
 }
 
+function summarizeScenarioAttempts(sessions: SessionSummary[]) {
+  const summaries = new Map<string, ScenarioAttemptSummary>();
+
+  for (const session of sessions) {
+    const summary = summaries.get(session.labId) ?? {
+      attempts: 0,
+      passed: 0,
+      failed: 0,
+    };
+
+    summary.attempts += 1;
+    if (session.status === "passed") {
+      summary.passed += 1;
+    }
+    if (session.status === "failed") {
+      summary.failed += 1;
+    }
+    if (typeof session.lastCheckScore === "number") {
+      summary.bestScore =
+        typeof summary.bestScore === "number"
+          ? Math.max(summary.bestScore, session.lastCheckScore)
+          : session.lastCheckScore;
+    }
+    summary.lastAttemptAt =
+      typeof summary.lastAttemptAt === "number"
+        ? Math.max(summary.lastAttemptAt, session.createdAt)
+        : session.createdAt;
+
+    summaries.set(session.labId, summary);
+  }
+
+  return summaries;
+}
+
 function latestValidation(events: SessionEvent[]): ValidationMetadata | null {
   for (const event of events) {
     const metadata = event.metadata as ValidationMetadata | undefined;
@@ -2112,6 +2174,14 @@ function workspaceStateCopy(
 
 function formatScore(score?: number) {
   return typeof score === "number" ? `${score}%` : "-";
+}
+
+function formatBestScore(score?: number) {
+  return typeof score === "number" ? `Best ${score}%` : "No score";
+}
+
+function formatAttemptCount(count: number) {
+  return `${count} attempt${count === 1 ? "" : "s"}`;
 }
 
 function formatDifficulty(difficulty?: number) {
