@@ -79,3 +79,14 @@ Authoring remains a separate workflow from the learner self-serve experience.
 - Stop and exit controls should stay available in the learner workspace.
 - Runner health and detailed cleanup controls should move toward support/admin visibility.
 - Authentication and authorization should model the learner as the owner of their exercise sessions and progress records.
+
+## Authentication Gate
+
+Local development can run with authentication disabled. Hosted or public deployment cannot.
+
+The frontend reads two product-readiness environment variables:
+
+- `VITE_PRODUCT_SURFACE`: `local`, `hosted`, or `public`.
+- `VITE_AUTH_MODE`: `disabled` or `configured`.
+
+When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app blocks startup unless `VITE_AUTH_MODE=configured`. This keeps hosted/public deployment from exposing learner sessions, progress records, or workspace URLs before authentication is wired in.

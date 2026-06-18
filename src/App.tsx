@@ -18,8 +18,10 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 
 type AppProps = {
+  authMode?: string;
   convexUrl?: string;
   missingConvexUrl?: boolean;
+  productSurface?: string;
 };
 
 type LabSummary = {
@@ -146,12 +148,73 @@ const defaultWorkspaceLayout: WorkspaceLayout = { editor: 62, preview: 38 };
 const workspaceLayoutStorageKey = "learning-lab-workspace-layout";
 const selectedSessionStorageKey = "learning-lab-selected-session-id";
 
-export default function App({ convexUrl, missingConvexUrl = false }: AppProps) {
+export default function App({
+  authMode = "disabled",
+  convexUrl,
+  missingConvexUrl = false,
+  productSurface = "local",
+}: AppProps) {
   if (missingConvexUrl || !convexUrl) {
     return <SetupRequiredApp />;
   }
 
+  if (requiresHostedAuth(productSurface, authMode)) {
+    return <HostedAuthRequiredApp authMode={authMode} productSurface={productSurface} />;
+  }
+
   return <ConnectedApp convexUrl={convexUrl} />;
+}
+
+function requiresHostedAuth(productSurface: string, authMode: string) {
+  return ["hosted", "public"].includes(productSurface) && authMode !== "configured";
+}
+
+function HostedAuthRequiredApp({
+  authMode,
+  productSurface,
+}: {
+  authMode: string;
+  productSurface: string;
+}) {
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div>
+          <p className="eyebrow">Learning Lab Platform</p>
+          <h1>React labs, disposable sessions, AWS runners.</h1>
+        </div>
+        <nav className="nav-list" aria-label="Main">
+          <a href="#auth">Auth gate</a>
+        </nav>
+      </aside>
+
+      <section className="content">
+        <div className="notice" id="auth">
+          <strong>Authentication required for hosted mode.</strong>
+          <span>
+            Set <code>VITE_AUTH_MODE=configured</code> before running a {productSurface} surface.
+            Current mode is <code>{authMode}</code>.
+          </span>
+        </div>
+
+        <section className="grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Product readiness</p>
+                <h3>Hosted/public deployment is blocked</h3>
+              </div>
+              <span className="status-pill status-errored">blocked</span>
+            </div>
+            <p className="muted">
+              Local development can run with auth disabled. Hosted and public surfaces must configure
+              authentication before exposing sessions, progress records, or workspace URLs.
+            </p>
+          </article>
+        </section>
+      </section>
+    </main>
+  );
 }
 
 function SetupRequiredApp() {
