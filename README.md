@@ -136,6 +136,8 @@ Completed local workspaces remain inspectable for 30 minutes after a passing val
 
 The dashboard keeps scenario attempt summaries in durable `progressRecords`, one row per requested session. These records are separate from disposable session runtime metadata, so scenario progress can remain available after a local workspace has been stopped, expired, hidden from the recent-session list, or cleaned up.
 
+Manual verification steps for these flows are documented in [docs/session-progress-manual-testing.md](docs/session-progress-manual-testing.md).
+
 If a requested local session stays queued, confirm `npm run runner:local` is still running. The dashboard shows a queued-session notice when local sessions are waiting for the runner.
 
 By default, the local runner expects Docker Desktop and starts OpenVSCode with `gitpod/openvscode-server:latest`. To use a native OpenVSCode binary instead, set:
