@@ -7,6 +7,7 @@ const convexUrl = import.meta.env.VITE_CONVEX_URL as string | undefined;
 const productSurface = import.meta.env.VITE_PRODUCT_SURFACE as string | undefined;
 const authMode = import.meta.env.VITE_AUTH_MODE as string | undefined;
 const sessionAccessMode = import.meta.env.VITE_SESSION_ACCESS_MODE as string | undefined;
+const costControlsMode = import.meta.env.VITE_COST_CONTROLS_MODE as string | undefined;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -14,6 +15,7 @@ createRoot(document.getElementById("root")!).render(
       <App
         authMode={authMode}
         convexUrl={convexUrl}
+        costControlsMode={costControlsMode}
         productSurface={productSurface}
         sessionAccessMode={sessionAccessMode}
       />

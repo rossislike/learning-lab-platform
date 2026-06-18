@@ -62,7 +62,7 @@ After `convex dev` starts, set `VITE_CONVEX_URL` in `.env.local` to the URL it p
 
 Docker Desktop must be running before processing sessions because the default local editor provider starts OpenVSCode with `gitpod/openvscode-server:latest`.
 
-Hosted or public product surfaces must configure authentication and authorized session/workspace URL access before the app starts. Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`, and `VITE_SESSION_ACCESS_MODE=local-only` for local development; set `VITE_AUTH_MODE=configured` and `VITE_SESSION_ACCESS_MODE=authorized` before using `VITE_PRODUCT_SURFACE=hosted` or `public`.
+Hosted or public product surfaces must configure authentication, authorized session/workspace URL access, and cost controls before the app starts. Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`, `VITE_SESSION_ACCESS_MODE=local-only`, and `VITE_COST_CONTROLS_MODE=local-limits` for local development; set `VITE_AUTH_MODE=configured`, `VITE_SESSION_ACCESS_MODE=authorized`, and `VITE_COST_CONTROLS_MODE=enforced` before using `VITE_PRODUCT_SURFACE=hosted` or `public`.
 
 ## Optional: Reimport The Product Dashboard Lab
 

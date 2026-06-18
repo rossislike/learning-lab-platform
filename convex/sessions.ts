@@ -4,6 +4,8 @@ import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
+const MAX_TTL_SECONDS = 60 * 60;
+const MAX_ACTIVE_LOCAL_SESSIONS = 5;
 const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
 
@@ -171,13 +173,27 @@ export const request = mutation({
   },
   handler: async (ctx, args) => {
     const timestamp = now();
-    const ttlSeconds = args.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const ttlSeconds = Math.min(args.ttlSeconds ?? DEFAULT_TTL_SECONDS, MAX_TTL_SECONDS);
+    const runner = args.runner ?? "local";
+    if (runner === "local") {
+      const activeLocalSessions = await ctx.db.query("sessions").order("desc").take(100);
+      const activeCount = activeLocalSessions.filter(
+        (session) =>
+          session.runner === "local" &&
+          ["requested", "starting", "running", "checking"].includes(session.status)
+      ).length;
+      if (activeCount >= MAX_ACTIVE_LOCAL_SESSIONS) {
+        throw new Error(
+          `Local session limit reached (${MAX_ACTIVE_LOCAL_SESSIONS} active sessions)`
+        );
+      }
+    }
 
     const sessionId = await ctx.db.insert("sessions", {
       labId: args.labId,
       learnerLabel: args.learnerLabel,
       status: "requested",
-      runner: args.runner ?? "local",
+      runner,
       ttlSeconds,
       createdAt: timestamp,
       updatedAt: timestamp,

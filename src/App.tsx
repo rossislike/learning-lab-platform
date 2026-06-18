@@ -20,6 +20,7 @@ import type { Id } from "../convex/_generated/dataModel";
 type AppProps = {
   authMode?: string;
   convexUrl?: string;
+  costControlsMode?: string;
   missingConvexUrl?: boolean;
   productSurface?: string;
   sessionAccessMode?: string;
@@ -162,6 +163,7 @@ const selectedSessionStorageKey = "learning-lab-selected-session-id";
 export default function App({
   authMode = "disabled",
   convexUrl,
+  costControlsMode = "local-limits",
   missingConvexUrl = false,
   productSurface = "local",
   sessionAccessMode = "local-only",
@@ -170,11 +172,17 @@ export default function App({
     return <SetupRequiredApp />;
   }
 
-  const securityBlocker = hostedSecurityBlocker(productSurface, authMode, sessionAccessMode);
+  const securityBlocker = hostedSecurityBlocker(
+    productSurface,
+    authMode,
+    sessionAccessMode,
+    costControlsMode
+  );
   if (securityBlocker) {
     return (
       <HostedSecurityRequiredApp
         authMode={authMode}
+        costControlsMode={costControlsMode}
         productSurface={productSurface}
         securityBlocker={securityBlocker}
         sessionAccessMode={sessionAccessMode}
@@ -188,7 +196,8 @@ export default function App({
 function hostedSecurityBlocker(
   productSurface: string,
   authMode: string,
-  sessionAccessMode: string
+  sessionAccessMode: string,
+  costControlsMode: string
 ) {
   if (!["hosted", "public"].includes(productSurface)) {
     return null;
@@ -199,16 +208,21 @@ function hostedSecurityBlocker(
   if (sessionAccessMode !== "authorized") {
     return "session access authorization";
   }
+  if (costControlsMode !== "enforced") {
+    return "hosted cost controls";
+  }
   return null;
 }
 
 function HostedSecurityRequiredApp({
   authMode,
+  costControlsMode,
   productSurface,
   securityBlocker,
   sessionAccessMode,
 }: {
   authMode: string;
+  costControlsMode: string;
   productSurface: string;
   securityBlocker: string;
   sessionAccessMode: string;
@@ -231,7 +245,8 @@ function HostedSecurityRequiredApp({
           <span>
             Configure {securityBlocker} before running a {productSurface} surface.
             Current auth mode is <code>{authMode}</code> and session access mode is{" "}
-            <code>{sessionAccessMode}</code>.
+            <code>{sessionAccessMode}</code>. Cost controls mode is{" "}
+            <code>{costControlsMode}</code>.
           </span>
         </div>
 
@@ -246,8 +261,8 @@ function HostedSecurityRequiredApp({
             </div>
             <p className="muted">
               Local development can run with local-only access. Hosted and public surfaces must
-              configure authentication plus authorized session and workspace URL access before
-              exposing learner data.
+              configure authentication, authorized session/workspace URL access, and enforced cost
+              controls before exposing learner data or hosted workloads.
             </p>
           </article>
         </section>

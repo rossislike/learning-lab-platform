@@ -89,6 +89,7 @@ The frontend reads these product-readiness environment variables:
 - `VITE_PRODUCT_SURFACE`: `local`, `hosted`, or `public`.
 - `VITE_AUTH_MODE`: `disabled` or `configured`.
 - `VITE_SESSION_ACCESS_MODE`: `local-only` or `authorized`.
+- `VITE_COST_CONTROLS_MODE`: `local-limits` or `enforced`.
 
 When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app blocks startup unless `VITE_AUTH_MODE=configured`. This keeps hosted/public deployment from exposing learner sessions, progress records, or workspace URLs before authentication is wired in.
 
@@ -119,3 +120,12 @@ Sessions now record operational timing fields:
 - `cleanupDurationMs`: time from cleanup request or stop/expiry to cleaned state.
 
 The dashboard runner panel reads a Convex observability summary for recent sessions and shows average startup time, average validation time, failure rate, and average cleanup time. These metrics give the hosted product a basic signal for runner health, learner friction, validation latency, and cleanup reliability.
+
+## Cost Controls
+
+Local development has conservative session limits:
+
+- Requested TTL is capped at 1 hour.
+- Local runner sessions are capped at 5 active sessions across `requested`, `starting`, `running`, and `checking`.
+
+Hosted or public mode is also gated by `VITE_COST_CONTROLS_MODE=enforced`. This prevents hosted workloads from starting until the deployment has explicit cost controls for session concurrency, TTL, cleanup, and hosted runner capacity.
