@@ -74,6 +74,20 @@ type ScenarioAttemptSummary = {
   lastAttemptAt?: number;
 };
 
+type ProgressRecord = {
+  _id: Id<"progressRecords">;
+  labId: Id<"labs">;
+  sessionId: Id<"sessions">;
+  learnerLabel: string;
+  status: string;
+  score?: number;
+  summary?: string;
+  startedAt: number;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type SessionEvent = {
   _id: Id<"sessionEvents">;
   level: "info" | "warn" | "error";
@@ -198,6 +212,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const convex = useMemo(() => new ConvexHttpClient(convexUrl), [convexUrl]);
   const [labs, setLabs] = useState<LabSummary[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [progressRecords, setProgressRecords] = useState<ProgressRecord[]>([]);
   const [runnerHeartbeat, setRunnerHeartbeat] = useState<RunnerHeartbeat | null>(null);
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<SessionEvent[]>([]);
   const [selectedEndpointHealth, setSelectedEndpointHealth] =
@@ -225,13 +240,20 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
 
   const refreshDashboard = useCallback(async () => {
     try {
-      const [nextLabs, nextSessions, nextRunnerHeartbeat] = await Promise.all([
+      const [
+        nextLabs,
+        nextSessions,
+        nextProgressRecords,
+        nextRunnerHeartbeat,
+      ] = await Promise.all([
         convex.query(api.labs.list, {}),
         convex.query(api.sessions.list, {}),
+        convex.query(api.progress.list, {}),
         convex.query(api.runners.latest, { runner: "local" }),
       ]);
       setLabs(nextLabs as LabSummary[]);
       setSessions(nextSessions as SessionSummary[]);
+      setProgressRecords(nextProgressRecords as ProgressRecord[]);
       setRunnerHeartbeat(nextRunnerHeartbeat as RunnerHeartbeat | null);
       setLastRefreshAt(Date.now());
       setLoadError(null);
@@ -465,6 +487,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             endpointHealth={selectedEndpointHealth}
             events={selectedSessionEvents}
             learnerLabel={learnerLabel}
+            progressRecords={progressRecords}
             runnerHeartbeat={runnerHeartbeat}
             scenarios={scenarios}
             selectedScenario={selectedScenario}
@@ -499,6 +522,7 @@ function DashboardTab({
   endpointHealth,
   events,
   learnerLabel,
+  progressRecords,
   runnerHeartbeat,
   scenarios,
   selectedScenario,
@@ -516,6 +540,7 @@ function DashboardTab({
   endpointHealth: SessionEndpointHealth;
   events: SessionEvent[];
   learnerLabel: string;
+  progressRecords: ProgressRecord[];
   runnerHeartbeat: RunnerHeartbeat | null;
   scenarios: LabSummary[];
   selectedScenario?: LabSummary;
@@ -565,8 +590,8 @@ function DashboardTab({
       .sort((a, b) => b.createdAt - a.createdAt);
   }, [selectedScenario, sessions]);
   const scenarioAttemptSummaries = useMemo(
-    () => summarizeScenarioAttempts(sessions),
-    [sessions]
+    () => summarizeScenarioAttempts(progressRecords),
+    [progressRecords]
   );
 
   return (
@@ -1683,35 +1708,35 @@ function formatScenarioTitle(session: SessionSummary, scenarios: LabSummary[]) {
   return scenarioForSession(session, scenarios)?.title ?? "Unknown scenario";
 }
 
-function summarizeScenarioAttempts(sessions: SessionSummary[]) {
+function summarizeScenarioAttempts(progressRecords: ProgressRecord[]) {
   const summaries = new Map<string, ScenarioAttemptSummary>();
 
-  for (const session of sessions) {
-    const summary = summaries.get(session.labId) ?? {
+  for (const record of progressRecords) {
+    const summary = summaries.get(record.labId) ?? {
       attempts: 0,
       passed: 0,
       failed: 0,
     };
 
     summary.attempts += 1;
-    if (session.status === "passed") {
+    if (record.status === "passed") {
       summary.passed += 1;
     }
-    if (session.status === "failed") {
+    if (record.status === "failed") {
       summary.failed += 1;
     }
-    if (typeof session.lastCheckScore === "number") {
+    if (typeof record.score === "number") {
       summary.bestScore =
         typeof summary.bestScore === "number"
-          ? Math.max(summary.bestScore, session.lastCheckScore)
-          : session.lastCheckScore;
+          ? Math.max(summary.bestScore, record.score)
+          : record.score;
     }
     summary.lastAttemptAt =
       typeof summary.lastAttemptAt === "number"
-        ? Math.max(summary.lastAttemptAt, session.createdAt)
-        : session.createdAt;
+        ? Math.max(summary.lastAttemptAt, record.startedAt)
+        : record.startedAt;
 
-    summaries.set(session.labId, summary);
+    summaries.set(record.labId, summary);
   }
 
   return summaries;

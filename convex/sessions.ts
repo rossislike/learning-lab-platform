@@ -1,9 +1,47 @@
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
 const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
+
+type ProgressStatus =
+  | "requested"
+  | "starting"
+  | "running"
+  | "checking"
+  | "passed"
+  | "failed"
+  | "stopped"
+  | "errored"
+  | "expired";
+
+type ProgressPatch = {
+  status: ProgressStatus;
+  score?: number;
+  summary?: string;
+  completedAt?: number;
+  updatedAt: number;
+};
+
+async function patchProgressRecord(
+  ctx: MutationCtx,
+  sessionId: Id<"sessions">,
+  patch: ProgressPatch
+) {
+  const [record] = await ctx.db
+    .query("progressRecords")
+    .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
+    .take(1);
+
+  if (!record) {
+    return;
+  }
+
+  await ctx.db.patch(record._id, patch);
+}
 
 export const list = query({
   args: {},
@@ -153,6 +191,16 @@ export const request = mutation({
       createdAt: timestamp,
     });
 
+    await ctx.db.insert("progressRecords", {
+      labId: args.labId,
+      sessionId,
+      learnerLabel: args.learnerLabel,
+      status: "requested",
+      startedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
     return sessionId;
   },
 });
@@ -171,6 +219,10 @@ export const markRunning = mutation({
       workspaceUrl: args.workspaceUrl,
       previewUrl: args.previewUrl,
       terminalUrl: args.terminalUrl,
+      updatedAt: timestamp,
+    });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: "running",
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
@@ -212,6 +264,10 @@ export const markChecking = mutation({
       status: "checking",
       updatedAt: timestamp,
     });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: "checking",
+      updatedAt: timestamp,
+    });
     await ctx.db.insert("sessionEvents", {
       sessionId: args.sessionId,
       level: "info",
@@ -226,6 +282,10 @@ export const markStarting = mutation({
   handler: async (ctx, args) => {
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
+      status: "starting",
+      updatedAt: timestamp,
+    });
+    await patchProgressRecord(ctx, args.sessionId, {
       status: "starting",
       updatedAt: timestamp,
     });
@@ -249,6 +309,11 @@ export const markErrored = mutation({
     await ctx.db.patch(args.sessionId, {
       status: "errored",
       lastCheckSummary: args.message,
+      updatedAt: timestamp,
+    });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: "errored",
+      summary: args.message,
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
@@ -293,6 +358,13 @@ export const recordCheck = mutation({
         : {}),
       updatedAt: timestamp,
     });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: args.passed ? "passed" : "failed",
+      score: args.score,
+      summary: args.summary,
+      ...(args.passed ? { completedAt: timestamp } : {}),
+      updatedAt: timestamp,
+    });
     await ctx.db.insert("sessionEvents", {
       sessionId: args.sessionId,
       level: args.passed ? "info" : "warn",
@@ -311,6 +383,11 @@ export const stop = mutation({
       status: "stopped",
       stoppedAt: timestamp,
       stopReason: args.reason ?? "Stopped by operator",
+      updatedAt: timestamp,
+    });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: "stopped",
+      summary: args.reason ?? "Stopped by operator",
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
@@ -349,6 +426,11 @@ export const markExpired = mutation({
       status: "expired",
       stoppedAt: timestamp,
       stopReason: args.reason ?? "Session TTL expired",
+      updatedAt: timestamp,
+    });
+    await patchProgressRecord(ctx, args.sessionId, {
+      status: "expired",
+      summary: args.reason ?? "Session TTL expired",
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {

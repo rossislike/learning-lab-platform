@@ -72,6 +72,32 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_session", ["sessionId"]),
 
+  progressRecords: defineTable({
+    labId: v.id("labs"),
+    sessionId: v.id("sessions"),
+    learnerLabel: v.string(),
+    status: v.union(
+      v.literal("requested"),
+      v.literal("starting"),
+      v.literal("running"),
+      v.literal("checking"),
+      v.literal("passed"),
+      v.literal("failed"),
+      v.literal("stopped"),
+      v.literal("errored"),
+      v.literal("expired")
+    ),
+    score: v.optional(v.number()),
+    summary: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_lab", ["labId"])
+    .index("by_lab_and_learner", ["labId", "learnerLabel"]),
+
   runnerHeartbeats: defineTable({
     runner: v.union(v.literal("local"), v.literal("aws-ecs-fargate")),
     runnerId: v.string(),
