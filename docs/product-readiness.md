@@ -84,9 +84,18 @@ Authoring remains a separate workflow from the learner self-serve experience.
 
 Local development can run with authentication disabled. Hosted or public deployment cannot.
 
-The frontend reads two product-readiness environment variables:
+The frontend reads these product-readiness environment variables:
 
 - `VITE_PRODUCT_SURFACE`: `local`, `hosted`, or `public`.
 - `VITE_AUTH_MODE`: `disabled` or `configured`.
+- `VITE_SESSION_ACCESS_MODE`: `local-only` or `authorized`.
 
 When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app blocks startup unless `VITE_AUTH_MODE=configured`. This keeps hosted/public deployment from exposing learner sessions, progress records, or workspace URLs before authentication is wired in.
+
+## Authorization Boundary
+
+Local development can expose local session and workspace URLs to the local operator. Hosted or public deployment must not.
+
+When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app also blocks startup unless `VITE_SESSION_ACCESS_MODE=authorized`. This makes the hosted launch contract explicit: session data, progress records, editor URLs, preview URLs, and tools URLs must be scoped to the authenticated learner or an authorized support/admin role before the hosted product can run.
+
+The current local MVP does not implement a full identity provider or URL signing layer. Instead, hosted/public mode is gated until that boundary is configured.

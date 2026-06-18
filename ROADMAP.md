@@ -82,7 +82,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Define learner, operator, and author personas.
 - [x] Decide whether the first product surface is single-learner, instructor-led, or self-serve.
 - [x] Add authentication before any hosted/public deployment.
-- [ ] Add authorization boundaries around sessions and workspace URLs.
+- [x] Add authorization boundaries around sessions and workspace URLs.
 - [ ] Add a basic course/module structure above scenarios.
 - [ ] Add observability for session startup time, validation time, failure rates, and resource cleanup.
 - [ ] Add cost controls before running hosted workloads.

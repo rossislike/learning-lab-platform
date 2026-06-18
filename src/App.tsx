@@ -22,6 +22,7 @@ type AppProps = {
   convexUrl?: string;
   missingConvexUrl?: boolean;
   productSurface?: string;
+  sessionAccessMode?: string;
 };
 
 type LabSummary = {
@@ -153,28 +154,54 @@ export default function App({
   convexUrl,
   missingConvexUrl = false,
   productSurface = "local",
+  sessionAccessMode = "local-only",
 }: AppProps) {
   if (missingConvexUrl || !convexUrl) {
     return <SetupRequiredApp />;
   }
 
-  if (requiresHostedAuth(productSurface, authMode)) {
-    return <HostedAuthRequiredApp authMode={authMode} productSurface={productSurface} />;
+  const securityBlocker = hostedSecurityBlocker(productSurface, authMode, sessionAccessMode);
+  if (securityBlocker) {
+    return (
+      <HostedSecurityRequiredApp
+        authMode={authMode}
+        productSurface={productSurface}
+        securityBlocker={securityBlocker}
+        sessionAccessMode={sessionAccessMode}
+      />
+    );
   }
 
   return <ConnectedApp convexUrl={convexUrl} />;
 }
 
-function requiresHostedAuth(productSurface: string, authMode: string) {
-  return ["hosted", "public"].includes(productSurface) && authMode !== "configured";
+function hostedSecurityBlocker(
+  productSurface: string,
+  authMode: string,
+  sessionAccessMode: string
+) {
+  if (!["hosted", "public"].includes(productSurface)) {
+    return null;
+  }
+  if (authMode !== "configured") {
+    return "authentication";
+  }
+  if (sessionAccessMode !== "authorized") {
+    return "session access authorization";
+  }
+  return null;
 }
 
-function HostedAuthRequiredApp({
+function HostedSecurityRequiredApp({
   authMode,
   productSurface,
+  securityBlocker,
+  sessionAccessMode,
 }: {
   authMode: string;
   productSurface: string;
+  securityBlocker: string;
+  sessionAccessMode: string;
 }) {
   return (
     <main className="app-shell">
@@ -190,10 +217,11 @@ function HostedAuthRequiredApp({
 
       <section className="content">
         <div className="notice" id="auth">
-          <strong>Authentication required for hosted mode.</strong>
+          <strong>Hosted security gate blocked startup.</strong>
           <span>
-            Set <code>VITE_AUTH_MODE=configured</code> before running a {productSurface} surface.
-            Current mode is <code>{authMode}</code>.
+            Configure {securityBlocker} before running a {productSurface} surface.
+            Current auth mode is <code>{authMode}</code> and session access mode is{" "}
+            <code>{sessionAccessMode}</code>.
           </span>
         </div>
 
@@ -207,8 +235,9 @@ function HostedAuthRequiredApp({
               <span className="status-pill status-errored">blocked</span>
             </div>
             <p className="muted">
-              Local development can run with auth disabled. Hosted and public surfaces must configure
-              authentication before exposing sessions, progress records, or workspace URLs.
+              Local development can run with local-only access. Hosted and public surfaces must
+              configure authentication plus authorized session and workspace URL access before
+              exposing learner data.
             </p>
           </article>
         </section>
