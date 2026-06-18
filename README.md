@@ -45,6 +45,8 @@ Before marking a new scenario ready, run its starter/solution smoke test:
 npm run scenarios:smoke -- --scenario react-button-label
 ```
 
+Product readiness decisions are documented in [docs/product-readiness.md](docs/product-readiness.md). The first product surface is self-serve: learners select an exercise, the platform starts the needed session/workspace automatically, and learners can stop or exit their exercise at any time.
+
 ## Local Setup
 
 ```bash
