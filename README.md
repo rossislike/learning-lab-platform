@@ -33,6 +33,8 @@ Use `Seed scenarios` in the dashboard to create or update the MVP scenarios in C
 - `Update Welcome Message`: React Fundamentals smoke scenario. Change one heading to `Welcome to React Labs`.
 - `Optimize Product Dashboard`: Rendering Optimization scenario based on the existing React performance lab.
 
+Seeding also creates the default `React Labs` course and module records used to group scenarios above the individual exercise level.
+
 Scenario manifests are documented in [docs/scenario-authoring.md](docs/scenario-authoring.md). After changing a manifest, run:
 
 ```bash

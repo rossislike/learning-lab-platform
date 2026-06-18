@@ -99,3 +99,13 @@ Local development can expose local session and workspace URLs to the local opera
 When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app also blocks startup unless `VITE_SESSION_ACCESS_MODE=authorized`. This makes the hosted launch contract explicit: session data, progress records, editor URLs, preview URLs, and tools URLs must be scoped to the authenticated learner or an authorized support/admin role before the hosted product can run.
 
 The current local MVP does not implement a full identity provider or URL signing layer. Instead, hosted/public mode is gated until that boundary is configured.
+
+## Course And Module Structure
+
+Scenarios now sit under a basic course/module hierarchy:
+
+- `courses`: top-level learning products, starting with `React Labs`.
+- `courseModules`: ordered groups inside a course, derived from scenario domain metadata.
+- `labs`: individual scenarios linked to a course and module.
+
+The scenario seeding workflow creates or updates the default React course and module records before upserting scenarios. This gives the self-serve product a durable structure above individual exercises without introducing enrollment yet.

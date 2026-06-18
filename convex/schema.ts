@@ -2,7 +2,29 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  courses: defineTable({
+    slug: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]),
+
+  courseModules: defineTable({
+    courseId: v.id("courses"),
+    slug: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    displayOrder: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_course", ["courseId"])
+    .index("by_slug", ["slug"]),
+
   labs: defineTable({
+    courseId: v.optional(v.id("courses")),
+    moduleId: v.optional(v.id("courseModules")),
     slug: v.string(),
     title: v.string(),
     summary: v.string(),
