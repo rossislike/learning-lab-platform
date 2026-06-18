@@ -49,6 +49,8 @@ npm run scenarios:smoke -- --scenario react-button-label
 
 Product readiness decisions are documented in [docs/product-readiness.md](docs/product-readiness.md). The first product surface is self-serve: learners select an exercise, the platform starts the needed session/workspace automatically, and learners can stop or exit their exercise at any time.
 
+Manual verification steps for product readiness are documented in [docs/product-readiness-manual-testing.md](docs/product-readiness-manual-testing.md).
+
 ## Local Setup
 
 ```bash
