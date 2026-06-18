@@ -214,11 +214,18 @@ export const markRunning = mutation({
   },
   handler: async (ctx, args) => {
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
     await ctx.db.patch(args.sessionId, {
       status: "running",
       workspaceUrl: args.workspaceUrl,
       previewUrl: args.previewUrl,
       terminalUrl: args.terminalUrl,
+      startedAt: timestamp,
+      startupDurationMs: timestamp - session.createdAt,
       updatedAt: timestamp,
     });
     await patchProgressRecord(ctx, args.sessionId, {
@@ -262,6 +269,7 @@ export const markChecking = mutation({
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "checking",
+      lastCheckStartedAt: timestamp,
       updatedAt: timestamp,
     });
     await patchProgressRecord(ctx, args.sessionId, {
@@ -340,11 +348,19 @@ export const recordCheck = mutation({
     if (!session) {
       throw new Error("Session not found");
     }
+    const validationDurationMs =
+      typeof session.lastCheckStartedAt === "number"
+        ? timestamp - session.lastCheckStartedAt
+        : undefined;
 
     await ctx.db.patch(args.sessionId, {
       status: args.passed ? "passed" : "failed",
       lastCheckScore: args.score,
       lastCheckSummary: args.summary,
+      lastCheckCompletedAt: timestamp,
+      ...(typeof validationDurationMs === "number"
+        ? { lastValidationDurationMs: validationDurationMs }
+        : {}),
       ...(args.passed
         ? {
             completedAt: timestamp,
@@ -479,9 +495,18 @@ export const markCleaned = mutation({
   },
   handler: async (ctx, args) => {
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Session not found");
+    }
+    const cleanupStartedAt = session.cleanupRequestedAt ?? session.stoppedAt;
+
     await ctx.db.patch(args.sessionId, {
       cleanedAt: timestamp,
       cleanupSummary: args.summary,
+      ...(typeof cleanupStartedAt === "number"
+        ? { cleanupDurationMs: timestamp - cleanupStartedAt }
+        : {}),
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {

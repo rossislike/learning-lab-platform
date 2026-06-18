@@ -84,7 +84,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Add authentication before any hosted/public deployment.
 - [x] Add authorization boundaries around sessions and workspace URLs.
 - [x] Add a basic course/module structure above scenarios.
-- [ ] Add observability for session startup time, validation time, failure rates, and resource cleanup.
+- [x] Add observability for session startup time, validation time, failure rates, and resource cleanup.
 - [ ] Add cost controls before running hosted workloads.
 
 ## AWS Migration

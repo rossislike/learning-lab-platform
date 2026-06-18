@@ -111,6 +111,16 @@ type RunnerHeartbeat = {
   updatedAt: number;
 };
 
+type ObservabilitySummary = {
+  sampleSize: number;
+  averageStartupMs?: number;
+  averageValidationMs?: number;
+  averageCleanupMs?: number;
+  failureCount: number;
+  failureRate: number;
+  terminalSessionCount: number;
+};
+
 type ValidationAssertion = {
   title?: string;
   status?: string;
@@ -306,6 +316,8 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [progressRecords, setProgressRecords] = useState<ProgressRecord[]>([]);
   const [runnerHeartbeat, setRunnerHeartbeat] = useState<RunnerHeartbeat | null>(null);
+  const [observabilitySummary, setObservabilitySummary] =
+    useState<ObservabilitySummary | null>(null);
   const [selectedSessionEvents, setSelectedSessionEvents] = useState<SessionEvent[]>([]);
   const [selectedEndpointHealth, setSelectedEndpointHealth] =
     useState<SessionEndpointHealth>(() => emptyEndpointHealth());
@@ -337,16 +349,19 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
         nextSessions,
         nextProgressRecords,
         nextRunnerHeartbeat,
+        nextObservabilitySummary,
       ] = await Promise.all([
         convex.query(api.labs.list, {}),
         convex.query(api.sessions.list, {}),
         convex.query(api.progress.list, {}),
         convex.query(api.runners.latest, { runner: "local" }),
+        convex.query(api.observability.sessionSummary, {}),
       ]);
       setLabs(nextLabs as LabSummary[]);
       setSessions(nextSessions as SessionSummary[]);
       setProgressRecords(nextProgressRecords as ProgressRecord[]);
       setRunnerHeartbeat(nextRunnerHeartbeat as RunnerHeartbeat | null);
+      setObservabilitySummary(nextObservabilitySummary as ObservabilitySummary);
       setLastRefreshAt(Date.now());
       setLoadError(null);
     } catch (error) {
@@ -579,6 +594,7 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             endpointHealth={selectedEndpointHealth}
             events={selectedSessionEvents}
             learnerLabel={learnerLabel}
+            observabilitySummary={observabilitySummary}
             progressRecords={progressRecords}
             runnerHeartbeat={runnerHeartbeat}
             scenarios={scenarios}
@@ -614,6 +630,7 @@ function DashboardTab({
   endpointHealth,
   events,
   learnerLabel,
+  observabilitySummary,
   progressRecords,
   runnerHeartbeat,
   scenarios,
@@ -632,6 +649,7 @@ function DashboardTab({
   endpointHealth: SessionEndpointHealth;
   events: SessionEvent[];
   learnerLabel: string;
+  observabilitySummary: ObservabilitySummary | null;
   progressRecords: ProgressRecord[];
   runnerHeartbeat: RunnerHeartbeat | null;
   scenarios: LabSummary[];
@@ -743,6 +761,7 @@ function DashboardTab({
 
         <RunnerHealthPanel
           heartbeat={runnerHeartbeat}
+          observability={observabilitySummary}
           requestedCount={requestedLocalSessions.length}
         />
       </section>
@@ -2327,6 +2346,11 @@ function formatMilliseconds(value?: number) {
   return `${Math.round(value / 100) / 10}s`;
 }
 
+function formatPercentage(value?: number) {
+  if (typeof value !== "number") return "-";
+  return `${Math.round(value * 100)}%`;
+}
+
 function formatAge(milliseconds: number) {
   if (milliseconds < 1000) return "just now";
   if (milliseconds < 60_000) return `${Math.floor(milliseconds / 1000)}s ago`;
@@ -2394,9 +2418,11 @@ function readSelectedSessionId(): Id<"sessions"> | null {
 
 function RunnerHealthPanel({
   heartbeat,
+  observability,
   requestedCount,
 }: {
   heartbeat: RunnerHeartbeat | null;
+  observability: ObservabilitySummary | null;
   requestedCount: number;
 }) {
   const health = runnerHealthFor(heartbeat);
@@ -2446,6 +2472,25 @@ function RunnerHealthPanel({
                   .join(" / ") || "-"
               : "-"
           }
+        />
+      </div>
+
+      <div className="runner-health-grid observability-grid">
+        <DetailItem
+          label="Avg startup"
+          value={formatMilliseconds(observability?.averageStartupMs)}
+        />
+        <DetailItem
+          label="Avg validation"
+          value={formatMilliseconds(observability?.averageValidationMs)}
+        />
+        <DetailItem
+          label="Failure rate"
+          value={formatPercentage(observability?.failureRate)}
+        />
+        <DetailItem
+          label="Avg cleanup"
+          value={formatMilliseconds(observability?.averageCleanupMs)}
         />
       </div>
     </article>

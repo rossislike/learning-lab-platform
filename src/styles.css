@@ -253,6 +253,11 @@ select {
   gap: 12px;
 }
 
+.observability-grid {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 14px;
+}
+
 .panel,
 .notice {
   background: #ffffff;

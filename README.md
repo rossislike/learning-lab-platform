@@ -138,6 +138,8 @@ The runner processes requested local sessions, creates a workspace under `lab-wo
 
 Each runner poll also reconciles Convex state with local state. Sessions left in `starting` after a runner restart are rebuilt idempotently, and active local sessions are checked against their editor, preview, and tools processes. If a required process or editor container has died, the runner marks the session errored, records an event, and cleans up remaining local resources.
 
+The runner health panel includes recent observability metrics for startup time, validation time, failure rate, and cleanup time.
+
 Completed local workspaces remain inspectable for 30 minutes after a passing validation run. Passing validation records `completedAt` and moves `expiresAt` to the end of that review window; after it elapses, the runner expires and cleans the local editor, preview, and tools resources through the normal TTL cleanup path.
 
 The dashboard keeps scenario attempt summaries in durable `progressRecords`, one row per requested session. These records are separate from disposable session runtime metadata, so scenario progress can remain available after a local workspace has been stopped, expired, hidden from the recent-session list, or cleaned up.

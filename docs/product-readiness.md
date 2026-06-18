@@ -109,3 +109,13 @@ Scenarios now sit under a basic course/module hierarchy:
 - `labs`: individual scenarios linked to a course and module.
 
 The scenario seeding workflow creates or updates the default React course and module records before upserting scenarios. This gives the self-serve product a durable structure above individual exercises without introducing enrollment yet.
+
+## Observability
+
+Sessions now record operational timing fields:
+
+- `startupDurationMs`: time from session request to runner-ready state.
+- `lastValidationDurationMs`: time from check start to check completion.
+- `cleanupDurationMs`: time from cleanup request or stop/expiry to cleaned state.
+
+The dashboard runner panel reads a Convex observability summary for recent sessions and shows average startup time, average validation time, failure rate, and average cleanup time. These metrics give the hosted product a basic signal for runner health, learner friction, validation latency, and cleanup reliability.
