@@ -79,7 +79,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## Product Readiness
 
-- [ ] Define learner, operator, and author personas.
+- [x] Define learner, operator, and author personas.
 - [ ] Decide whether the first product surface is single-learner, instructor-led, or self-serve.
 - [ ] Add authentication before any hosted/public deployment.
 - [ ] Add authorization boundaries around sessions and workspace URLs.
