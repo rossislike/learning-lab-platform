@@ -16,10 +16,10 @@ Use this checklist to verify the dashboard changes for session filtering, scenar
    npm run dev:all
    ```
 
-   `dev:all` uses the lightweight local editor by default. To test the Docker/OpenVSCode path, run:
+   `dev:all` uses the Docker/OpenVSCode editor by default. To force the lightweight fallback editor, run:
 
    ```bash
-   LOCAL_EDITOR_PROVIDER=openvscode-docker npm run dev:all
+   LOCAL_EDITOR_PROVIDER=lightweight npm run dev:all
    ```
 
 3. Open the dashboard:

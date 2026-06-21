@@ -37,9 +37,9 @@ The OpenVSCode URL is saved as `workspaceUrl`, the Vite URL is saved as `preview
 
 Editor providers:
 
-- `LOCAL_EDITOR_PROVIDER=openvscode-docker` starts `gitpod/openvscode-server:latest` in Docker. Docker Desktop must be running.
-- `LOCAL_EDITOR_PROVIDER=openvscode-native` starts `OPENVSCODE_SERVER_BIN` or `openvscode-server` directly.
-- `LOCAL_EDITOR_PROVIDER=lightweight` uses the older built-in textarea editor, mainly as a debugging fallback.
+- `LOCAL_EDITOR_PROVIDER=openvscode-docker` starts `gitpod/openvscode-server:latest` in Docker. Docker Desktop must be running. Generated lab workspaces launch with Workspace Trust prompts disabled.
+- `LOCAL_EDITOR_PROVIDER=openvscode-native` starts `OPENVSCODE_SERVER_BIN` or `openvscode-server` directly with Workspace Trust prompts disabled.
+- `LOCAL_EDITOR_PROVIDER=lightweight` uses the older built-in textarea editor, mainly as an explicit debugging fallback.
 
 ## AWS Implementation
 

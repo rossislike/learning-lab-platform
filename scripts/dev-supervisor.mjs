@@ -21,7 +21,7 @@ const commands = [
     delayMs: Number(process.env.LOCAL_RUNNER_START_DELAY_MS ?? 6000),
     env: {
       LOCAL_EDITOR_PROVIDER:
-        process.env.LOCAL_EDITOR_PROVIDER ?? "lightweight",
+        process.env.LOCAL_EDITOR_PROVIDER ?? "openvscode-docker",
     },
   },
 ];
