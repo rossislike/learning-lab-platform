@@ -91,7 +91,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 - [x] Preserve the local runner interface while adding an AWS runner implementation.
 - [x] Decide the hosted execution model: ECS/Fargate first unless requirements force EKS/KubeVirt.
-- [ ] Define workspace storage strategy for hosted sessions.
+- [x] Define workspace storage strategy for hosted sessions.
 - [ ] Define routing for editor, preview, and tools URLs.
 - [ ] Add secure per-session URL access.
 - [ ] Implement hosted TTL cleanup.

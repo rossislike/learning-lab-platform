@@ -3,6 +3,7 @@ import test from "node:test"
 import {
   AwsEcsFargateRunner,
   assertAwsEcsConfig,
+  awsEcsConfigFromEnv,
 } from "./aws-ecs-fargate-runner.mjs"
 
 const config = {
@@ -72,6 +73,11 @@ test("stop finds and stops every running task for the session", async () => {
 test("configuration validation reports all missing required values", () => {
   assert.throws(
     () => assertAwsEcsConfig({ subnetIds: [], securityGroupIds: [] }),
-    /region, clusterArn, taskDefinitionArn, subnetIds, securityGroupIds/,
+    /clusterArn, taskDefinitionArn, subnetIds, securityGroupIds/,
   )
+})
+
+test("configuration defaults to the us-east-2 region", () => {
+  assert.equal(awsEcsConfigFromEnv({}).region, "us-east-2")
+  assert.equal(awsEcsConfigFromEnv({ AWS_REGION: "" }).region, "us-east-2")
 })

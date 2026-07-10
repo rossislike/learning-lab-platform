@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process"
 
 const requiredConfigKeys = [
-  "region",
   "clusterArn",
   "taskDefinitionArn",
   "subnetIds",
@@ -10,7 +9,7 @@ const requiredConfigKeys = [
 
 export function awsEcsConfigFromEnv(env = process.env) {
   return {
-    region: env.AWS_REGION,
+    region: env.AWS_REGION || "us-east-2",
     clusterArn: env.AWS_ECS_CLUSTER_ARN,
     taskDefinitionArn: env.AWS_ECS_TASK_DEFINITION_ARN,
     subnetIds: splitList(env.AWS_ECS_SUBNET_IDS),
