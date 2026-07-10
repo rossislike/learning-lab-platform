@@ -8,12 +8,15 @@ The hosted execution model is accepted in [ADR 0001](../../docs/decisions/0001-h
 
 The workspace storage model is accepted in [ADR 0002](../../docs/decisions/0002-hosted-workspace-storage.md): use Fargate ephemeral storage for the live workspace and private S3 buckets for immutable scenario artifacts and short-lived recovery checkpoints.
 
+The hosted routing model is accepted in [ADR 0003](../../docs/decisions/0003-hosted-session-routing.md): terminate wildcard workspace HTTPS at one public Application Load Balancer and proxy through a session-aware gateway service to private Fargate tasks. Keep route records authoritative in Convex.
+
 ## Recommended Initial Services
 
 - ECS Fargate for one task per lab session.
 - ECR for runner and optional lab images.
 - S3 for versioned scenario artifacts and session checkpoints.
-- Application Load Balancer or a lightweight gateway service for editor/preview routing.
+- Route 53 and ACM for wildcard workspace DNS and TLS.
+- One Application Load Balancer and a highly available session gateway service.
 - CloudWatch Logs for runner logs.
 - IAM task role scoped to session needs only.
 
