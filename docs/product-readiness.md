@@ -42,6 +42,8 @@ The learner needs to:
 
 The learner should not need to understand runner health, cleanup internals, session queues, or workspace provisioning in the normal product flow.
 
+Each learner may have only one active session at a time. Starting another scenario requires stopping the current session first. Multiple browser tabs may reconnect to the same session.
+
 ### Operator
 
 The operator role is minimized for the first product surface. Most operator responsibilities should become platform automation, not a separate user workflow.
@@ -126,6 +128,7 @@ The dashboard runner panel reads a Convex observability summary for recent sessi
 Local development has conservative session limits:
 
 - Requested TTL is capped at 1 hour.
-- Local runner sessions are capped at 5 active sessions across `requested`, `starting`, `running`, and `checking`.
+- Each learner label is limited to one active session across `requested`, `starting`, `running`, `checking`, `passed`, and `failed`.
+- The local runner is capped at 5 active sessions across those statuses when distinct learner labels are used.
 
 Hosted or public mode is also gated by `VITE_COST_CONTROLS_MODE=enforced`. This prevents hosted workloads from starting until the deployment has explicit cost controls for session concurrency, TTL, cleanup, and hosted runner capacity.

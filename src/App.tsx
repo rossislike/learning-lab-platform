@@ -714,6 +714,8 @@ function DashboardTab({
   const requestedLocalSessions = sessions.filter(
     (session) => session.runner === "local" && session.status === "requested",
   )
+  const [requestBusy, setRequestBusy] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
   const [sessionScenarioFilter, setSessionScenarioFilter] = useState("all")
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all")
   const [sessionLearnerFilter, setSessionLearnerFilter] = useState("")
@@ -755,6 +757,26 @@ function DashboardTab({
     () => summarizeScenarioAttempts(progressRecords),
     [progressRecords],
   )
+  const normalizedLearnerLabel = learnerLabel.trim().toLocaleLowerCase()
+  const activeLearnerSession = sessions.find(
+    (session) =>
+      normalizedLearnerLabel.length > 0 &&
+      session.learnerLabel.trim().toLocaleLowerCase() ===
+        normalizedLearnerLabel &&
+      isActiveSession(session),
+  )
+
+  async function requestSession() {
+    setRequestBusy(true)
+    setRequestError(null)
+    try {
+      await onStartSession()
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRequestBusy(false)
+    }
+  }
 
   return (
     <div className="tab-panel" id="dashboard" role="tabpanel">
@@ -804,17 +826,42 @@ function DashboardTab({
             Learner label
             <input
               value={learnerLabel}
-              onChange={(event) => onLearnerLabelChange(event.target.value)}
+              onChange={(event) => {
+                setRequestError(null)
+                onLearnerLabelChange(event.target.value)
+              }}
             />
           </label>
 
+          {activeLearnerSession ? (
+            <div className="notice">
+              <strong>One active session per learner.</strong>
+              <span>
+                Stop the current session before starting another scenario.
+              </span>
+              <button
+                className="secondary-button"
+                onClick={() => onSelectSession(activeLearnerSession._id)}
+              >
+                View active session
+              </button>
+            </div>
+          ) : null}
+
+          {requestError ? <p className="error-text">{requestError}</p> : null}
+
           <button
             className="primary-button"
-            disabled={!selectedScenario}
-            onClick={onStartSession}
+            disabled={
+              !selectedScenario ||
+              !normalizedLearnerLabel ||
+              Boolean(activeLearnerSession) ||
+              requestBusy
+            }
+            onClick={() => void requestSession()}
           >
             <Play size={16} />
-            Request session
+            {requestBusy ? "Requesting session" : "Request session"}
           </button>
         </article>
 
@@ -2175,6 +2222,10 @@ function canRunChecks(
     !["stopped", "expired", "errored"].includes(session.status) &&
     endpointHealth.tools.status !== "stale",
   )
+}
+
+function isActiveSession(session: SessionSummary) {
+  return !["stopped", "expired", "errored"].includes(session.status)
 }
 
 function canRequestCleanup(session: SessionSummary) {

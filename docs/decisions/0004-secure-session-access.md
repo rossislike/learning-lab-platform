@@ -8,7 +8,7 @@
 
 ADR 0003 assigns stable, opaque editor, preview, and tools hostnames to each hosted learner session and routes them through a shared session gateway. A route ID is intentionally not an authorization credential. Anyone who learns a workspace URL must still be denied unless they own the session or hold an explicit support grant.
 
-The access mechanism must support normal HTTP requests, OpenVSCode and Vite WebSockets, dashboard iframes, multiple simultaneous sessions, prompt revocation, and hostile learner-authored preview code. It must not put bearer credentials in URLs, browser storage, Convex events, load balancer logs, or learner task processes.
+The access mechanism must support normal HTTP requests, OpenVSCode and Vite WebSockets, dashboard iframes, multiple browser tabs for one active session, prompt revocation, and hostile learner-authored preview code. It must not put bearer credentials in URLs, browser storage, Convex events, load balancer logs, or learner task processes.
 
 ## Decision
 
@@ -42,6 +42,16 @@ Authors and other learners receive no implicit access. Support grants require a 
 
 All browser-facing Convex session, progress, event, and URL queries must apply the same ownership or support authorization. Hiding a URL in the dashboard is not an authorization boundary.
 
+## Single Active Session Policy
+
+An authenticated learner may own only one active session across all scenarios and runner types. Active statuses are `requested`, `starting`, `running`, `checking`, `passed`, and `failed`. A passed or failed session still has an inspectable workspace and remains the learner's active session until it is stopped or expires.
+
+The Convex session-request mutation enforces this policy transactionally using the immutable owner subject. Local development uses a normalized learner label as the equivalent owner key. Concurrent requests for the same owner cannot create two sessions.
+
+Starting another scenario does not automatically stop the current session because that could discard work. The product must show the current session and ask the learner to stop it before starting another. Once the prior session is `stopped`, `expired`, or `errored`, a new request is allowed even if asynchronous resource cleanup is still finishing.
+
+Task recovery, reconnecting from another browser tab, and opening editor, preview, and tools are continuations of the same session. They do not create another session. Support access also does not transfer ownership or consume the support user's own learner-session slot.
+
 ## Bootstrap Exchange
 
 After authorization, the trusted backend creates a cryptographically random one-time bootstrap code for each authorized endpoint, with at least 256 bits of entropy per code. Convex stores only the SHA-256 hashes and these bound fields:
@@ -70,7 +80,7 @@ After consuming each code, the gateway generates a separate random access verifi
 
 ## Access Cookie
 
-Use the same host-only cookie name on each endpoint. Browser cookie isolation by hostname allows multiple endpoints and sessions to coexist:
+Use the same host-only cookie name on each endpoint. Browser cookie isolation by hostname keeps the three endpoint grants separate within the learner's active session:
 
 ```text
 __Host-llp
@@ -187,6 +197,8 @@ Before hosted launch, automated end-to-end tests must prove:
 - an unauthenticated browser cannot open any endpoint;
 - an owner can bootstrap and open all three granted endpoints;
 - another authenticated learner receives no session disclosure or access;
+- a second session request for the same owner fails while any active status remains;
+- stopping, expiring, or erroring the current session allows a new request;
 - a support grant is scoped, audited, and expires on time;
 - bootstrap codes are single-use, short-lived, and rejected after replay;
 - malformed, altered, expired, revoked, and wrong-route cookies fail;
@@ -225,6 +237,7 @@ Load balancer authentication can verify an identity provider session, but it doe
 ## Consequences
 
 - Hosted launch requires a real identity provider and immutable owner subject, not only readiness environment flags.
+- The product permits one active learner session at a time and must guide scenario switching through an explicit stop.
 - The gateway and Convex schema need bootstrap and access-grant lifecycle operations.
 - The dashboard needs a POST-based workspace bootstrap flow before loading workspace iframes.
 - Gateway replicas need bounded cache invalidation and WebSocket connection revocation.

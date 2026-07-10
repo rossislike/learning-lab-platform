@@ -132,21 +132,30 @@ These checks verify that hosted/public mode cannot start without auth, authoriza
 
 ## Cost Controls
 
-1. Request local sessions until there are 5 active sessions across `requested`, `starting`, `running`, and `checking`.
-2. Attempt to request a sixth local session.
+1. Request one local session for a learner label.
+2. Attempt to request another session with the same learner label while the first is `requested`, `starting`, `running`, `checking`, `passed`, or `failed`.
 3. Confirm the request fails with:
+
+   ```text
+   A session is already active for this learner. Stop or expire it before starting another.
+   ```
+
+4. Stop the first session and confirm the same learner label can request a new one.
+5. Use distinct learner labels to request 5 active local sessions.
+6. Attempt to request a sixth local session with another distinct learner label.
+7. Confirm the request fails with:
 
    ```text
    Local session limit reached (5 active sessions)
    ```
 
-4. Confirm session TTL remains capped at 1 hour:
+8. Confirm session TTL remains capped at 1 hour:
 
    ```bash
    npx convex run sessions:list '{}'
    ```
 
-5. Confirm newly requested sessions have `ttlSeconds` no greater than `3600`.
+9. Confirm newly requested sessions have `ttlSeconds` no greater than `3600`.
 
 ## Final Verification
 
@@ -163,4 +172,4 @@ Expected result:
 - Hosted/public mode is blocked unless auth, session access, and cost controls are configured.
 - Seeding creates course and module records above scenarios.
 - Runner health includes observability metrics.
-- Local session cost controls cap active sessions and TTL.
+- Local session cost controls allow one active session per learner label and cap total active sessions and TTL.

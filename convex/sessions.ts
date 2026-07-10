@@ -20,6 +20,19 @@ type ProgressStatus =
   | "errored"
   | "expired";
 
+const ACTIVE_SESSION_STATUSES = new Set<ProgressStatus>([
+  "requested",
+  "starting",
+  "running",
+  "checking",
+  "passed",
+  "failed",
+]);
+
+function isActiveSessionStatus(status: ProgressStatus) {
+  return ACTIVE_SESSION_STATUSES.has(status);
+}
+
 type ProgressPatch = {
   status: ProgressStatus;
   score?: number;
@@ -168,6 +181,7 @@ export const request = mutation({
   args: {
     labId: v.id("labs"),
     learnerLabel: v.string(),
+    ownerSubject: v.optional(v.string()),
     runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
     ttlSeconds: v.optional(v.number()),
   },
@@ -175,12 +189,54 @@ export const request = mutation({
     const timestamp = now();
     const ttlSeconds = Math.min(args.ttlSeconds ?? DEFAULT_TTL_SECONDS, MAX_TTL_SECONDS);
     const runner = args.runner ?? "local";
+    const learnerLabel = args.learnerLabel.trim();
+    const ownerSubject = args.ownerSubject?.trim();
+    if (!learnerLabel) {
+      throw new Error("Learner label is required");
+    }
+    if (runner === "aws-ecs-fargate" && !ownerSubject) {
+      throw new Error("Hosted sessions require an authenticated owner subject");
+    }
+
+    const sessionOwnerKey = ownerSubject ?? `local:${learnerLabel.toLocaleLowerCase()}`;
+    const sessionsForOwner = await ctx.db
+      .query("sessions")
+      .withIndex("by_session_owner", (q) => q.eq("sessionOwnerKey", sessionOwnerKey))
+      .collect();
+    const legacyLocalSessions = ownerSubject
+      ? []
+      : (
+          await Promise.all(
+            [...ACTIVE_SESSION_STATUSES].map((status) =>
+              ctx.db
+                .query("sessions")
+                .withIndex("by_status", (q) => q.eq("status", status))
+                .collect()
+            )
+          )
+        )
+          .flat()
+          .filter(
+            (session) =>
+              !session.sessionOwnerKey &&
+              session.learnerLabel.trim().toLocaleLowerCase() ===
+                learnerLabel.toLocaleLowerCase()
+          );
+    const activeSession = [...sessionsForOwner, ...legacyLocalSessions].find(
+      (session) => isActiveSessionStatus(session.status)
+    );
+    if (activeSession) {
+      throw new Error(
+        "A session is already active for this learner. Stop or expire it before starting another."
+      );
+    }
+
     if (runner === "local") {
       const activeLocalSessions = await ctx.db.query("sessions").order("desc").take(100);
       const activeCount = activeLocalSessions.filter(
         (session) =>
           session.runner === "local" &&
-          ["requested", "starting", "running", "checking"].includes(session.status)
+          isActiveSessionStatus(session.status)
       ).length;
       if (activeCount >= MAX_ACTIVE_LOCAL_SESSIONS) {
         throw new Error(
@@ -191,7 +247,9 @@ export const request = mutation({
 
     const sessionId = await ctx.db.insert("sessions", {
       labId: args.labId,
-      learnerLabel: args.learnerLabel,
+      learnerLabel,
+      ...(ownerSubject ? { ownerSubject } : {}),
+      sessionOwnerKey,
       status: "requested",
       runner,
       ttlSeconds,
@@ -210,7 +268,9 @@ export const request = mutation({
     await ctx.db.insert("progressRecords", {
       labId: args.labId,
       sessionId,
-      learnerLabel: args.learnerLabel,
+      learnerLabel,
+      ...(ownerSubject ? { ownerSubject } : {}),
+      sessionOwnerKey,
       status: "requested",
       startedAt: timestamp,
       createdAt: timestamp,

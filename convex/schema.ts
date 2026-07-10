@@ -47,6 +47,8 @@ export default defineSchema({
   sessions: defineTable({
     labId: v.id("labs"),
     learnerLabel: v.string(),
+    ownerSubject: v.optional(v.string()),
+    sessionOwnerKey: v.optional(v.string()),
     status: v.union(
       v.literal("requested"),
       v.literal("starting"),
@@ -90,6 +92,7 @@ export default defineSchema({
     removedFromListAt: v.optional(v.number()),
   })
     .index("by_lab", ["labId"])
+    .index("by_session_owner", ["sessionOwnerKey"])
     .index("by_status", ["status"])
     .index("by_expires_at", ["expiresAt"]),
 
@@ -105,6 +108,8 @@ export default defineSchema({
     labId: v.id("labs"),
     sessionId: v.id("sessions"),
     learnerLabel: v.string(),
+    ownerSubject: v.optional(v.string()),
+    sessionOwnerKey: v.optional(v.string()),
     status: v.union(
       v.literal("requested"),
       v.literal("starting"),
@@ -125,6 +130,7 @@ export default defineSchema({
   })
     .index("by_session", ["sessionId"])
     .index("by_lab", ["labId"])
+    .index("by_session_owner", ["sessionOwnerKey"])
     .index("by_lab_and_learner", ["labId", "learnerLabel"]),
 
   runnerHeartbeats: defineTable({
