@@ -10,6 +10,8 @@ The workspace storage model is accepted in [ADR 0002](../../docs/decisions/0002-
 
 The hosted routing model is accepted in [ADR 0003](../../docs/decisions/0003-hosted-session-routing.md): terminate wildcard workspace HTTPS at one public Application Load Balancer and proxy through a session-aware gateway service to private Fargate tasks. Keep route records authoritative in Convex.
 
+The hosted access model is accepted in [ADR 0004](../../docs/decisions/0004-secure-session-access.md): authorize authenticated owners or explicit support grants, exchange endpoint-bound one-time codes through HTTPS POST requests, and enforce host-only `HttpOnly` cookies at the gateway without forwarding credentials to learner tasks.
+
 ## Recommended Initial Services
 
 - ECS Fargate for one task per lab session.
