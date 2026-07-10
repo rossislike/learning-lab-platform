@@ -5,12 +5,14 @@ export type StartSessionInput = {
   labSlug: string;
   workspaceTemplatePath: string;
   ttlSeconds: number;
+  convexUrl?: string;
 };
 
 export type RunningSession = {
-  workspaceUrl: string;
-  previewUrl: string;
-  terminalUrl: string;
+  resourceId?: string;
+  workspaceUrl?: string;
+  previewUrl?: string;
+  terminalUrl?: string;
 };
 
 export type CheckResult = {

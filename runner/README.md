@@ -43,7 +43,33 @@ Editor providers:
 
 ## AWS Implementation
 
-The AWS runner should launch one ECS Fargate task per learner session.
+The AWS dispatcher implements the same session lifecycle boundary and launches
+one ECS Fargate task per learner session. The local runner commands and behavior
+remain unchanged.
+
+Run the dispatcher once:
+
+```bash
+npm run runner:aws:once
+```
+
+Run it as a polling worker:
+
+```bash
+npm run runner:aws
+```
+
+The dispatcher reads the `AWS_ECS_*` values documented in `.env.example`, sends
+the session ID, lab slug, template path, TTL, runner mode, and Convex URL to the
+configured task container, and records the returned ECS task ARN. The task agent
+is responsible for provisioning the workspace and publishing editor, preview,
+and tools URLs through `sessions.updateRunnerMetadata` and
+`sessions.markRunning`. This keeps routing and workspace storage independent of
+the runner lifecycle contract.
+
+The dispatcher host must have AWS CLI v2 installed and credentials that allow
+`ecs:RunTask`, `ecs:ListTasks`, `ecs:StopTask`, `ecs:TagResource`, and
+`iam:PassRole` for the configured task definition and roles.
 
 Recommended task shape:
 

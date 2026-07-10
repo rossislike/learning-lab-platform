@@ -68,6 +68,7 @@ export default defineSchema({
     previewPort: v.optional(v.number()),
     toolsPort: v.optional(v.number()),
     workspacePath: v.optional(v.string()),
+    runnerResourceId: v.optional(v.string()),
     lastCheckSummary: v.optional(v.string()),
     lastCheckScore: v.optional(v.number()),
     ttlSeconds: v.number(),

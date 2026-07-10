@@ -16,7 +16,10 @@
     "scenarios:check": "node scripts/import-scenarios.mjs --check",
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
     "runner:local": "node runner/local-runner.mjs",
-    "runner:local:once": "node runner/local-runner.mjs --once"
+    "runner:local:once": "node runner/local-runner.mjs --once",
+    "runner:aws": "node runner/aws-runner.mjs",
+    "runner:aws:once": "node runner/aws-runner.mjs --once",
+    "test:runner": "node --test runner/*.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

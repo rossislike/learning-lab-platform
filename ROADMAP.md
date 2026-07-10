@@ -89,7 +89,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## AWS Migration
 
-- [ ] Preserve the local runner interface while adding an AWS runner implementation.
+- [x] Preserve the local runner interface while adding an AWS runner implementation.
 - [ ] Decide the hosted execution model: ECS/Fargate first unless requirements force EKS/KubeVirt.
 - [ ] Define workspace storage strategy for hosted sessions.
 - [ ] Define routing for editor, preview, and tools URLs.

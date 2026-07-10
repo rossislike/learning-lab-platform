@@ -269,6 +269,7 @@ export const updateRunnerMetadata = mutation({
     previewPort: v.optional(v.number()),
     toolsPort: v.optional(v.number()),
     workspacePath: v.optional(v.string()),
+    runnerResourceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { sessionId, ...metadata } = args;
@@ -491,7 +492,7 @@ export const requestCleanup = mutation({
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       cleanupRequestedAt: timestamp,
-      cleanupSummary: "Cleanup requested; waiting for local runner.",
+      cleanupSummary: "Cleanup requested; waiting for session runner.",
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
