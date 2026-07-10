@@ -2,6 +2,8 @@
 
 Use AWS only for disposable execution in the first release. Keep product state in Convex.
 
+The hosted execution model is accepted in [ADR 0001](../../docs/decisions/0001-hosted-execution-model.md): one Amazon ECS standalone task on AWS Fargate per learner session. EKS, EC2-backed workers, and virtual machine orchestration remain escalation paths for requirements the React runner does not have.
+
 ## Recommended Initial Services
 
 - ECS Fargate for one task per lab session.
