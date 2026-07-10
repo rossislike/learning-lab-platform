@@ -19,7 +19,10 @@
     "runner:local:once": "node runner/local-runner.mjs --once",
     "runner:aws": "node runner/aws-runner.mjs",
     "runner:aws:once": "node runner/aws-runner.mjs --once",
-    "test:runner": "node --test runner/*.test.mjs"
+    "test:runner": "npm run infra:lambda:build && node --test runner/*.test.mjs infra/aws/terraform/lambda/*.test.mjs",
+    "infra:lambda:build": "node infra/aws/terraform/lambda/build.mjs",
+    "infra:fmt": "terraform -chdir=infra/aws/terraform fmt -check -recursive",
+    "infra:validate": "npm run infra:lambda:build && terraform -chdir=infra/aws/terraform validate"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
@@ -31,10 +34,12 @@
     "vite": "^7.2.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-ecs": "^3.1084.0",
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

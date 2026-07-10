@@ -1,0 +1,10 @@
+output "artifact_bucket" { value = aws_s3_bucket.artifacts.id }
+output "checkpoint_bucket" { value = aws_s3_bucket.checkpoints.id }
+output "ecs_cluster_arn" { value = aws_ecs_cluster.runner.arn }
+output "ecs_task_definition_arn" { value = aws_ecs_task_definition.runner.arn }
+output "private_subnet_ids" { value = values(aws_subnet.private)[*].id }
+output "public_subnet_ids" { value = values(aws_subnet.public)[*].id }
+output "runner_ecr_repository_url" { value = aws_ecr_repository.runner.repository_url }
+output "runner_log_group" { value = aws_cloudwatch_log_group.runner.name }
+output "session_security_group_id" { value = aws_security_group.session_task.id }
+output "ttl_cleanup_function_name" { value = aws_lambda_function.ttl_cleanup.function_name }

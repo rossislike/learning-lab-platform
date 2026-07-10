@@ -69,6 +69,7 @@ async function startSessions(client, runner, convexUrl) {
         labSlug: lab.slug,
         workspaceTemplatePath: lab.templatePath,
         ttlSeconds: session.ttlSeconds,
+        expiresAt: session.expiresAt,
         convexUrl,
       })
       dispatched = true

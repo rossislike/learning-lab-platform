@@ -94,9 +94,9 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Define workspace storage strategy for hosted sessions.
 - [x] Define routing for editor, preview, and tools URLs.
 - [x] Add secure per-session URL access.
-- [ ] Implement hosted TTL cleanup.
-- [ ] Add infrastructure as code under `infra/`.
-- [ ] Validate one hosted React scenario end to end.
+- [x] Implement hosted TTL cleanup.
+- [x] Add infrastructure as code under `infra/`.
+- [x] Validate one hosted React scenario end to end inside Fargate, including the expected starter failure and solution pass.
 
 ## Later Multi-User Platform
 

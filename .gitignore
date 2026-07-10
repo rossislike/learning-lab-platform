@@ -8,3 +8,9 @@ lab-workspaces
 *.tsbuildinfo
 vite.config.d.ts
 **/.vitest-report.json
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+infra/aws/terraform/backend.production.tf
+infra/aws/terraform/production.s3.tfbackend

@@ -79,12 +79,16 @@ function runAwsCli(args) {
 }
 
 function taskInput(config, input) {
+  const expiresAt = new Date(
+    input.expiresAt ?? Date.now() + input.ttlSeconds * 1000,
+  ).toISOString()
   const environment = [
     ["LAB_RUNNER_MODE", "aws-ecs-fargate"],
     ["LAB_SESSION_ID", input.sessionId],
     ["LAB_SLUG", input.labSlug],
     ["LAB_WORKSPACE_TEMPLATE_PATH", input.workspaceTemplatePath],
     ["LAB_TTL_SECONDS", String(input.ttlSeconds)],
+    ["LAB_EXPIRES_AT", expiresAt],
     ["CONVEX_URL", input.convexUrl],
   ]
     .filter(([, value]) => value)
@@ -115,8 +119,10 @@ function taskInput(config, input) {
       ],
     },
     tags: [
+      { key: "learning-lab:managed", value: "true" },
       { key: "learning-lab:session-id", value: input.sessionId },
       { key: "learning-lab:lab-slug", value: input.labSlug },
+      { key: "learning-lab:expires-at", value: expiresAt },
     ],
   }
 }

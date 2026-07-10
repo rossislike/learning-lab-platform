@@ -5,6 +5,7 @@ export type StartSessionInput = {
   labSlug: string;
   workspaceTemplatePath: string;
   ttlSeconds: number;
+  expiresAt?: number;
   convexUrl?: string;
 };
 

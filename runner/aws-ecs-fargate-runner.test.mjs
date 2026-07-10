@@ -31,6 +31,7 @@ test("start dispatches one Fargate task with the session contract", async () => 
     labSlug: "react-welcome",
     workspaceTemplatePath: "lab-definitions/react-welcome",
     ttlSeconds: 3600,
+    expiresAt: Date.parse("2026-07-10T12:00:00.000Z"),
     convexUrl: "https://example.convex.cloud",
   })
 
@@ -47,6 +48,13 @@ test("start dispatches one Fargate task with the session contract", async () => 
     cliInput.overrides.containerOverrides[0].environment.some(
       (entry) =>
         entry.name === "LAB_SESSION_ID" && entry.value === "session-123",
+    ),
+  )
+  assert.ok(
+    cliInput.tags.some(
+      (tag) =>
+        tag.key === "learning-lab:expires-at" &&
+        tag.value === "2026-07-10T12:00:00.000Z",
     ),
   )
 })

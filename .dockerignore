@@ -1,0 +1,7 @@
+.git
+.terraform
+dist
+lab-workspaces
+node_modules
+*.tfstate
+*.tfstate.*

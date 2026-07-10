@@ -5,7 +5,14 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default [
-  { ignores: ["dist", "convex/_generated", "lab-definitions/**"] },
+  {
+    ignores: [
+      "dist",
+      "convex/_generated",
+      "lab-definitions/**",
+      "infra/aws/terraform/lambda/index.cjs",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -32,7 +39,12 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.mjs", "runner/**/*.mjs", "*.config.js"],
+    files: [
+      "scripts/**/*.mjs",
+      "runner/**/*.mjs",
+      "infra/**/*.mjs",
+      "*.config.js",
+    ],
     languageOptions: {
       globals: globals.node,
     },

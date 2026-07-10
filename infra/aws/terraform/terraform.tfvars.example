@@ -1,0 +1,7 @@
+aws_region                  = "us-east-2"
+environment                 = "validation"
+enable_nat_gateway          = true
+ecr_force_delete            = true
+runner_cpu_architecture     = "ARM64"
+runner_ephemeral_storage_gib = 21
+runner_image_uri            = "AWS_ACCOUNT_ID.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-validation-runner@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
