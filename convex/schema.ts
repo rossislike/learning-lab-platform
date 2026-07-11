@@ -2,6 +2,19 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  users: defineTable({
+    clerkSubject: v.string(),
+    tokenIdentifier: v.string(),
+    displayName: v.string(),
+    email: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastSeenAt: v.number(),
+  })
+    .index("by_clerk_subject", ["clerkSubject"])
+    .index("by_token_identifier", ["tokenIdentifier"]),
+
   courses: defineTable({
     slug: v.string(),
     title: v.string(),

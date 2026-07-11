@@ -90,10 +90,11 @@ The frontend reads these product-readiness environment variables:
 
 - `VITE_PRODUCT_SURFACE`: `local`, `hosted`, or `public`.
 - `VITE_AUTH_MODE`: `disabled` or `configured`.
+- `VITE_CLERK_PUBLISHABLE_KEY`: Clerk's publishable browser key when authentication is configured.
 - `VITE_SESSION_ACCESS_MODE`: `local-only` or `authorized`.
 - `VITE_COST_CONTROLS_MODE`: `local-limits` or `enforced`.
 
-When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app blocks startup unless `VITE_AUTH_MODE=configured`. This keeps hosted/public deployment from exposing learner sessions, progress records, or workspace URLs before authentication is wired in.
+When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app blocks startup unless `VITE_AUTH_MODE=configured`. Configured mode uses Clerk and also requires `VITE_CLERK_PUBLISHABLE_KEY`. Convex validates Clerk session tokens using the deployment-only `CLERK_JWT_ISSUER_DOMAIN` value and creates a durable user record from the validated identity.
 
 ## Authorization Boundary
 
@@ -101,7 +102,7 @@ Local development can expose local session and workspace URLs to the local opera
 
 When `VITE_PRODUCT_SURFACE` is `hosted` or `public`, the app also blocks startup unless `VITE_SESSION_ACCESS_MODE=authorized`. This makes the hosted launch contract explicit: session data, progress records, editor URLs, preview URLs, and tools URLs must be scoped to the authenticated learner or an authorized support/admin role before the hosted product can run.
 
-The current local MVP does not implement a full identity provider or hosted gateway. Hosted per-session access is defined in [ADR 0004](decisions/0004-secure-session-access.md) and uses authenticated ownership, endpoint-bound one-time POST bootstrap codes, host-only `HttpOnly` cookies, gateway authorization, and bounded revocation. Hosted/public mode remains gated until that complete boundary is deployed.
+Clerk now provides the identity layer and immutable owner subject for user accounts. The current local MVP still does not implement the hosted gateway. Hosted per-session access is defined in [ADR 0004](decisions/0004-secure-session-access.md) and uses authenticated ownership, endpoint-bound one-time POST bootstrap codes, host-only `HttpOnly` cookies, gateway authorization, and bounded revocation. Hosted/public mode remains gated until that complete boundary is deployed.
 
 ## Course And Module Structure
 

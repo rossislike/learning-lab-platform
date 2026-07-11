@@ -19,12 +19,13 @@
     "runner:local:once": "node runner/local-runner.mjs --once",
     "runner:aws": "node runner/aws-runner.mjs",
     "runner:aws:once": "node runner/aws-runner.mjs --once",
-    "test:runner": "npm run infra:lambda:build && node --test runner/*.test.mjs infra/aws/terraform/lambda/*.test.mjs",
+    "test:runner": "npm run infra:lambda:build && node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs infra/aws/terraform/lambda/*.test.mjs",
     "infra:lambda:build": "node infra/aws/terraform/lambda/build.mjs",
     "infra:fmt": "terraform -chdir=infra/aws/terraform fmt -check -recursive",
     "infra:validate": "npm run infra:lambda:build && terraform -chdir=infra/aws/terraform validate"
   },
   "dependencies": {
+    "@clerk/react": "^6.12.2",
     "@vitejs/plugin-react": "^5.1.1",
     "convex": "^1.33.0",
     "lucide-react": "^0.556.0",

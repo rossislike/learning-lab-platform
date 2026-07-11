@@ -1,4 +1,12 @@
 import { spawn } from "node:child_process";
+import { readEnvLocalValue } from "./env-local.mjs";
+
+const localRunnerSecret =
+  process.env.RUNNER_SHARED_SECRET ??
+  (await readEnvLocalValue(
+    "RUNNER_SHARED_SECRET",
+    new URL("../.env.local", import.meta.url),
+  ));
 
 const processes = [];
 let shuttingDown = false;
@@ -22,6 +30,7 @@ const commands = [
     env: {
       LOCAL_EDITOR_PROVIDER:
         process.env.LOCAL_EDITOR_PROVIDER ?? "openvscode-docker",
+      ...(localRunnerSecret ? { RUNNER_SHARED_SECRET: localRunnerSecret } : {}),
     },
   },
 ];

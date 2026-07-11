@@ -19,6 +19,7 @@ Editor and preview workspace:
 ## Architecture
 
 - React/Vite frontend for the learner/admin UI.
+- Clerk for hosted user authentication and account management.
 - Convex schema and functions for labs, sessions, and session events.
 - Lab manifests under `lab-definitions/`.
 - Local runner integration under `runner/`.
@@ -65,6 +66,8 @@ After `convex dev` starts, set `VITE_CONVEX_URL` in `.env.local` to the URL it p
 Docker Desktop must be running before processing sessions because the default local editor provider starts OpenVSCode with `gitpod/openvscode-server:latest`.
 
 Hosted or public product surfaces must configure authentication, authorized session/workspace URL access, and cost controls before the app starts. Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`, `VITE_SESSION_ACCESS_MODE=local-only`, and `VITE_COST_CONTROLS_MODE=local-limits` for local development; set `VITE_AUTH_MODE=configured`, `VITE_SESSION_ACCESS_MODE=authorized`, and `VITE_COST_CONTROLS_MODE=enforced` before using `VITE_PRODUCT_SURFACE=hosted` or `public`.
+
+User account setup is documented in [docs/user-accounts.md](docs/user-accounts.md). Configured authentication uses Clerk's React SDK and Convex integration. Local auth-disabled development remains available.
 
 ## Optional: Reimport The Product Dashboard Lab
 

@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
 const MAX_TTL_SECONDS = 60 * 60;
@@ -61,8 +62,10 @@ async function patchProgressRecord(
 export const list = query({
   args: {},
   handler: async (ctx) => {
+    const ownerKey = await learnerOwnerKey(ctx);
     const sessions = await ctx.db.query("sessions").order("desc").take(100);
     return sessions
+      .filter((session) => ownerKey === null || session.sessionOwnerKey === ownerKey)
       .filter((session) => !session.removedFromListAt)
       .slice(0, 50);
   },
@@ -71,19 +74,23 @@ export const list = query({
 export const listForLab = query({
   args: { labId: v.id("labs") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const ownerKey = await learnerOwnerKey(ctx);
+    const sessions = await ctx.db
       .query("sessions")
       .withIndex("by_lab", (q) => q.eq("labId", args.labId))
       .order("desc")
       .take(25);
+    return ownerKey === null ? sessions : sessions.filter((session) => session.sessionOwnerKey === ownerKey);
   },
 });
 
 export const listRequested = query({
   args: {
+    runnerSecret: v.string(),
     runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const sessions = await ctx.db
       .query("sessions")
       .withIndex("by_status", (q) => q.eq("status", "requested"))
@@ -100,9 +107,11 @@ export const listRequested = query({
 
 export const listStartable = query({
   args: {
+    runnerSecret: v.string(),
     runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const sessions = await ctx.db.query("sessions").order("asc").take(100);
     return sessions.filter((session) => {
       if (!["requested", "starting"].includes(session.status)) return false;
@@ -113,8 +122,9 @@ export const listStartable = query({
 });
 
 export const listActive = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { runnerSecret: v.string() },
+  handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const sessions = await ctx.db.query("sessions").order("desc").take(100);
     return sessions.filter(
       (session) =>
@@ -124,8 +134,9 @@ export const listActive = query({
 });
 
 export const listExpired = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { runnerSecret: v.string() },
+  handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     const sessions = await ctx.db
       .query("sessions")
@@ -141,8 +152,9 @@ export const listExpired = query({
 });
 
 export const listCleanupNeeded = query({
-  args: { runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))) },
+  args: { runnerSecret: v.string(), runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))) },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const sessions = await ctx.db.query("sessions").order("desc").take(100);
     return sessions.filter((session) => {
       if (args.runner && session.runner !== args.runner) return false;
@@ -155,6 +167,7 @@ export const listCleanupNeeded = query({
 export const listEvents = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
+    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
     return await ctx.db
       .query("sessionEvents")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
@@ -166,7 +179,7 @@ export const listEvents = query({
 export const getWithEvents = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
+    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
     const events = await ctx.db
       .query("sessionEvents")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
@@ -181,7 +194,6 @@ export const request = mutation({
   args: {
     labId: v.id("labs"),
     learnerLabel: v.string(),
-    ownerSubject: v.optional(v.string()),
     runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
     ttlSeconds: v.optional(v.number()),
   },
@@ -190,7 +202,9 @@ export const request = mutation({
     const ttlSeconds = Math.min(args.ttlSeconds ?? DEFAULT_TTL_SECONDS, MAX_TTL_SECONDS);
     const runner = args.runner ?? "local";
     const learnerLabel = args.learnerLabel.trim();
-    const ownerSubject = args.ownerSubject?.trim();
+    const identity = await ctx.auth.getUserIdentity();
+    const authenticatedOwnerKey = await learnerOwnerKey(ctx);
+    const ownerSubject = identity?.subject;
     if (!learnerLabel) {
       throw new Error("Learner label is required");
     }
@@ -198,7 +212,8 @@ export const request = mutation({
       throw new Error("Hosted sessions require an authenticated owner subject");
     }
 
-    const sessionOwnerKey = ownerSubject ?? `local:${learnerLabel.toLocaleLowerCase()}`;
+    const sessionOwnerKey =
+      authenticatedOwnerKey ?? `local:${learnerLabel.toLocaleLowerCase()}`;
     const sessionsForOwner = await ctx.db
       .query("sessions")
       .withIndex("by_session_owner", (q) => q.eq("sessionOwnerKey", sessionOwnerKey))
@@ -283,12 +298,14 @@ export const request = mutation({
 
 export const markRunning = mutation({
   args: {
+    runnerSecret: v.string(),
     sessionId: v.id("sessions"),
     workspaceUrl: v.optional(v.string()),
     previewUrl: v.optional(v.string()),
     terminalUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
@@ -319,6 +336,7 @@ export const markRunning = mutation({
 
 export const updateRunnerMetadata = mutation({
   args: {
+    runnerSecret: v.string(),
     sessionId: v.id("sessions"),
     workspaceUrl: v.optional(v.string()),
     previewUrl: v.optional(v.string()),
@@ -332,7 +350,9 @@ export const updateRunnerMetadata = mutation({
     runnerResourceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { sessionId, ...metadata } = args;
+    requireRunnerSecret(args.runnerSecret);
+    const { sessionId, runnerSecret: _runnerSecret, ...metadata } = args;
+    void _runnerSecret;
     await ctx.db.patch(sessionId, {
       ...metadata,
       updatedAt: now(),
@@ -341,8 +361,9 @@ export const updateRunnerMetadata = mutation({
 });
 
 export const markChecking = mutation({
-  args: { sessionId: v.id("sessions") },
+  args: { runnerSecret: v.string(), sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "checking",
@@ -363,8 +384,9 @@ export const markChecking = mutation({
 });
 
 export const markStarting = mutation({
-  args: { sessionId: v.id("sessions") },
+  args: { runnerSecret: v.string(), sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "starting",
@@ -385,11 +407,13 @@ export const markStarting = mutation({
 
 export const markErrored = mutation({
   args: {
+    runnerSecret: v.string(),
     sessionId: v.id("sessions"),
     message: v.string(),
     raw: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "errored",
@@ -413,6 +437,7 @@ export const markErrored = mutation({
 
 export const recordCheck = mutation({
   args: {
+    runnerSecret: v.string(),
     sessionId: v.id("sessions"),
     passed: v.boolean(),
     score: v.number(),
@@ -420,6 +445,7 @@ export const recordCheck = mutation({
     raw: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     const session = await ctx.db.get(args.sessionId);
     if (!session) {
@@ -471,6 +497,7 @@ export const recordCheck = mutation({
 export const stop = mutation({
   args: { sessionId: v.id("sessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "stopped",
@@ -497,6 +524,7 @@ export const markStopped = stop;
 export const removeFromList = mutation({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
+    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       removedFromListAt: timestamp,
@@ -512,8 +540,9 @@ export const removeFromList = mutation({
 });
 
 export const markExpired = mutation({
-  args: { sessionId: v.id("sessions"), reason: v.optional(v.string()) },
+  args: { runnerSecret: v.string(), sessionId: v.id("sessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
       status: "expired",
@@ -538,10 +567,7 @@ export const markExpired = mutation({
 export const requestCleanup = mutation({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.sessionId);
-    if (!session) {
-      throw new Error("Session not found");
-    }
+    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
     if (!["stopped", "expired"].includes(session.status)) {
       throw new Error("Only stopped or expired sessions can be cleaned up");
     }
@@ -566,11 +592,13 @@ export const requestCleanup = mutation({
 
 export const markCleaned = mutation({
   args: {
+    runnerSecret: v.string(),
     sessionId: v.id("sessions"),
     summary: v.string(),
     raw: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
     const session = await ctx.db.get(args.sessionId);
     if (!session) {

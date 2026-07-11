@@ -1193,6 +1193,67 @@ button.scenario-history-row:focus-visible {
   white-space: pre-wrap;
 }
 
+.account-shell {
+  align-items: center;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 36%),
+    #f7f8fb;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.account-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(17, 24, 39, 0.12);
+  display: grid;
+  gap: 18px;
+  max-width: 520px;
+  padding: 36px;
+  width: 100%;
+}
+
+.account-card h1,
+.account-card p {
+  margin: 0;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.account-summary {
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.account-summary div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-summary strong,
+.account-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-summary span {
+  color: #a7b0bf;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 900px) {
   .app-shell,
   .grid {

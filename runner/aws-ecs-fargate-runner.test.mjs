@@ -33,6 +33,7 @@ test("start dispatches one Fargate task with the session contract", async () => 
     ttlSeconds: 3600,
     expiresAt: Date.parse("2026-07-10T12:00:00.000Z"),
     convexUrl: "https://example.convex.cloud",
+    runnerSecret: "runner-secret",
   })
 
   assert.deepEqual(result, { resourceId: "task-arn" })
@@ -48,6 +49,13 @@ test("start dispatches one Fargate task with the session contract", async () => 
     cliInput.overrides.containerOverrides[0].environment.some(
       (entry) =>
         entry.name === "LAB_SESSION_ID" && entry.value === "session-123",
+    ),
+  )
+  assert.ok(
+    cliInput.overrides.containerOverrides[0].environment.some(
+      (entry) =>
+        entry.name === "RUNNER_SHARED_SECRET" &&
+        entry.value === "runner-secret",
     ),
   )
   assert.ok(

@@ -12,18 +12,33 @@ import {
   SquareTerminal,
   XCircle,
 } from "lucide-react"
-import { ConvexHttpClient } from "convex/browser"
+import { SignInButton, SignUpButton, UserButton } from "@clerk/react"
+import {
+  AuthLoading,
+  Authenticated,
+  Unauthenticated,
+  useConvex,
+} from "convex/react"
 import { Group, Panel, Separator } from "react-resizable-panels"
 import { api } from "../convex/_generated/api"
 import type { Id } from "../convex/_generated/dataModel"
 
 type AppProps = {
   authMode?: string
+  clerkConfigured?: boolean
   convexUrl?: string
   costControlsMode?: string
   missingConvexUrl?: boolean
   productSurface?: string
   sessionAccessMode?: string
+}
+
+type UserAccount = {
+  _id: Id<"users">
+  clerkSubject: string
+  displayName: string
+  email?: string
+  imageUrl?: string
 }
 
 type LabSummary = {
@@ -162,6 +177,7 @@ const selectedSessionStorageKey = "learning-lab-selected-session-id"
 
 export default function App({
   authMode = "disabled",
+  clerkConfigured = false,
   convexUrl,
   costControlsMode = "local-limits",
   missingConvexUrl = false,
@@ -170,6 +186,10 @@ export default function App({
 }: AppProps) {
   if (missingConvexUrl || !convexUrl) {
     return <SetupRequiredApp />
+  }
+
+  if (authMode === "configured" && !clerkConfigured) {
+    return <ClerkSetupRequiredApp />
   }
 
   const securityBlocker = hostedSecurityBlocker(
@@ -190,7 +210,145 @@ export default function App({
     )
   }
 
-  return <ConnectedApp convexUrl={convexUrl} />
+  if (authMode === "configured") {
+    return <ClerkAccountGate />
+  }
+
+  return <ConnectedApp />
+}
+
+function ClerkAccountGate() {
+  return (
+    <>
+      <AuthLoading>
+        <AccountStatusApp message="Verifying your account" />
+      </AuthLoading>
+      <Unauthenticated>
+        <SignedOutApp />
+      </Unauthenticated>
+      <Authenticated>
+        <AccountBootstrap />
+      </Authenticated>
+    </>
+  )
+}
+
+function AccountBootstrap() {
+  const convex = useConvex()
+  const [account, setAccount] = useState<UserAccount | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function syncAccount() {
+      setError(null)
+      try {
+        const nextAccount = await convex.mutation(api.users.syncCurrent, {})
+        if (!nextAccount) throw new Error("Account record was not created")
+        if (!cancelled) setAccount(nextAccount)
+      } catch (syncError) {
+        if (!cancelled) {
+          setError(
+            syncError instanceof Error ? syncError.message : String(syncError),
+          )
+        }
+      }
+    }
+
+    void syncAccount()
+    return () => {
+      cancelled = true
+    }
+  }, [convex, attempt])
+
+  if (error) {
+    return (
+      <AccountStatusApp
+        error
+        message={`Account sync failed: ${error}`}
+        onRetry={() => setAttempt((current) => current + 1)}
+      />
+    )
+  }
+  if (!account) {
+    return <AccountStatusApp message="Creating your learning account" />
+  }
+
+  return <ConnectedApp account={account} />
+}
+
+function SignedOutApp() {
+  return (
+    <main className="account-shell">
+      <section className="account-card">
+        <p className="eyebrow">Learning Lab Platform</p>
+        <h1>Sign in to continue learning</h1>
+        <p className="muted">
+          Your account owns your active session and keeps your scenario progress
+          connected across visits.
+        </p>
+        <div className="account-actions">
+          <SignInButton mode="modal">
+            <button className="primary-button">Sign in</button>
+          </SignInButton>
+          <SignUpButton mode="modal">
+            <button className="secondary-button">Create account</button>
+          </SignUpButton>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function AccountStatusApp({
+  error = false,
+  message,
+  onRetry,
+}: {
+  error?: boolean
+  message: string
+  onRetry?: () => void
+}) {
+  return (
+    <main className="account-shell">
+      <section className="account-card">
+        <p className="eyebrow">Learning Lab Platform</p>
+        <h1>{error ? "Account unavailable" : message}</h1>
+        <p className={error ? "error-text" : "muted"}>
+          {error
+            ? message
+            : "Clerk and Convex are establishing your authenticated session."}
+        </p>
+        {error ? (
+          <div className="account-actions">
+            {onRetry ? (
+              <button className="primary-button" onClick={onRetry} type="button">
+                Retry account setup
+              </button>
+            ) : null}
+            <UserButton />
+          </div>
+        ) : null}
+      </section>
+    </main>
+  )
+}
+
+function ClerkSetupRequiredApp() {
+  return (
+    <main className="account-shell">
+      <section className="account-card">
+        <p className="eyebrow">Authentication setup</p>
+        <h1>Clerk publishable key missing</h1>
+        <p className="muted">
+          Set <code>VITE_CLERK_PUBLISHABLE_KEY</code> before using configured
+          authentication mode.
+        </p>
+      </section>
+    </main>
+  )
 }
 
 function hostedSecurityBlocker(
@@ -328,8 +486,8 @@ function SetupRequiredApp() {
   )
 }
 
-function ConnectedApp({ convexUrl }: { convexUrl: string }) {
-  const convex = useMemo(() => new ConvexHttpClient(convexUrl), [convexUrl])
+function ConnectedApp({ account }: { account?: UserAccount }) {
+  const convex = useConvex()
   const [labs, setLabs] = useState<LabSummary[]>([])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [progressRecords, setProgressRecords] = useState<ProgressRecord[]>([])
@@ -344,7 +502,9 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
     useState<SessionEndpointHealth>(() => emptyEndpointHealth())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null)
-  const [learnerLabel, setLearnerLabel] = useState("local-learner")
+  const [learnerLabel, setLearnerLabel] = useState(
+    account?.displayName ?? account?.email ?? "local-learner",
+  )
   const [activeTab, setActiveTab] = useState<AppTab>(() =>
     tabFromHash(window.location.hash),
   )
@@ -579,6 +739,15 @@ function ConnectedApp({ convexUrl }: { convexUrl: string }) {
             Workspace
           </a>
         </nav>
+        {account ? (
+          <div className="account-summary">
+            <UserButton />
+            <div>
+              <strong>{account.displayName}</strong>
+              <span>{account.email ?? "Clerk account"}</span>
+            </div>
+          </div>
+        ) : null}
       </aside>
 
       <section className="content">

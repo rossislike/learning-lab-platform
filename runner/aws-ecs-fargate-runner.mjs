@@ -90,6 +90,7 @@ function taskInput(config, input) {
     ["LAB_TTL_SECONDS", String(input.ttlSeconds)],
     ["LAB_EXPIRES_AT", expiresAt],
     ["CONVEX_URL", input.convexUrl],
+    ["RUNNER_SHARED_SECRET", input.runnerSecret],
   ]
     .filter(([, value]) => value)
     .map(([name, value]) => ({ name, value }))

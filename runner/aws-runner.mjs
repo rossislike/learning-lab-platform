@@ -2,6 +2,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { readFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { api } from "../convex/_generated/api.js"
+
+const runnerSecret = process.env.RUNNER_SHARED_SECRET
+if (!runnerSecret) throw new Error("RUNNER_SHARED_SECRET is required")
 import { AwsEcsFargateRunner } from "./aws-ecs-fargate-runner.mjs"
 
 const mode = "aws-ecs-fargate"
@@ -37,10 +40,11 @@ async function sendHeartbeat(client) {
 }
 
 async function expireSessions(client) {
-  const sessions = await client.query(api.sessions.listExpired, {})
+  const sessions = await client.query(api.sessions.listExpired, { runnerSecret })
   for (const session of sessions) {
     if (session.runner !== mode) continue
     await client.mutation(api.sessions.markExpired, {
+      runnerSecret,
       sessionId: session._id,
       reason: "Session TTL expired",
     })
@@ -49,6 +53,7 @@ async function expireSessions(client) {
 
 async function startSessions(client, runner, convexUrl) {
   const sessions = await client.query(api.sessions.listStartable, {
+    runnerSecret,
     runner: mode,
   })
   let startedCount = 0
@@ -59,6 +64,7 @@ async function startSessions(client, runner, convexUrl) {
 
     try {
       await client.mutation(api.sessions.markStarting, {
+        runnerSecret,
         sessionId: session._id,
       })
       const lab = await client.query(api.labs.get, { labId: session.labId })
@@ -71,9 +77,11 @@ async function startSessions(client, runner, convexUrl) {
         ttlSeconds: session.ttlSeconds,
         expiresAt: session.expiresAt,
         convexUrl,
+        runnerSecret,
       })
       dispatched = true
       await client.mutation(api.sessions.updateRunnerMetadata, {
+        runnerSecret,
         sessionId: session._id,
         runnerResourceId: result.resourceId,
       })
@@ -95,6 +103,7 @@ async function startSessions(client, runner, convexUrl) {
         }
       }
       await client.mutation(api.sessions.markErrored, {
+        runnerSecret,
         sessionId: session._id,
         message,
       })
@@ -106,6 +115,7 @@ async function startSessions(client, runner, convexUrl) {
 
 async function stopSessions(client, runner) {
   const sessions = await client.query(api.sessions.listCleanupNeeded, {
+    runnerSecret,
     runner: mode,
   })
 
@@ -113,6 +123,7 @@ async function stopSessions(client, runner) {
     try {
       const result = await runner.stop(session._id)
       await client.mutation(api.sessions.markCleaned, {
+        runnerSecret,
         sessionId: session._id,
         summary: "AWS ECS task resources cleaned up",
         raw: result,

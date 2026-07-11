@@ -100,7 +100,7 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## Later Multi-User Platform
 
-- [ ] Add user accounts.
+- [x] Add user accounts.
 - [ ] Add organizations or teams.
 - [ ] Add course enrollment and learner progress.
 - [ ] Add role-based access for learner, author, and operator.

@@ -25,6 +25,7 @@ if (!workspace || !sessionId) {
 }
 
 const client = convexUrl ? new ConvexHttpClient(convexUrl) : null;
+const runnerSecret = process.env.RUNNER_SHARED_SECRET;
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -147,7 +148,8 @@ async function runCheck() {
   const command = `${validationCommand} --outputFile="${reportPath}"`;
 
   if (client) {
-    await client.mutation(api.sessions.markChecking, { sessionId });
+    if (!runnerSecret) throw new Error("RUNNER_SHARED_SECRET is required");
+    await client.mutation(api.sessions.markChecking, { runnerSecret, sessionId });
   }
 
   const validation = await run(command, workspace);
@@ -186,6 +188,7 @@ async function runCheck() {
 
   if (client) {
     await client.mutation(api.sessions.recordCheck, {
+      runnerSecret,
       sessionId,
       passed: result.passed,
       score: result.score,

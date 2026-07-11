@@ -7,6 +7,7 @@ import { hostname } from "node:os"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { api } from "../convex/_generated/api.js"
+import { readEnvLocalValue } from "../scripts/env-local.mjs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, "..")
@@ -22,22 +23,15 @@ const runnerId =
   process.env.LOCAL_RUNNER_ID ?? `local:${runnerHostname}:${process.pid}`
 const openVSCodeImage =
   process.env.OPENVSCODE_SERVER_IMAGE ?? "gitpod/openvscode-server:latest"
+let runnerSecret = process.env.RUNNER_SHARED_SECRET
 
-function readConvexUrl() {
+async function readConvexUrl() {
   if (process.env.CONVEX_URL) return process.env.CONVEX_URL
   if (process.env.VITE_CONVEX_URL) return process.env.VITE_CONVEX_URL
-
-  try {
-    const envLocal = new URL("../.env.local", import.meta.url)
-    return readFile(envLocal, "utf8").then((contents) => {
-      const line = contents
-        .split(/\r?\n/)
-        .find((entry) => entry.startsWith("VITE_CONVEX_URL="))
-      return line?.split("=").slice(1).join("=").trim()
-    })
-  } catch {
-    return undefined
-  }
+  return await readEnvLocalValue(
+    "VITE_CONVEX_URL",
+    new URL("../.env.local", import.meta.url),
+  )
 }
 
 function run(command, cwd) {
@@ -369,7 +363,7 @@ async function startEditor({
       ],
       projectRoot,
       logPath,
-      { CONVEX_URL: await readConvexUrl() },
+      { CONVEX_URL: await readConvexUrl(), RUNNER_SHARED_SECRET: runnerSecret },
     )
 
     return {
@@ -461,7 +455,7 @@ async function startEditor({
 async function processSession(client, session) {
   console.log(`[runner] starting session ${session._id}`)
   await cleanupLocalSession(session)
-  await client.mutation(api.sessions.markStarting, { sessionId: session._id })
+  await client.mutation(api.sessions.markStarting, { runnerSecret, sessionId: session._id })
 
   const lab = await client.query(api.labs.get, { labId: session.labId })
   if (!lab) {
@@ -545,7 +539,7 @@ async function processSession(client, session) {
     ],
     projectRoot,
     resolve(workspacePath, ".tools.log"),
-    { CONVEX_URL: await readConvexUrl() },
+    { CONVEX_URL: await readConvexUrl(), RUNNER_SHARED_SECRET: runnerSecret },
   )
 
   await writeFile(
@@ -565,6 +559,7 @@ async function processSession(client, session) {
   )
 
   await client.mutation(api.sessions.updateRunnerMetadata, {
+    runnerSecret,
     sessionId: session._id,
     workspaceUrl: editor.url,
     previewUrl,
@@ -578,6 +573,7 @@ async function processSession(client, session) {
   })
 
   await client.mutation(api.sessions.markRunning, {
+    runnerSecret,
     sessionId: session._id,
     workspaceUrl: editor.url,
     previewUrl,
@@ -628,6 +624,7 @@ async function replaceSessionEditor(client, session, reason) {
     JSON.stringify(nextProcessInfo, null, 2),
   )
   await client.mutation(api.sessions.updateRunnerMetadata, {
+    runnerSecret,
     sessionId: session._id,
     workspaceUrl: editor.url,
     previewUrl,
@@ -646,11 +643,12 @@ async function replaceSessionEditor(client, session, reason) {
 }
 
 async function cleanupExpiredSessions(client) {
-  const expired = await client.query(api.sessions.listExpired, {})
+  const expired = await client.query(api.sessions.listExpired, { runnerSecret })
 
   for (const session of expired) {
     console.log(`[runner] expiring session ${session._id}`)
     await client.mutation(api.sessions.markExpired, {
+      runnerSecret,
       sessionId: session._id,
       reason: "Session TTL expired",
     })
@@ -659,12 +657,14 @@ async function cleanupExpiredSessions(client) {
 
 async function cleanupStoppedSessions(client) {
   const sessions = await client.query(api.sessions.listCleanupNeeded, {
+    runnerSecret,
     runner: "local",
   })
 
   for (const session of sessions) {
     const result = await cleanupLocalSession(session)
     await client.mutation(api.sessions.markCleaned, {
+      runnerSecret,
       sessionId: session._id,
       summary: "Local runner resources cleaned up",
       raw: result,
@@ -674,7 +674,7 @@ async function cleanupStoppedSessions(client) {
 }
 
 async function reconcileLocalSessionState(client) {
-  const sessions = await client.query(api.sessions.listActive, {})
+  const sessions = await client.query(api.sessions.listActive, { runnerSecret })
   const inspectableStatuses = new Set([
     "running",
     "checking",
@@ -709,12 +709,14 @@ async function reconcileLocalSessionState(client) {
     const message = `Local runner detected dead workspace process: ${result.failures.join(", ")}`
     console.warn(`[runner] session ${session._id}: ${message}`)
     await client.mutation(api.sessions.markErrored, {
+      runnerSecret,
       sessionId: session._id,
       message,
       raw: result,
     })
     const cleanupResult = await cleanupLocalSession(session)
     await client.mutation(api.sessions.markCleaned, {
+      runnerSecret,
       sessionId: session._id,
       summary: "Cleaned up after dead workspace process detection",
       raw: cleanupResult,
@@ -743,6 +745,7 @@ async function tick(client) {
   await cleanupExpiredSessions(client)
   await reconcileLocalSessionState(client)
   const sessions = await client.query(api.sessions.listStartable, {
+    runnerSecret,
     runner: "local",
   })
 
@@ -752,11 +755,13 @@ async function tick(client) {
     } catch (error) {
       console.error(`[runner] session ${session._id} failed`, error)
       await client.mutation(api.sessions.markErrored, {
+        runnerSecret,
         sessionId: session._id,
         message: error instanceof Error ? error.message : String(error),
       })
       const cleanupResult = await cleanupLocalSession(session)
       await client.mutation(api.sessions.markCleaned, {
+        runnerSecret,
         sessionId: session._id,
         summary: "Cleaned up after runner error",
         raw: cleanupResult,
@@ -769,6 +774,17 @@ async function tick(client) {
 }
 
 async function main() {
+  runnerSecret =
+    runnerSecret ??
+    (await readEnvLocalValue(
+      "RUNNER_SHARED_SECRET",
+      new URL("../.env.local", import.meta.url),
+    ))
+  if (!runnerSecret) {
+    throw new Error(
+      "Set RUNNER_SHARED_SECRET in .env.local or the runner environment.",
+    )
+  }
   const convexUrl = await readConvexUrl()
   if (!convexUrl) {
     throw new Error(

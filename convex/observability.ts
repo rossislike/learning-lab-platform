@@ -1,9 +1,14 @@
 import { query } from "./_generated/server";
+import { learnerOwnerKey } from "./access";
 
 export const sessionSummary = query({
   args: {},
   handler: async (ctx) => {
-    const sessions = await ctx.db.query("sessions").order("desc").take(100);
+    const ownerKey = await learnerOwnerKey(ctx);
+    const recentSessions = await ctx.db.query("sessions").order("desc").take(100);
+    const sessions = ownerKey === null
+      ? recentSessions
+      : recentSessions.filter((session) => session.sessionOwnerKey === ownerKey);
     const startupDurations = sessions
       .map((session) => session.startupDurationMs)
       .filter(isNumber);
