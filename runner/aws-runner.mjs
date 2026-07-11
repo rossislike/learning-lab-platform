@@ -6,6 +6,7 @@ import { api } from "../convex/_generated/api.js"
 const runnerSecret = process.env.RUNNER_SHARED_SECRET
 if (!runnerSecret) throw new Error("RUNNER_SHARED_SECRET is required")
 import { AwsEcsFargateRunner } from "./aws-ecs-fargate-runner.mjs"
+import { cleanupCancelledStartup } from "./startup-cancellation.mjs"
 
 const mode = "aws-ecs-fargate"
 const once = process.argv.includes("--once")
@@ -63,10 +64,11 @@ async function startSessions(client, runner, convexUrl) {
     let dispatched = false
 
     try {
-      await client.mutation(api.sessions.markStarting, {
+      const startupClaimed = await client.mutation(api.sessions.markStarting, {
         runnerSecret,
         sessionId: session._id,
       })
+      if (!startupClaimed) continue
       const lab = await client.query(api.labs.get, { labId: session.labId })
       if (!lab) throw new Error(`Lab not found for session ${session._id}`)
 
@@ -80,11 +82,24 @@ async function startSessions(client, runner, convexUrl) {
         runnerSecret,
       })
       dispatched = true
-      await client.mutation(api.sessions.updateRunnerMetadata, {
+      const metadataAccepted = await client.mutation(api.sessions.updateRunnerMetadata, {
         runnerSecret,
         sessionId: session._id,
         runnerResourceId: result.resourceId,
       })
+      if (!metadataAccepted) {
+        await cleanupCancelledStartup({
+          cleanup: () => runner.stop(session._id),
+          markCleaned: (cleanupResult) => client.mutation(api.sessions.markCleaned, {
+            runnerSecret,
+            sessionId: session._id,
+            summary: "AWS startup cancelled and resources cleaned up",
+            raw: cleanupResult,
+          }),
+        })
+        dispatched = false
+        continue
+      }
       startedCount += 1
       console.log(
         `[aws-runner] dispatched session ${session._id} as ${result.resourceId}`,

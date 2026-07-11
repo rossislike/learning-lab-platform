@@ -3,6 +3,18 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
+import {
+  ACTIVE_SESSION_STATUSES,
+  canBeginStartup,
+  canExpire,
+  canMarkCleaned,
+  canPublishStartup,
+  canRequestStop,
+  canUpdateRunnerMetadata,
+  canUseWorkspace,
+  isActiveSessionStatus,
+  type SessionLifecycleStatus,
+} from "./sessionLifecycle";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
 const MAX_TTL_SECONDS = 60 * 60;
@@ -10,29 +22,7 @@ const MAX_ACTIVE_LOCAL_SESSIONS = 5;
 const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
 
-type ProgressStatus =
-  | "requested"
-  | "starting"
-  | "running"
-  | "checking"
-  | "passed"
-  | "failed"
-  | "stopped"
-  | "errored"
-  | "expired";
-
-const ACTIVE_SESSION_STATUSES = new Set<ProgressStatus>([
-  "requested",
-  "starting",
-  "running",
-  "checking",
-  "passed",
-  "failed",
-]);
-
-function isActiveSessionStatus(status: ProgressStatus) {
-  return ACTIVE_SESSION_STATUSES.has(status);
-}
+type ProgressStatus = SessionLifecycleStatus;
 
 type ProgressPatch = {
   status: ProgressStatus;
@@ -144,10 +134,7 @@ export const listExpired = query({
       .order("asc")
       .take(100);
 
-    return sessions.filter(
-      (session) =>
-        !["stopped", "expired", "errored"].includes(session.status)
-    );
+    return sessions.filter((session) => canExpire(session.status));
   },
 });
 
@@ -155,12 +142,23 @@ export const listCleanupNeeded = query({
   args: { runnerSecret: v.string(), runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))) },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
-    const sessions = await ctx.db.query("sessions").order("desc").take(100);
+    const cleanupStatuses = ["stopping", "stopped", "expired", "errored"] as const;
+    const sessions = (
+      await Promise.all(
+        cleanupStatuses.map((status) =>
+          ctx.db
+            .query("sessions")
+            .withIndex("by_status", (q) => q.eq("status", status))
+            .order("asc")
+            .take(100)
+        )
+      )
+    ).flat();
     return sessions.filter((session) => {
       if (args.runner && session.runner !== args.runner) return false;
       if (session.cleanedAt) return false;
-      return session.status === "stopped" || session.status === "expired";
-    });
+      return canMarkCleaned(session.status);
+    }).sort((a, b) => a.updatedAt - b.updatedAt).slice(0, 100);
   },
 });
 
@@ -311,6 +309,9 @@ export const markRunning = mutation({
     if (!session) {
       throw new Error("Session not found");
     }
+    if (!canPublishStartup(session.status)) {
+      return false;
+    }
 
     await ctx.db.patch(args.sessionId, {
       status: "running",
@@ -331,6 +332,7 @@ export const markRunning = mutation({
       message: "Session runner is available",
       createdAt: timestamp,
     });
+    return true;
   },
 });
 
@@ -351,12 +353,16 @@ export const updateRunnerMetadata = mutation({
   },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (!canUpdateRunnerMetadata(session.status)) return false;
     const { sessionId, runnerSecret: _runnerSecret, ...metadata } = args;
     void _runnerSecret;
     await ctx.db.patch(sessionId, {
       ...metadata,
       updatedAt: now(),
     });
+    return true;
   },
 });
 
@@ -365,6 +371,9 @@ export const markChecking = mutation({
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (!canUseWorkspace(session.status)) return false;
     await ctx.db.patch(args.sessionId, {
       status: "checking",
       lastCheckStartedAt: timestamp,
@@ -380,6 +389,7 @@ export const markChecking = mutation({
       message: "Validation check started",
       createdAt: timestamp,
     });
+    return true;
   },
 });
 
@@ -388,6 +398,9 @@ export const markStarting = mutation({
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (!canBeginStartup(session.status)) return false;
     await ctx.db.patch(args.sessionId, {
       status: "starting",
       updatedAt: timestamp,
@@ -402,6 +415,7 @@ export const markStarting = mutation({
       message: "Session runner is starting",
       createdAt: timestamp,
     });
+    return true;
   },
 });
 
@@ -415,6 +429,9 @@ export const markErrored = mutation({
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (["stopping", "stopped", "expired"].includes(session.status)) return false;
     await ctx.db.patch(args.sessionId, {
       status: "errored",
       lastCheckSummary: args.message,
@@ -432,6 +449,7 @@ export const markErrored = mutation({
       metadata: args.raw,
       createdAt: timestamp,
     });
+    return true;
   },
 });
 
@@ -451,6 +469,7 @@ export const recordCheck = mutation({
     if (!session) {
       throw new Error("Session not found");
     }
+    if (!canUseWorkspace(session.status)) return false;
     const validationDurationMs =
       typeof session.lastCheckStartedAt === "number"
         ? timestamp - session.lastCheckStartedAt
@@ -497,17 +516,20 @@ export const recordCheck = mutation({
 export const stop = mutation({
   args: { sessionId: v.id("sessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
+    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
+    if (!canRequestStop(session.status)) return;
+    if (session.status === "stopping") return;
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
-      status: "stopped",
-      stoppedAt: timestamp,
+      status: "stopping",
       stopReason: args.reason ?? "Stopped by operator",
+      cleanupRequestedAt: session.cleanupRequestedAt ?? timestamp,
+      cleanupSummary: "Stop requested; waiting for session runner cleanup.",
       updatedAt: timestamp,
     });
     await patchProgressRecord(ctx, args.sessionId, {
-      status: "stopped",
-      summary: args.reason ?? "Stopped by operator",
+      status: "stopping",
+      summary: "Stop requested; waiting for session runner cleanup.",
       updatedAt: timestamp,
     });
     await ctx.db.insert("sessionEvents", {
@@ -544,9 +566,12 @@ export const markExpired = mutation({
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (!canExpire(session.status)) return false;
     await ctx.db.patch(args.sessionId, {
       status: "expired",
-      stoppedAt: timestamp,
+      stoppedAt: session.stoppedAt ?? timestamp,
       stopReason: args.reason ?? "Session TTL expired",
       updatedAt: timestamp,
     });
@@ -561,6 +586,7 @@ export const markExpired = mutation({
       message: args.reason ?? "Session TTL expired",
       createdAt: timestamp,
     });
+    return true;
   },
 });
 
@@ -568,7 +594,7 @@ export const requestCleanup = mutation({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
     const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
-    if (!["stopped", "expired"].includes(session.status)) {
+    if (!["stopping", "stopped", "expired"].includes(session.status)) {
       throw new Error("Only stopped or expired sessions can be cleaned up");
     }
     if (session.cleanedAt) {
@@ -577,7 +603,7 @@ export const requestCleanup = mutation({
 
     const timestamp = now();
     await ctx.db.patch(args.sessionId, {
-      cleanupRequestedAt: timestamp,
+      cleanupRequestedAt: session.cleanupRequestedAt ?? timestamp,
       cleanupSummary: "Cleanup requested; waiting for session runner.",
       updatedAt: timestamp,
     });
@@ -604,9 +630,16 @@ export const markCleaned = mutation({
     if (!session) {
       throw new Error("Session not found");
     }
+    if (session.cleanedAt) return;
+    if (!canMarkCleaned(session.status)) {
+      throw new Error("Only stopping, stopped, expired, or errored sessions can be cleaned up");
+    }
     const cleanupStartedAt = session.cleanupRequestedAt ?? session.stoppedAt;
 
     await ctx.db.patch(args.sessionId, {
+      ...(session.status === "stopping"
+        ? { status: "stopped" as const, stoppedAt: session.stoppedAt ?? timestamp }
+        : {}),
       cleanedAt: timestamp,
       cleanupSummary: args.summary,
       ...(typeof cleanupStartedAt === "number"
@@ -614,6 +647,13 @@ export const markCleaned = mutation({
         : {}),
       updatedAt: timestamp,
     });
+    if (session.status === "stopping") {
+      await patchProgressRecord(ctx, args.sessionId, {
+        status: "stopped",
+        summary: args.summary,
+        updatedAt: timestamp,
+      });
+    }
     await ctx.db.insert("sessionEvents", {
       sessionId: args.sessionId,
       level: "info",

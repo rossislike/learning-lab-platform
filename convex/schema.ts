@@ -69,6 +69,7 @@ export default defineSchema({
       v.literal("checking"),
       v.literal("passed"),
       v.literal("failed"),
+      v.literal("stopping"),
       v.literal("stopped"),
       v.literal("errored"),
       v.literal("expired")
@@ -130,6 +131,7 @@ export default defineSchema({
       v.literal("checking"),
       v.literal("passed"),
       v.literal("failed"),
+      v.literal("stopping"),
       v.literal("stopped"),
       v.literal("errored"),
       v.literal("expired")

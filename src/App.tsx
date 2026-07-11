@@ -12,7 +12,12 @@ import {
   SquareTerminal,
   XCircle,
 } from "lucide-react"
-import { SignInButton, SignUpButton, UserButton } from "@clerk/react"
+import {
+  SignInButton,
+  SignOutButton,
+  SignUpButton,
+  UserButton,
+} from "@clerk/react"
 import {
   AuthLoading,
   Authenticated,
@@ -269,11 +274,12 @@ function AccountBootstrap() {
         error
         message={`Account sync failed: ${error}`}
         onRetry={() => setAttempt((current) => current + 1)}
+        showSignOut
       />
     )
   }
   if (!account) {
-    return <AccountStatusApp message="Creating your learning account" />
+    return <AccountStatusApp message="Creating your learning account" showSignOut />
   }
 
   return <ConnectedApp account={account} />
@@ -306,10 +312,12 @@ function AccountStatusApp({
   error = false,
   message,
   onRetry,
+  showSignOut = false,
 }: {
   error?: boolean
   message: string
   onRetry?: () => void
+  showSignOut?: boolean
 }) {
   return (
     <main className="account-shell">
@@ -321,14 +329,18 @@ function AccountStatusApp({
             ? message
             : "Clerk and Convex are establishing your authenticated session."}
         </p>
-        {error ? (
+        {error || showSignOut ? (
           <div className="account-actions">
-            {onRetry ? (
+            {error && onRetry ? (
               <button className="primary-button" onClick={onRetry} type="button">
                 Retry account setup
               </button>
             ) : null}
-            <UserButton />
+            {showSignOut ? (
+              <SignOutButton>
+                <button className="secondary-button" type="button">Sign out</button>
+              </SignOutButton>
+            ) : error ? <UserButton /> : null}
           </div>
         ) : null}
       </section>
@@ -746,6 +758,11 @@ function ConnectedApp({ account }: { account?: UserAccount }) {
               <strong>{account.displayName}</strong>
               <span>{account.email ?? "Clerk account"}</span>
             </div>
+            <SignOutButton>
+              <button className="account-sign-out" type="button">
+                Sign out
+              </button>
+            </SignOutButton>
           </div>
         ) : null}
       </aside>
@@ -1414,12 +1431,12 @@ function SessionDetailPanel({
             <button
               className="danger-button"
               disabled={
-                ["stopped", "expired"].includes(session.status) ||
+                ["stopping", "stopped", "expired"].includes(session.status) ||
                 actionBusy !== null
               }
               onClick={() => void runAction("stop")}
             >
-              Stop
+              {session.status === "stopping" ? "Stopping" : "Stop"}
             </button>
             <button
               className="secondary-button"
@@ -1667,12 +1684,12 @@ function WorkspaceTab({
             <button
               className="danger-button"
               disabled={
-                ["stopped", "expired"].includes(session.status) ||
+                ["stopping", "stopped", "expired"].includes(session.status) ||
                 actionBusy !== null
               }
               onClick={() => void runAction("stop")}
             >
-              Stop
+              {session.status === "stopping" ? "Stopping" : "Stop"}
             </button>
             <button
               className="secondary-button"
@@ -2388,7 +2405,7 @@ function canRunChecks(
 ) {
   return Boolean(
     session.terminalUrl?.startsWith("http") &&
-    !["stopped", "expired", "errored"].includes(session.status) &&
+    !["stopping", "stopped", "expired", "errored"].includes(session.status) &&
     endpointHealth.tools.status !== "stale",
   )
 }
@@ -2399,7 +2416,7 @@ function isActiveSession(session: SessionSummary) {
 
 function canRequestCleanup(session: SessionSummary) {
   return Boolean(
-    ["stopped", "expired"].includes(session.status) &&
+    ["stopping", "stopped", "expired"].includes(session.status) &&
     !session.cleanedAt &&
     !session.cleanupRequestedAt,
   )
@@ -2412,7 +2429,7 @@ function cleanupButtonLabel(
   if (actionBusy === "cleanup") return "Requesting cleanup"
   if (session.cleanedAt) return "Cleaned"
   if (session.cleanupRequestedAt) return "Cleanup requested"
-  if (["stopped", "expired"].includes(session.status)) return "Request cleanup"
+  if (["stopping", "stopped", "expired"].includes(session.status)) return "Request cleanup"
   return "Cleanup unavailable"
 }
 
@@ -2453,6 +2470,12 @@ function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
         title: "Checks need attention",
         body: "The latest validation failed. Review the checklist, update the exercise files, then run checks again.",
         tone: "danger",
+      }
+    case "stopping":
+      return {
+        title: "Session stopping",
+        body: "The stop request is recorded. The runner is removing the editor, preview, and tools resources.",
+        tone: "warning",
       }
     case "stopped":
       if (session.cleanedAt) {
@@ -2528,6 +2551,12 @@ function validationStateCopy(session: SessionSummary): EmptyStateCopy {
         body: "The session is marked failed, but no checklist payload is attached. Run checks again to refresh details.",
         tone: "danger",
       }
+    case "stopping":
+      return {
+        title: "Validation closing",
+        body: "The runner is removing this session's resources. Validation is unavailable while cleanup finishes.",
+        tone: "warning",
+      }
     case "stopped":
     case "expired":
       return {
@@ -2574,10 +2603,13 @@ function workspaceGuidanceState(
     }
   }
 
-  if (["stopped", "expired"].includes(session.status)) {
+  if (["stopping", "stopped", "expired"].includes(session.status)) {
     return {
-      title: "Session closed",
-      body: "Request a new session before making more OpenVSCode edits.",
+      title: session.status === "stopping" ? "Workspace stopping" : "Session closed",
+      body:
+        session.status === "stopping"
+          ? "The runner is removing the editor, preview, and tools resources."
+          : "Request a new session before making more OpenVSCode edits.",
       tone: "neutral",
       icon: XCircle,
     }
@@ -2680,6 +2712,12 @@ function workspaceStateCopy(
         title: "Workspace booting",
         body: "The runner is still starting OpenVSCode, Vite preview, and the tools server.",
         tone: "info",
+      }
+    case "stopping":
+      return {
+        title: "Workspace stopping",
+        body: "The stop request is recorded and the runner is removing the workspace resources.",
+        tone: "warning",
       }
     case "stopped":
       return {

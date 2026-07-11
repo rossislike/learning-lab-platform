@@ -28,6 +28,8 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 
 ## Near-Term Stabilization
 
+- [x] Add an explicit Clerk sign-out control for authenticated users.
+- [x] Represent runner cleanup as `stopping` and only mark a session `stopped` after its resources are removed.
 - [x] Update README wording and screenshots to match the current multi-scenario flow, including `Seed scenarios`.
 - [x] Add the scenario title/domain to session rows and session detail.
 - [x] Improve current-session selection so the Workspace tab always opens the intended selected session.

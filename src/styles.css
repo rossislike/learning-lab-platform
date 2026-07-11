@@ -334,6 +334,11 @@ select {
   color: #1d4ed8;
 }
 
+.status-stopping {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
 .status-passed {
   background: #dcfce7;
   color: #166534;
@@ -1238,8 +1243,26 @@ button.scenario-history-row:focus-visible {
 
 .account-summary div {
   display: grid;
+  flex: 1;
   gap: 2px;
   min-width: 0;
+}
+
+.account-sign-out {
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 6px 0 6px 8px;
+}
+
+.account-sign-out:hover,
+.account-sign-out:focus-visible {
+  color: #dbeafe;
+  text-decoration: underline;
 }
 
 .account-summary strong,

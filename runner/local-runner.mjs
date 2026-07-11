@@ -7,6 +7,7 @@ import { hostname } from "node:os"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { api } from "../convex/_generated/api.js"
+import { cleanupCancelledStartup } from "./startup-cancellation.mjs"
 import { readEnvLocalValue } from "../scripts/env-local.mjs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -455,7 +456,11 @@ async function startEditor({
 async function processSession(client, session) {
   console.log(`[runner] starting session ${session._id}`)
   await cleanupLocalSession(session)
-  await client.mutation(api.sessions.markStarting, { runnerSecret, sessionId: session._id })
+  const startupClaimed = await client.mutation(api.sessions.markStarting, {
+    runnerSecret,
+    sessionId: session._id,
+  })
+  if (!startupClaimed) return false
 
   const lab = await client.query(api.labs.get, { labId: session.labId })
   if (!lab) {
@@ -558,7 +563,7 @@ async function processSession(client, session) {
     ),
   )
 
-  await client.mutation(api.sessions.updateRunnerMetadata, {
+  const metadataAccepted = await client.mutation(api.sessions.updateRunnerMetadata, {
     runnerSecret,
     sessionId: session._id,
     workspaceUrl: editor.url,
@@ -571,16 +576,43 @@ async function processSession(client, session) {
     toolsPort,
     workspacePath,
   })
+  if (!metadataAccepted) {
+    return cleanupCancelledStartup({
+      cleanup: () => cleanupLocalSession({
+        ...session,
+        workspacePath,
+        editorContainerName: editor.processInfo.containerName,
+      }),
+      markCleaned: (cleanupResult) => client.mutation(api.sessions.markCleaned, {
+        runnerSecret,
+        sessionId: session._id,
+        summary: "Local startup cancelled and resources cleaned up",
+        raw: cleanupResult,
+      }),
+    })
+  }
 
-  await client.mutation(api.sessions.markRunning, {
+  const runningAccepted = await client.mutation(api.sessions.markRunning, {
     runnerSecret,
     sessionId: session._id,
     workspaceUrl: editor.url,
     previewUrl,
     terminalUrl: toolsUrl,
   })
+  if (!runningAccepted) {
+    return cleanupCancelledStartup({
+      cleanup: () => cleanupLocalSession({ ...session, workspacePath }),
+      markCleaned: (cleanupResult) => client.mutation(api.sessions.markCleaned, {
+        runnerSecret,
+        sessionId: session._id,
+        summary: "Local startup cancelled and resources cleaned up",
+        raw: cleanupResult,
+      }),
+    })
+  }
 
   console.log(`[runner] session ${session._id}: ready for learner checks`)
+  return true
 }
 
 async function replaceSessionEditor(client, session, reason) {
