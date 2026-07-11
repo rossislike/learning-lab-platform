@@ -100,6 +100,109 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [x] Add infrastructure as code under `infra/`.
 - [x] Validate one hosted React scenario end to end inside Fargate, including the expected starter failure and solution pass.
 
+## AWS Hosted Launch Plan
+
+The hosted architecture uses three ECS workloads with separate responsibilities:
+
+- an ECS service for the trusted AWS dispatcher;
+- an ECS service for the authenticated session gateway;
+- one standalone Fargate task for each learner session.
+
+The local runner remains the default local development path throughout this migration.
+
+Promotion follows one direction: reusable Terraform modules and application artifacts, staging deployment and qualification, then production deployment. Production enablement is blocked unless every security, quota, cost, recovery, and regression gate below passes.
+
+### 1. Environment Foundation
+
+- [ ] Bootstrap the production Terraform state bucket and lockfile configuration outside the runner stack.
+- [ ] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
+- [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline.
+- [ ] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
+- [ ] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.
+- [ ] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.
+- [ ] Store long-lived operator and service credentials in AWS Secrets Manager. Grant secret retrieval to ECS execution roles only when needed during task startup, and grant runtime AWS API permissions to separate, narrowly scoped task roles.
+- [ ] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
+- [ ] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.
+- [ ] Define environment ownership, operator access, emergency access, secret rotation, and production change procedures.
+
+### 2. Versioned ECS Images And Delivery
+
+- [ ] Build a production learner-session image that starts OpenVSCode, preview, and tools services without Docker-in-Docker or privileged mode.
+- [ ] Build separate production images for the AWS dispatcher and session gateway.
+- [ ] Publish immutable, digest-addressed scenario artifacts and manifests to the environment artifact bucket before any hosted session can reference them; record the approved digest in Convex.
+- [ ] Add CI image builds for ARM64, vulnerability scanning, software bills of materials, image signing, and immutable digest promotion.
+- [ ] Pin every ECS task definition to an approved image digest and retain every digest referenced by an active task definition.
+- [ ] Add staged task-definition promotion with automated rollback when deployment health checks fail.
+
+### 3. Trusted AWS Dispatcher Service
+
+- [ ] Package `runner/aws-runner.mjs` as a continuously running ECS service in private subnets.
+- [ ] Replace reusable runner and Convex credentials with dispatcher workload identity and a session-bound callback protocol: the dispatcher mints a random, single-session, purpose-scoped credential with a short expiry; stores only its hash and expiry in Convex; injects it from a dedicated Secrets Manager entry through the ECS execution role; deletes that entry after task startup; and rejects replay, wrong session, wrong operation, or expired callbacks.
+- [ ] Prefer dispatcher-mediated readiness, validation, checkpoint, and lifecycle updates so learner tasks never receive a general Convex credential; document the narrowly scoped callback endpoint and rotation or revocation behavior for any direct callback that remains.
+- [ ] Give the dispatcher only the ECS, networking, tagging, route-registration, presigning, and cleanup permissions it requires.
+- [ ] Add leader election or a Convex lease so multiple dispatcher tasks can run safely without duplicate session launches.
+- [ ] Reconcile Convex session state with ECS task state after restarts, timeouts, partial launches, and missed cleanup events.
+- [ ] Make task launch idempotent with deterministic client tokens, capacity-provider configuration, and bounded retries.
+- [ ] Publish dispatcher heartbeats, launch latency, reconciliation failures, task capacity failures, and cleanup backlog metrics.
+
+### 4. Interactive Standalone Session Tasks
+
+- [ ] Replace the validation-only container command with the interactive learner-session entrypoint.
+- [ ] Download one authorized scenario artifact through a short-lived, exact-key presigned URL and extract it safely.
+- [ ] Start the editor, preview, and tools processes on fixed internal ports with container health checks.
+- [ ] Report readiness and endpoint health through the session-bound callback or dispatcher-mediated protocol; let the trusted dispatcher discover and record private task IP, task ARN, and image digest.
+- [ ] Enforce CPU, memory, ephemeral-storage, process, file-size, network, and session-duration limits inside each task.
+- [ ] Upload bounded checkpoints through short-lived exact-key presigned URLs and restore the latest authorized checkpoint after task replacement.
+- [ ] Run artifact and checkpoint URL presigning plus checkpoint deletion from a dedicated trusted service or dispatcher component, never from learner tasks; make deletion idempotent, retention-driven, observable, and independently reconciled.
+- [ ] Stop promptly on learner request, TTL expiry, account revocation, dispatcher reconciliation, or platform shutdown.
+- [ ] Prove that a stop during task startup cannot publish a usable route and always cleans any partially created resources.
+
+### 5. Session Gateway And Secure Routing
+
+- [ ] Implement the session gateway as a stateless ECS service across at least two Availability Zones.
+- [ ] Put the gateway behind an internet-facing ALB with HTTPS-only listeners and wildcard workspace routing.
+- [ ] Implement endpoint-bound one-time bootstrap codes, host-only `HttpOnly` cookies, bounded revocation, and authenticated ownership checks from ADR 0004.
+- [ ] Resolve opaque route IDs to healthy private task IPs without exposing ECS identifiers or private addresses to browsers.
+- [ ] Proxy editor WebSockets, preview HTTP traffic, and tools requests with correct timeout, streaming, and size limits.
+- [ ] Remove routes before task shutdown and deny stale, revoked, cross-user, and cross-endpoint access.
+- [ ] Add rate limits, request IDs, structured audit logs, security headers, and origin validation.
+
+### 6. Hosted Application And Account Integration
+
+- [ ] Host the React application as immutable static assets in a private S3 origin behind CloudFront with Origin Access Control, HTTPS, security headers, cache-versioned releases, and a documented rollback to the prior asset manifest.
+- [ ] Deploy the React application with `VITE_PRODUCT_SURFACE=hosted`, Clerk configured, authorized session access, and enforced cost controls.
+- [ ] Configure production Clerk keys, the `convex` JWT template, Convex issuer validation, allowed origins, and account-management URLs.
+- [ ] Create isolated staging and production Convex deployments, promote schema and functions through CI, seed or migrate production reference data idempotently, back up durable learner data before migrations, and verify forward and rollback compatibility.
+- [ ] Move hosted session requests to `aws-ecs-fargate` while keeping local development on the local runner.
+- [ ] Issue workspace bootstrap codes only to the authenticated session owner and never place bearer credentials in workspace URLs.
+- [ ] Implement signed, idempotent Clerk deletion webhooks and the approved learning-data retention or anonymization policy.
+- [ ] Add learner-facing startup, stopping, recovery, capacity, and retry states for ECS-backed sessions.
+
+### 7. Reliability, Security, And Cost Gates
+
+- [ ] Add alarms for dispatcher health, gateway health, ALB errors, ECS launch failures, startup latency, cleanup backlog, expired tasks, and NAT or data-transfer anomalies.
+- [ ] Add ECS deployment circuit breakers, minimum healthy capacity, health-check grace periods, autoscaling bounds, capacity-provider strategy, graceful draining, deployment rollback, and explicit Fargate capacity-error handling.
+- [ ] Implement and verify per-user and global concurrency quotas, launch-rate limits, maximum TTLs, artifact-size limits, and an operator-tested production kill switch before enabling any hosted learner traffic.
+- [ ] Add CloudWatch dashboards and operational runbooks for launch failure, route failure, stuck cleanup, secret rotation, image rollback, and regional impairment.
+- [ ] Execute the ADR 0004 security suite for bootstrap replay, endpoint swapping, cookie scope, CSRF and origin rejection, cross-user denial, support grants, sign-out revocation, stale routes, log redaction, and hostile preview content.
+- [ ] Run dependency, container, infrastructure, IAM, network, and application security reviews with no unresolved critical or high findings.
+- [ ] Perform load tests for concurrent launches, gateway WebSockets, task churn, checkpoint traffic, and Convex control-plane load.
+- [ ] Run failure injection for dispatcher restarts, gateway task loss, ECS capacity errors, partial startup, lost callbacks, and cleanup retries.
+- [ ] Define recovery objectives for Convex data, S3 artifacts and checkpoints, routing state, Terraform state, and container availability; document RTO, RPO, backup ownership, and regional recovery order.
+- [ ] Measure per-session compute, NAT, storage, logging, and gateway costs; make CI or promotion fail when forecast or measured cost exceeds approved per-session, daily, or monthly thresholds; configure budgets and anomaly detection.
+
+### 8. Staging And Production Rollout
+
+- [ ] Create one coordinated CI/CD workflow that validates Terraform plans, publishes signed images and scenario artifacts, deploys Convex functions and data migrations, applies staging infrastructure, deploys ECS services and frontend assets, runs smoke tests, detects drift, and promotes the same digests to production with approval and component-level rollback.
+- [ ] Deploy the complete architecture to staging from CI using production-equivalent networking and security controls before creating or changing production workloads.
+- [ ] Pass automated end-to-end tests for sign-up, sign-in, launch, editor access, preview, checks, checkpoint recovery, stop, TTL expiry, sign-out, and cross-user denial.
+- [ ] Run the complete local-runner end-to-end suite in CI and block promotion on any regression to local session launch, checks, stop, cleanup, or auth-disabled development.
+- [ ] Run a controlled staging soak with repeated task creation and cleanup until no orphaned tasks, routes, network interfaces, or artifacts remain.
+- [ ] Complete backup, restore, rollback, incident-response, and disaster-recovery exercises.
+- [ ] Deploy production through an approval-gated pipeline and run a small internal canary cohort.
+- [ ] Expand availability only after service-level objectives, security gates, cost limits, and rollback criteria remain healthy through the canary period.
+- [ ] Record the production evidence and mark AWS migration complete only after real learner sessions run exclusively on standalone ECS tasks.
+
 ## Later Multi-User Platform
 
 - [x] Add user accounts.
@@ -107,5 +210,5 @@ This roadmap tracks the local MVP and the path toward a hosted Killercoda-like l
 - [ ] Add course enrollment and learner progress.
 - [ ] Add role-based access for learner, author, and operator.
 - [ ] Add billing or access control if the platform becomes public.
-- [ ] Add scenario publishing workflow.
+- [ ] Add an author-facing scenario publishing and approval workflow beyond the automated artifact pipeline.
 - [ ] Add hosted resource quotas and abuse prevention.
