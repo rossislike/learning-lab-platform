@@ -119,7 +119,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [x] Restore a copied state version into an isolated backend and run Terraform against it to rehearse the full backup restoration procedure.
 - [x] Rehearse KMS disable and re-enable recovery with an isolated key and copied state before any production break-glass exercise.
 - [x] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
-- [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline.
+- [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline. A blocking inventory exception and automated readiness gate are documented in `docs/environment-isolation.md`; external staging and production identities remain to be provisioned by 2026-08-12.
 - [ ] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
 - [ ] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.
 - [ ] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.

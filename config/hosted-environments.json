@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "temporaryException": {
+    "approved": false,
+    "approver": null,
+    "blocksProduction": true,
+    "deadline": "2026-08-12",
+    "migrationStatus": "blocked",
+    "owner": "platform owner",
+    "reason": "A separate staging AWS account, Clerk application, and Convex deployment have not been provisioned yet."
+  },
+  "environments": {
+    "development": {
+      "awsAccountId": null,
+      "clerkApplicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+      "convexDeployment": null
+    },
+    "staging": {
+      "awsAccountId": null,
+      "clerkApplicationId": null,
+      "convexDeployment": null
+    },
+    "production": {
+      "awsAccountId": "442359104502",
+      "clerkApplicationId": null,
+      "convexDeployment": null
+    }
+  }
+}
