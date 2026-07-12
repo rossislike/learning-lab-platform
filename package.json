@@ -19,10 +19,10 @@
     "runner:local:once": "node runner/local-runner.mjs --once",
     "runner:aws": "node runner/aws-runner.mjs",
     "runner:aws:once": "node runner/aws-runner.mjs --once",
-    "test:runner": "npm run infra:lambda:build && node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs infra/aws/terraform/lambda/*.test.mjs",
-    "infra:lambda:build": "node infra/aws/terraform/lambda/build.mjs",
-    "infra:fmt": "terraform -chdir=infra/aws/terraform fmt -check -recursive",
-    "infra:validate": "npm run infra:lambda:build && terraform -chdir=infra/aws/terraform validate"
+    "test:runner": "npm run infra:lambda:build && node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs infra/aws/modules/hosted-runner/lambda/*.test.mjs",
+    "infra:lambda:build": "node infra/aws/modules/hosted-runner/lambda/build.mjs",
+    "infra:fmt": "terraform fmt -check -recursive infra/aws",
+    "infra:validate": "npm run infra:lambda:build && terraform -chdir=infra/aws/terraform validate && terraform -chdir=infra/aws/environments/staging validate && terraform -chdir=infra/aws/environments/production validate"
   },
   "dependencies": {
     "@clerk/react": "^6.12.2",

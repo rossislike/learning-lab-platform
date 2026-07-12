@@ -2,6 +2,15 @@
 
 This Terraform stack provisions the first hosted runner environment in `us-east-2`. It keeps session tasks in private subnets and preserves the local runner as a separate development path.
 
+Reusable resources live in
+[`modules/hosted-runner`](modules/hosted-runner/README.md). The existing
+[`terraform`](terraform) root remains the disposable validation caller.
+Separate protected roots for
+[`staging`](environments/staging) and
+[`production`](environments/production) own account guards, remote state,
+CIDRs, retention settings, and immutable image inputs. See the
+[environment root guide](environments/README.md).
+
 ## Resources
 
 - A dedicated VPC spanning two availability zones
@@ -30,7 +39,7 @@ Create the ECR repository first if it does not exist yet:
 ```sh
 terraform -chdir=infra/aws/terraform init
 terraform -chdir=infra/aws/terraform apply \
-  -target=aws_ecr_repository.runner \
+  -target=module.hosted_runner.aws_ecr_repository.runner_disposable[0] \
   -var=environment=validation \
   -var=runner_image_uri=not-used-during-ecr-bootstrap
 ```
@@ -104,18 +113,19 @@ DynamoDB locking is not used.
 After applying the bootstrap stack, configure production state:
 
 ```sh
-cp infra/aws/terraform/backend.production.tf.example \
-  infra/aws/terraform/backend.production.tf
-cp infra/aws/terraform/production.s3.tfbackend.example \
-  infra/aws/terraform/production.s3.tfbackend
+cp infra/aws/environments/production/production.s3.tfbackend.example \
+  infra/aws/environments/production/production.s3.tfbackend
+cp infra/aws/environments/production/production.tfvars.example \
+  infra/aws/environments/production/production.tfvars
 ```
 
-Replace the bucket, allowed account, and KMS key placeholders with the
-bootstrap outputs, then initialize with migration enabled:
+Replace the staging placeholders when its separate account is available.
+The production example is prefilled with the existing backend identifiers.
+Initialize production with its backend configuration:
 
 ```sh
-terraform -chdir=infra/aws/terraform init \
-  -migrate-state \
+terraform -chdir=infra/aws/environments/production init \
+  -reconfigure \
   -backend-config=production.s3.tfbackend
 ```
 

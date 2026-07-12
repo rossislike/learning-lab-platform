@@ -1,0 +1,7 @@
+expected_aws_account_id       = "442359104502"
+runner_image_uri              = "442359104502.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-production-runner@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
+vpc_cidr                     = "10.62.0.0/16"
+enable_nat_gateway           = true
+runner_cpu                  = 1024
+runner_memory               = 2048
+runner_ephemeral_storage_gib = 21

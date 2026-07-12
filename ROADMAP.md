@@ -118,7 +118,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [x] Deploy the production state backend in the verified production AWS account, migrate bootstrap state, and prove native lock contention, version-copy recovery, KMS-encrypted reads, and backup comparison.
 - [x] Restore a copied state version into an isolated backend and run Terraform against it to rehearse the full backup restoration procedure.
 - [x] Rehearse KMS disable and re-enable recovery with an isolated key and copied state before any production break-glass exercise.
-- [ ] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
+- [x] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
 - [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline.
 - [ ] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
 - [ ] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.

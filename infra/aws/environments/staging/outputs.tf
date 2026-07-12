@@ -1,0 +1,10 @@
+output "artifact_bucket" { value = module.hosted_runner.artifact_bucket }
+output "checkpoint_bucket" { value = module.hosted_runner.checkpoint_bucket }
+output "ecs_cluster_arn" { value = module.hosted_runner.ecs_cluster_arn }
+output "ecs_task_definition_arn" { value = module.hosted_runner.ecs_task_definition_arn }
+output "module_contract_version" { value = module.hosted_runner.module_contract_version }
+output "private_subnet_ids" { value = module.hosted_runner.private_subnet_ids }
+output "runner_ecr_repository_url" { value = module.hosted_runner.runner_ecr_repository_url }
+output "runner_log_group" { value = module.hosted_runner.runner_log_group }
+output "session_security_group_id" { value = module.hosted_runner.session_security_group_id }
+output "ttl_cleanup_function_name" { value = module.hosted_runner.ttl_cleanup_function_name }

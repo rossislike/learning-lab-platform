@@ -1,0 +1,7 @@
+bucket              = "REPLACE_WITH_STAGING_TERRAFORM_STATE_BUCKET"
+key                 = "learning-lab-platform/staging/terraform.tfstate"
+region              = "us-east-2"
+allowed_account_ids = ["REPLACE_WITH_STAGING_ACCOUNT_ID"]
+encrypt             = true
+kms_key_id          = "REPLACE_WITH_STAGING_TERRAFORM_STATE_KMS_KEY_ARN"
+use_lockfile        = true
