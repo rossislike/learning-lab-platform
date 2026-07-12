@@ -1,0 +1,7 @@
+aws_region  = "us-east-2"
+environment = "production"
+project_name = "learning-lab-platform"
+expected_aws_account_id = "REPLACE_WITH_12_DIGIT_AWS_ACCOUNT_ID"
+
+# Optional. The default is deterministic and includes account ID and region.
+# state_bucket_name = "globally-unique-terraform-state-bucket"

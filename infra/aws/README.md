@@ -95,9 +95,13 @@ The signing endpoint, safe archive extraction, checkpoint upload and restore, an
 
 ## Production Terraform state
 
-Local Terraform state is allowed only for a disposable validation stack. Production must use an independently bootstrapped S3 state bucket with versioning, encryption, public access blocking, restricted operator access, and native S3 lockfiles.
+Local Terraform state is allowed only for a disposable validation stack.
+Production uses the independent stack in
+[`bootstrap/terraform-backend`](bootstrap/terraform-backend/README.md) to
+create a versioned, KMS-encrypted, private S3 backend with native S3 lockfiles.
+DynamoDB locking is not used.
 
-After an operator creates that bootstrap bucket outside this stack, configure production state:
+After applying the bootstrap stack, configure production state:
 
 ```sh
 cp infra/aws/terraform/backend.production.tf.example \
@@ -106,7 +110,8 @@ cp infra/aws/terraform/production.s3.tfbackend.example \
   infra/aws/terraform/production.s3.tfbackend
 ```
 
-Replace the bucket name, then initialize with migration enabled:
+Replace the bucket, expected bucket owner, and KMS key placeholders with the
+bootstrap outputs, then initialize with migration enabled:
 
 ```sh
 terraform -chdir=infra/aws/terraform init \
@@ -114,7 +119,9 @@ terraform -chdir=infra/aws/terraform init \
   -backend-config=production.s3.tfbackend
 ```
 
-The backend bucket is deliberately outside this stack so destroying runner infrastructure cannot destroy its own state or lock. Never commit the generated backend files, which can contain environment-specific details.
+The backend bucket and KMS key are deliberately outside this stack so
+destroying runner infrastructure cannot destroy its own state or lock. Never
+commit generated backend files, which contain environment-specific details.
 
 ## Destroy a validation stack
 

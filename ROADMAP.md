@@ -114,7 +114,8 @@ Promotion follows one direction: reusable Terraform modules and application arti
 
 ### 1. Environment Foundation
 
-- [ ] Bootstrap the production Terraform state bucket and lockfile configuration outside the runner stack.
+- [x] Implement the Terraform bootstrap stack for a private, versioned, KMS-encrypted state bucket and native S3 lock files outside the runner stack.
+- [ ] Deploy the production state backend in the verified production AWS account, migrate state, and prove native lock contention, version recovery, KMS recovery, and backup restore procedures.
 - [ ] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
 - [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline.
 - [ ] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
