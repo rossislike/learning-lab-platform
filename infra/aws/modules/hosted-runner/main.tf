@@ -12,6 +12,7 @@ locals {
   azs               = slice(data.aws_availability_zones.available.names, 0, 2)
   artifact_bucket   = var.deletion_protection ? aws_s3_bucket.artifacts_protected[0] : aws_s3_bucket.artifacts_disposable[0]
   checkpoint_bucket = var.deletion_protection ? aws_s3_bucket.checkpoints_protected[0] : aws_s3_bucket.checkpoints_disposable[0]
+  data_kms_key      = var.deletion_protection ? aws_kms_key.data_protected[0] : aws_kms_key.data_disposable[0]
   runner_repository = var.deletion_protection ? aws_ecr_repository.runner_protected[0] : aws_ecr_repository.runner_disposable[0]
 
 }
@@ -131,6 +132,31 @@ resource "aws_ecs_cluster" "runner" {
   }
 }
 
+resource "aws_kms_key" "data_protected" {
+  count = var.deletion_protection ? 1 : 0
+
+  description             = "KMS key for ${local.name} hosted-runner data"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_kms_key" "data_disposable" {
+  count = var.deletion_protection ? 0 : 1
+
+  description             = "KMS key for ${local.name} hosted-runner data"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "data" {
+  name          = "alias/${local.name}-data"
+  target_key_id = local.data_kms_key.key_id
+}
+
 resource "aws_ecr_repository" "runner_protected" {
   count = var.deletion_protection ? 1 : 0
 
@@ -143,7 +169,8 @@ resource "aws_ecr_repository" "runner_protected" {
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
   }
 
   lifecycle {
@@ -168,7 +195,8 @@ resource "aws_ecr_repository" "runner_disposable" {
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
   }
 }
 
@@ -255,6 +283,69 @@ data "aws_iam_policy_document" "artifacts_bucket" {
       values   = ["false"]
     }
   }
+
+  statement {
+    sid       = "DenyExplicitNonKmsEncryption"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifact_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid       = "DenyExplicitWrongKmsKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifact_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [local.data_kms_key.arn, local.data_kms_key.key_id]
+    }
+  }
+
+  statement {
+    sid       = "DenyExplicitKmsWithoutKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifact_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["true"]
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "artifacts" {
@@ -281,6 +372,69 @@ data "aws_iam_policy_document" "checkpoints_bucket" {
       values   = ["false"]
     }
   }
+
+  statement {
+    sid       = "DenyExplicitNonKmsEncryption"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.checkpoint_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid       = "DenyExplicitWrongKmsKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.checkpoint_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [local.data_kms_key.arn, local.data_kms_key.key_id]
+    }
+  }
+
+  statement {
+    sid       = "DenyExplicitKmsWithoutKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.checkpoint_bucket.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = ["true"]
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "checkpoints" {
@@ -292,7 +446,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
   bucket = local.artifact_bucket.id
 
   rule {
-    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+    bucket_key_enabled = true
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = local.data_kms_key.arn
+      sse_algorithm     = "aws:kms"
+    }
   }
 }
 
@@ -300,7 +458,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "checkpoints" {
   bucket = local.checkpoint_bucket.id
 
   rule {
-    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+    bucket_key_enabled = true
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = local.data_kms_key.arn
+      sse_algorithm     = "aws:kms"
+    }
   }
 }
 

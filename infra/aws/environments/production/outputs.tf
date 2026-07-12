@@ -1,5 +1,6 @@
 output "artifact_bucket" { value = module.hosted_runner.artifact_bucket }
 output "checkpoint_bucket" { value = module.hosted_runner.checkpoint_bucket }
+output "data_kms_key_arn" { value = module.hosted_runner.data_kms_key_arn }
 output "ecs_cluster_arn" { value = module.hosted_runner.ecs_cluster_arn }
 output "ecs_task_definition_arn" { value = module.hosted_runner.ecs_task_definition_arn }
 output "module_contract_version" { value = module.hosted_runner.module_contract_version }

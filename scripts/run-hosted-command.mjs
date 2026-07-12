@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
-import { loadIsolationRegistry, validateIsolationRegistry } from "./validate-environment-isolation.mjs"
+import { loadIsolationRegistry, validateAwsInfrastructureRegistry, validateIsolationRegistry } from "./validate-environment-isolation.mjs"
 
 const environments = new Set(["staging", "production"])
 const terraformActions = new Set(["plan", "apply"])
@@ -21,7 +21,9 @@ export async function runHostedCommand(args = process.argv.slice(2), deps = {}) 
   }
 
   const registry = await (deps.loadRegistry ?? loadIsolationRegistry)()
-  const validation = validateIsolationRegistry(registry)
+  const validation = validTerraform
+    ? validateAwsInfrastructureRegistry(registry, environment)
+    : validateIsolationRegistry(registry)
   if (!validation.ready) {
     for (const issue of [...validation.errors, ...validation.blockers]) console.error(`blocked: ${issue}`)
     return 1

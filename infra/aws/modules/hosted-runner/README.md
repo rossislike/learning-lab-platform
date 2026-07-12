@@ -5,6 +5,9 @@ production hosted-runner environments. It owns the VPC, private Fargate task
 boundary, ECS and ECR resources, artifact and checkpoint buckets, logs, and TTL
 cleanup safety net.
 
+Each environment receives a rotation-enabled KMS key. ECR and both S3 data
+buckets use that key, and S3 Bucket Keys reduce recurring KMS request cost.
+
 ## Compatibility contract and source version
 
 The current compatibility contract is `1.0.0`. Every caller passes

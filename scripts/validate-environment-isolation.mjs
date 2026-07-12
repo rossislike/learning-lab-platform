@@ -5,6 +5,7 @@ const defaultRegistryUrl = new URL("../config/hosted-environments.json", import.
 const requiredEnvironments = ["development", "staging", "production"]
 const identityFields = ["awsAccountId", "clerkApplicationId", "convexDeployment"]
 const migrationStatuses = new Set(["blocked", "planned", "in-progress", "complete"])
+const environmentNames = new Set(requiredEnvironments)
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -50,24 +51,50 @@ export function validateIsolationRegistry(registry, { today = new Date() } = {})
     }
   }
 
+  const exception = registry.temporaryException
+  const sharingRules = exception?.approved === true && Array.isArray(exception.allowedIdentitySharing)
+    ? exception.allowedIdentitySharing
+    : []
+  const sharingRuleKeys = new Set(sharingRules.map((rule) =>
+    isRecord(rule) && Array.isArray(rule.environments)
+      ? `${rule.field}:${[...rule.environments].sort().join(",")}`
+      : "invalid",
+  ))
+
   for (const field of identityFields) {
     const configured = new Map()
     for (const environment of requiredEnvironments) {
       const value = registry.environments?.[environment]?.[field]
       if (value === null && environment !== "development") blockers.push(`${environment}.${field} is not configured`)
       if (typeof value === "string" && value.length > 0) {
-        if (configured.has(value)) errors.push(`${environment}.${field} duplicates ${configured.get(value)}.${field}`)
-        else configured.set(value, environment)
+        if (configured.has(value)) {
+          const environments = [configured.get(value), environment].sort()
+          if (!sharingRuleKeys.has(`${field}:${environments.join(",")}`)) {
+            errors.push(`${environment}.${field} duplicates ${configured.get(value)}.${field}`)
+          }
+        } else configured.set(value, environment)
       }
     }
   }
 
-  const exception = registry.temporaryException
   if (!isRecord(exception)) {
     errors.push("temporaryException must be an object")
   } else {
     if (typeof exception.approved !== "boolean") errors.push("temporaryException.approved must be boolean")
-    if (exception.blocksProduction !== true) errors.push("temporaryException.blocksProduction must be true")
+    if (!Array.isArray(exception.allowedIdentitySharing) || exception.allowedIdentitySharing.some((rule) =>
+      !isRecord(rule) || !identityFields.includes(rule.field) || !Array.isArray(rule.environments) ||
+      rule.environments.length !== 2 || new Set(rule.environments).size !== 2 ||
+      rule.environments.some((environment) => !environmentNames.has(environment)) ||
+      !rule.environments.includes("staging") || !rule.environments.includes("production"))) {
+      errors.push("temporaryException.allowedIdentitySharing must contain rules with a known field and exactly the staging and production environments")
+    }
+    if (sharingRuleKeys.size !== sharingRules.length) {
+      errors.push("temporaryException.allowedIdentitySharing must not contain duplicate rules")
+    }
+    if (exception.approved === false && exception.allowedIdentitySharing?.length > 0) {
+      errors.push("temporaryException.allowedIdentitySharing must be empty when unapproved")
+    }
+    if (exception.productionLearnerTrafficBlocked !== true) errors.push("temporaryException.productionLearnerTrafficBlocked must be true")
     if (!isNonemptyString(exception.owner)) errors.push("temporaryException.owner must be a nonempty string")
     if (!isNonemptyString(exception.reason)) errors.push("temporaryException.reason must be a nonempty string")
     if (!migrationStatuses.has(exception.migrationStatus)) {
@@ -82,13 +109,24 @@ export function validateIsolationRegistry(registry, { today = new Date() } = {})
       errors.push("temporaryException.deadline must be a real YYYY-MM-DD date")
     } else {
       const deadline = new Date(`${exception.deadline}T23:59:59.999Z`)
-      if (blockers.length > 0 && today.getTime() > deadline.getTime()) {
+      if (exception.approved === true && sharingRules.length > 0 && today.getTime() > deadline.getTime()) {
         errors.push("temporary environment-isolation exception has expired")
       }
     }
   }
 
   return { blockers, errors, ready: errors.length === 0 && blockers.length === 0 }
+}
+
+export function validateAwsInfrastructureRegistry(registry, environment, options) {
+  const validation = validateIsolationRegistry(registry, options)
+  const blockers = validation.blockers.filter((blocker) => blocker.includes(".awsAccountId "))
+  return {
+    blockers,
+    errors: validation.errors,
+    ready: validation.errors.length === 0 && blockers.length === 0 &&
+      typeof registry?.environments?.[environment]?.awsAccountId === "string",
+  }
 }
 
 export async function loadIsolationRegistry(registryUrl = defaultRegistryUrl) {

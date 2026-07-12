@@ -17,8 +17,8 @@ CIDRs, retention settings, and immutable image inputs. See the
 - Public subnets with one NAT gateway per availability zone
 - Private subnets and an outbound-only security group for Fargate tasks
 - An ECS cluster and an ARM64 Fargate task definition
-- An immutable, scan-on-push ECR repository
-- Private, encrypted S3 buckets for scenario artifacts and short-lived checkpoints
+- An immutable, scan-on-push, KMS-encrypted ECR repository
+- Private, KMS-encrypted S3 buckets for scenario artifacts and short-lived checkpoints
 - CloudWatch log groups with finite retention
 - A scheduled Lambda reaper that stops expired managed ECS tasks every minute
 - A task role with no ambient S3 data access, plus scoped execution and cleanup roles
@@ -98,7 +98,7 @@ The application dispatcher still stops sessions during normal lifecycle processi
 
 ## Session storage access
 
-The Fargate task role intentionally has no S3 data permissions. This enforces the storage decision in ADR 0002: a trusted dispatcher or signing endpoint must issue short-lived, operation-specific presigned access for one exact artifact or checkpoint key. Cleanup deletion remains a trusted control-plane operation. Do not add bucket-prefix permissions to the shared task role. Both buckets deny requests that do not use TLS.
+The Fargate task role intentionally has no S3 data permissions. This enforces the storage decision in ADR 0002: a trusted dispatcher or signing endpoint must issue short-lived, operation-specific presigned access for one exact artifact or checkpoint key. Cleanup deletion remains a trusted control-plane operation. Do not add bucket-prefix permissions to the shared task role. Both buckets deny requests that do not use TLS. They reject explicit non-KMS encryption and explicit KMS keys other than the environment key. Headerless writes use the bucket's default environment KMS key.
 
 The signing endpoint, safe archive extraction, checkpoint upload and restore, and metadata reporting are future platform work. The completed hosted validation covers the scoped React scenario runner, not a full interactive learner session.
 
@@ -134,6 +134,8 @@ destroying runner infrastructure cannot destroy its own state or lock. Never
 commit generated backend files, which contain environment-specific details.
 The production deployment and recovery evidence is recorded in
 [`docs/aws-production-backend-validation.md`](../../docs/aws-production-backend-validation.md).
+The staging-first hosted environment deployment is recorded in
+[`docs/aws-environment-foundation-deployment.md`](../../docs/aws-environment-foundation-deployment.md).
 
 ## Destroy a validation stack
 

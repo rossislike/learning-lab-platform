@@ -1,5 +1,5 @@
-expected_aws_account_id       = "REPLACE_WITH_STAGING_ACCOUNT_ID"
-runner_image_uri              = "STAGING_ACCOUNT_ID.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-staging-runner@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
+expected_aws_account_id       = "442359104502"
+runner_image_uri              = "442359104502.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-staging-runner@sha256:c41aa11a664c9b5599dbefe2c2134be8a9dce48a8fd3da8084afd75dd2ca221c"
 vpc_cidr                     = "10.52.0.0/16"
 enable_nat_gateway           = true
 runner_cpu                  = 1024

@@ -10,8 +10,9 @@ function registry(overrides = {}) {
     schemaVersion: 1,
     temporaryException: {
       approved: false,
+      allowedIdentitySharing: [],
       approver: null,
-      blocksProduction: true,
+      productionLearnerTrafficBlocked: true,
       deadline: "2026-08-12",
       migrationStatus: "blocked",
       owner: "platform owner",
@@ -46,6 +47,19 @@ test("accepts distinct staging and production identities", () => {
   assert.deepEqual(result, { blockers: [], errors: [], ready: true })
 })
 
+test("accepts approved temporary AWS account sharing", () => {
+  const value = registry()
+  value.temporaryException.approved = true
+  value.temporaryException.approver = "repository owner"
+  value.temporaryException.allowedIdentitySharing = [{
+    field: "awsAccountId",
+    environments: ["staging", "production"],
+  }]
+  value.environments.staging.awsAccountId = value.environments.production.awsAccountId
+
+  assert.equal(validateIsolationRegistry(value).ready, true)
+})
+
 test("blocks readiness while an environment identity is missing", () => {
   const value = registry()
   value.environments.staging.awsAccountId = null
@@ -69,6 +83,33 @@ test("rejects shared staging and production identities", () => {
 
   assert.equal(result.ready, false)
   assert.deepEqual(result.errors, ["production.clerkApplicationId duplicates staging.clerkApplicationId"])
+})
+
+test("rejects a sharing rule scoped to development", () => {
+  const value = registry()
+  value.temporaryException.approved = true
+  value.temporaryException.approver = "repository owner"
+  value.temporaryException.allowedIdentitySharing = [{ field: "awsAccountId", environments: ["development", "staging"] }]
+  value.environments.development.awsAccountId = value.environments.staging.awsAccountId
+  assert.match(validateIsolationRegistry(value).errors.join("\n"), /exactly the staging and production environments/)
+})
+
+test("rejects a three-environment sharing rule", () => {
+  const value = registry()
+  value.temporaryException.allowedIdentitySharing = [{
+    field: "awsAccountId",
+    environments: ["development", "staging", "production"],
+  }]
+  assert.match(validateIsolationRegistry(value).errors.join("\n"), /exactly the staging and production environments/)
+})
+
+test("rejects sharing without approval", () => {
+  const value = registry()
+  value.temporaryException.allowedIdentitySharing = [{ field: "awsAccountId", environments: ["staging", "production"] }]
+  value.environments.staging.awsAccountId = value.environments.production.awsAccountId
+  const errors = validateIsolationRegistry(value).errors.join("\n")
+  assert.match(errors, /duplicates staging/)
+  assert.match(errors, /must be empty when unapproved/)
 })
 
 test("rejects an impossible calendar deadline", () => {
@@ -137,6 +178,10 @@ test("hosted Terraform command checks AWS identity and forwards explicit argumen
 
 test("rejects an expired exception while blockers remain", () => {
   const value = registry()
+  value.temporaryException.approved = true
+  value.temporaryException.approver = "repository owner"
+  value.temporaryException.allowedIdentitySharing = [{ field: "awsAccountId", environments: ["staging", "production"] }]
+  value.environments.staging.awsAccountId = value.environments.production.awsAccountId
   value.environments.production.convexDeployment = null
 
   const result = validateIsolationRegistry(value, {
@@ -147,4 +192,14 @@ test("rejects an expired exception while blockers remain", () => {
   assert.deepEqual(result.errors, [
     "temporary environment-isolation exception has expired",
   ])
+})
+
+test("rejects expired sharing even when all identities are configured", () => {
+  const value = registry()
+  value.temporaryException.approved = true
+  value.temporaryException.approver = "repository owner"
+  value.temporaryException.allowedIdentitySharing = [{ field: "awsAccountId", environments: ["staging", "production"] }]
+  value.environments.staging.awsAccountId = value.environments.production.awsAccountId
+  const result = validateIsolationRegistry(value, { today: new Date("2026-08-13T00:00:00Z") })
+  assert.match(result.errors.join("\n"), /has expired/)
 })

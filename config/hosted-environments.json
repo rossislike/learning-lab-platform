@@ -1,13 +1,22 @@
 {
   "schemaVersion": 1,
   "temporaryException": {
-    "approved": false,
-    "approver": null,
-    "blocksProduction": true,
+    "approved": true,
+    "allowedIdentitySharing": [
+      {
+        "field": "awsAccountId",
+        "environments": [
+          "staging",
+          "production"
+        ]
+      }
+    ],
+    "approver": "repository owner",
+    "productionLearnerTrafficBlocked": true,
     "deadline": "2026-08-12",
-    "migrationStatus": "blocked",
+    "migrationStatus": "in-progress",
     "owner": "platform owner",
-    "reason": "A separate staging AWS account, Clerk application, and Convex deployment have not been provisioned yet."
+    "reason": "The repository owner directed staging to use the production AWS account temporarily. Separate Clerk applications and Convex deployments are also pending."
   },
   "environments": {
     "development": {
@@ -16,7 +25,7 @@
       "convexDeployment": null
     },
     "staging": {
-      "awsAccountId": null,
+      "awsAccountId": "442359104502",
       "clerkApplicationId": null,
       "convexDeployment": null
     },

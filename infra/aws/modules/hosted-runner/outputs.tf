@@ -1,5 +1,6 @@
 output "artifact_bucket" { value = local.artifact_bucket.id }
 output "checkpoint_bucket" { value = local.checkpoint_bucket.id }
+output "data_kms_key_arn" { value = local.data_kms_key.arn }
 output "ecs_cluster_arn" { value = aws_ecs_cluster.runner.arn }
 output "ecs_task_definition_arn" { value = aws_ecs_task_definition.runner.arn }
 output "private_subnet_ids" { value = values(aws_subnet.private)[*].id }

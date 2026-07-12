@@ -8,9 +8,11 @@ The hosted-runner module has three callers:
 | `environments/staging/` | Production-equivalent qualification | Separate staging backend and account | Protected |
 | `environments/production/` | Learner production workloads | Production S3 backend | Protected |
 
-Staging and production require different AWS account IDs, backend buckets,
-state keys, VPC CIDRs, and immutable image digests. Never initialize staging
-with the production backend file or credentials.
+Staging and production normally require different AWS account IDs and backend
+buckets, and always require distinct state keys, VPC CIDRs, and immutable image
+digests. The approved temporary exception uses account `442359104502` and one
+state bucket with separate staging and production keys. Never initialize one
+environment with the other environment's backend file.
 
 The AWS account IDs are part of the broader hosted environment isolation gate.
 See [`docs/environment-isolation.md`](../../../docs/environment-isolation.md)
