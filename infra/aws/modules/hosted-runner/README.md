@@ -8,7 +8,7 @@ cleanup safety net.
 Each environment receives a rotation-enabled KMS key. ECR and both S3 data
 buckets use that key, and S3 Bucket Keys reduce recurring KMS request cost.
 
-The network contract uses separate security groups for the future public ALB,
+The network contract uses separate security groups for the public ALB,
 private gateway, private dispatcher, learner sessions, AWS interface endpoints,
 and controlled egress proxy. Session ports `3000`, `5173`, and `8080` accept
 traffic only from the gateway group. The dispatcher has no ingress rules.
@@ -21,6 +21,15 @@ permissions. External HTTPS uses the internal proxy load balancer on port
 `3128`. Only the proxy task security group has direct HTTPS internet egress,
 and Squid permits CONNECT requests only to reviewed domains and the four owned
 environment bucket hostnames.
+
+Protected environments enable an internet-facing ALB with HTTP redirected to
+HTTPS. ACM certificates are created in the workload region and validated with
+one shared Route 53 CNAME for the base and wildcard names. Both the environment
+hostname and its wildcard workspace hostname
+resolve to the ALB. Until the authenticated gateway service is deployed, the
+HTTPS listener returns an HTTP 503 `gateway-deployment-pending` JSON status and
+does not
+route requests to session tasks.
 
 The proxy runs as the image's non-root `squid` user, drops every Linux
 capability, and enables the container init process. Its container root remains

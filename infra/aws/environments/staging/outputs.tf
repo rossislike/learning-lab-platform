@@ -17,3 +17,6 @@ output "runner_log_group" { value = module.hosted_runner.runner_log_group }
 output "session_security_group_id" { value = module.hosted_runner.session_security_group_id }
 output "ttl_cleanup_function_name" { value = module.hosted_runner.ttl_cleanup_function_name }
 output "vpc_endpoint_ids" { value = module.hosted_runner.vpc_endpoint_ids }
+output "public_alb_dns_name" { value = module.hosted_runner.public_alb_dns_name }
+output "public_certificate_arn" { value = module.hosted_runner.public_certificate_arn }
+output "public_url" { value = module.hosted_runner.public_url }

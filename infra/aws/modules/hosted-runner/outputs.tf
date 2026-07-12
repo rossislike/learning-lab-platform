@@ -18,3 +18,6 @@ output "gateway_security_group_id" { value = aws_security_group.gateway.id }
 output "vpc_endpoint_ids" { value = merge({ s3 = aws_vpc_endpoint.s3.id }, { for name, endpoint in aws_vpc_endpoint.interface : name => endpoint.id }) }
 output "ttl_cleanup_function_name" { value = aws_lambda_function.ttl_cleanup.function_name }
 output "module_contract_version" { value = var.module_contract_version }
+output "public_alb_dns_name" { value = var.enable_public_alb ? aws_lb.public[0].dns_name : null }
+output "public_certificate_arn" { value = var.enable_public_alb ? aws_acm_certificate_validation.public[0].certificate_arn : null }
+output "public_url" { value = var.enable_public_alb ? "https://${var.public_hostname}" : null }

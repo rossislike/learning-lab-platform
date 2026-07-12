@@ -203,6 +203,16 @@ resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   to_port           = 443
 }
 
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  for_each = var.enable_public_alb ? toset(var.alb_ingress_cidrs) : toset([])
+
+  security_group_id = aws_security_group.alb.id
+  cidr_ipv4         = each.value
+  from_port         = 80
+  ip_protocol       = "tcp"
+  to_port           = 80
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_to_gateway" {
   security_group_id            = aws_security_group.alb.id
   referenced_security_group_id = aws_security_group.gateway.id
@@ -217,6 +227,147 @@ resource "aws_vpc_security_group_ingress_rule" "gateway_from_alb" {
   from_port                    = var.gateway_port
   ip_protocol                  = "tcp"
   to_port                      = var.gateway_port
+}
+
+resource "aws_acm_certificate" "public" {
+  count = var.enable_public_alb ? 1 : 0
+
+  domain_name               = var.public_hostname
+  subject_alternative_names = ["*.${var.public_hostname}"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+
+    precondition {
+      condition = !var.enable_public_alb || (
+        !data.aws_route53_zone.public[0].private_zone &&
+        (
+          var.public_hostname == trimsuffix(data.aws_route53_zone.public[0].name, ".") ||
+          endswith(var.public_hostname, ".${trimsuffix(data.aws_route53_zone.public[0].name, ".")}")
+        )
+      )
+      error_message = "public_hostname must be within the supplied public Route 53 hosted zone."
+    }
+  }
+
+  tags = { Name = "${local.name}-public" }
+}
+
+data "aws_route53_zone" "public" {
+  count = var.enable_public_alb ? 1 : 0
+
+  zone_id = var.route53_zone_id
+}
+
+resource "aws_route53_record" "certificate_validation" {
+  for_each = var.enable_public_alb ? { (var.public_hostname) = {
+    name   = one(distinct([for option in aws_acm_certificate.public[0].domain_validation_options : option.resource_record_name]))
+    record = one(distinct([for option in aws_acm_certificate.public[0].domain_validation_options : option.resource_record_value]))
+    type   = one(distinct([for option in aws_acm_certificate.public[0].domain_validation_options : option.resource_record_type]))
+  } } : {}
+
+  name    = each.value.name
+  records = [each.value.record]
+  ttl     = 60
+  type    = each.value.type
+  zone_id = var.route53_zone_id
+}
+
+resource "aws_acm_certificate_validation" "public" {
+  count = var.enable_public_alb ? 1 : 0
+
+  certificate_arn         = aws_acm_certificate.public[0].arn
+  validation_record_fqdns = [aws_route53_record.certificate_validation[var.public_hostname].fqdn]
+}
+
+resource "aws_lb" "public" {
+  count = var.enable_public_alb ? 1 : 0
+
+  name               = length(local.name) <= 29 ? substr("${local.name}-public", 0, 32) : "${substr(local.name, 0, 18)}-pub-${substr(sha1("${local.name}-public"), 0, 8)}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = values(aws_subnet.public)[*].id
+
+  drop_invalid_header_fields = true
+  enable_deletion_protection = var.deletion_protection
+
+  tags = { Name = "${local.name}-public" }
+}
+
+resource "aws_lb_listener" "public_http" {
+  count = var.enable_public_alb ? 1 : 0
+
+  load_balancer_arn = aws_lb.public[0].arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_listener" "public_https" {
+  count = var.enable_public_alb ? 1 : 0
+
+  certificate_arn   = aws_acm_certificate_validation.public[0].certificate_arn
+  load_balancer_arn = aws_lb.public[0].arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "application/json"
+      message_body = jsonencode({
+        environment = var.environment
+        service     = "learning-lab-platform"
+        status      = "gateway-deployment-pending"
+      })
+      status_code = "503"
+    }
+  }
+}
+
+resource "aws_route53_record" "public_ipv4" {
+  count = var.enable_public_alb ? 1 : 0
+
+  name    = var.public_hostname
+  type    = "A"
+  zone_id = var.route53_zone_id
+
+  alias {
+    evaluate_target_health = false
+    name                   = aws_lb.public[0].dns_name
+    zone_id                = aws_lb.public[0].zone_id
+  }
+
+  depends_on = [aws_lb_listener.public_https]
+}
+
+resource "aws_route53_record" "workspace_ipv4" {
+  count = var.enable_public_alb ? 1 : 0
+
+  name    = "*.${var.public_hostname}"
+  type    = "A"
+  zone_id = var.route53_zone_id
+
+  alias {
+    evaluate_target_health = false
+    name                   = aws_lb.public[0].dns_name
+    zone_id                = aws_lb.public[0].zone_id
+  }
+
+  depends_on = [aws_lb_listener.public_https]
 }
 
 resource "aws_vpc_security_group_egress_rule" "gateway_to_session" {

@@ -19,10 +19,13 @@ module "hosted_runner" {
   egress_proxy_image_uri          = var.egress_proxy_image_uri
   enable_nat_gateway              = var.enable_nat_gateway
   enable_egress_proxy             = true
+  enable_public_alb               = true
   environment                     = "production"
   log_retention_days              = 30
   module_contract_version         = "1.0.0"
   project_name                    = "learning-lab-platform"
+  public_hostname                 = var.public_hostname
+  route53_zone_id                 = var.route53_zone_id
   runner_cpu                      = var.runner_cpu
   runner_cpu_architecture         = "ARM64"
   runner_ephemeral_storage_gib    = var.runner_ephemeral_storage_gib

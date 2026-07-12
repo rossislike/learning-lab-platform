@@ -19,10 +19,13 @@ module "hosted_runner" {
   egress_proxy_image_uri          = var.egress_proxy_image_uri
   enable_nat_gateway              = var.enable_nat_gateway
   enable_egress_proxy             = var.enable_egress_proxy
+  enable_public_alb               = var.enable_public_alb
   environment                     = var.environment
   log_retention_days              = var.log_retention_days
   module_contract_version         = var.module_contract_version
   project_name                    = var.project_name
+  public_hostname                 = var.public_hostname
+  route53_zone_id                 = var.route53_zone_id
   runner_cpu                      = var.runner_cpu
   runner_cpu_architecture         = var.runner_cpu_architecture
   runner_ephemeral_storage_gib    = var.runner_ephemeral_storage_gib

@@ -124,7 +124,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [x] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.
 - [ ] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.
 - [ ] Store long-lived operator and service credentials in AWS Secrets Manager. Grant secret retrieval to ECS execution roles only when needed during task startup, and grant runtime AWS API permissions to separate, narrowly scoped task roles.
-- [ ] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
+- [x] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
 - [ ] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.
 - [ ] Define environment ownership, operator access, emergency access, secret rotation, and production change procedures.
 

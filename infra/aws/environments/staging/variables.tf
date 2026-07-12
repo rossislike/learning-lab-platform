@@ -49,6 +49,16 @@ variable "enable_nat_gateway" {
   default = true
 }
 
+variable "public_hostname" {
+  description = "Staging hostname served by the public ALB."
+  type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Public Route 53 hosted zone ID that owns public_hostname."
+  type        = string
+}
+
 variable "runner_cpu" {
   type    = number
   default = 1024

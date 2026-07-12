@@ -50,6 +50,40 @@ variable "alb_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "enable_public_alb" {
+  description = "Create the public HTTPS ALB and DNS records for this environment."
+  type        = bool
+  default     = false
+}
+
+variable "public_hostname" {
+  description = "Environment hostname served by the public ALB."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      !var.enable_public_alb ||
+      (
+        length(var.public_hostname) <= 251 &&
+        can(regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$", var.public_hostname))
+      )
+    )
+    error_message = "Enabled public_hostname must be a valid lowercase DNS hostname no longer than 251 characters so its wildcard name remains within the DNS limit."
+  }
+}
+
+variable "route53_zone_id" {
+  description = "Public Route 53 hosted zone ID that owns public_hostname."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_public_alb || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
+    error_message = "Enabled route53_zone_id must be a Route 53 hosted zone ID."
+  }
+}
+
 variable "gateway_port" {
   description = "Internal port used by the future session gateway service."
   type        = number

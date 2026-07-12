@@ -42,6 +42,21 @@ variable "enable_egress_proxy" {
   default = false
 }
 
+variable "enable_public_alb" {
+  type    = bool
+  default = false
+}
+
+variable "public_hostname" {
+  type    = string
+  default = ""
+}
+
+variable "route53_zone_id" {
+  type    = string
+  default = ""
+}
+
 variable "egress_proxy_image_uri" {
   type    = string
   default = ""
