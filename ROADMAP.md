@@ -116,7 +116,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 
 - [x] Implement the Terraform bootstrap stack for a private, versioned, KMS-encrypted state bucket and native S3 lock files outside the runner stack.
 - [x] Deploy the production state backend in the verified production AWS account, migrate bootstrap state, and prove native lock contention, version-copy recovery, KMS-encrypted reads, and backup comparison.
-- [ ] Restore a copied state version into an isolated backend and run Terraform against it to rehearse the full backup restoration procedure.
+- [x] Restore a copied state version into an isolated backend and run Terraform against it to rehearse the full backup restoration procedure.
 - [ ] Rehearse KMS disable and re-enable recovery with an isolated key and copied state before any production break-glass exercise.
 - [ ] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
 - [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline.
