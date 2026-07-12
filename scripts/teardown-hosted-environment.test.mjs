@@ -2,9 +2,10 @@ import assert from "node:assert/strict"
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { spawnSync } from "node:child_process"
 import test from "node:test"
 
-import { runTeardown } from "./teardown-hosted-environment.mjs"
+import { runTeardown, teardownOverride } from "./teardown-hosted-environment.mjs"
 
 const account = "442359104502"
 
@@ -23,7 +24,7 @@ function executor(rootPath, changes = {}) {
     calls.push([command, args])
     if (command === "aws" && args[0] === "sts") return { status: 0, stdout: `${changes.account ?? account}\n` }
     if (command === "terraform" && args[1] === "output") return { status: 0, stdout: JSON.stringify({
-      ecs_cluster_arn: { value: "cluster" }, artifact_bucket: { value: "artifacts" }, checkpoint_bucket: { value: "checkpoints" },
+      ecs_cluster_arn: { value: changes.clusterArn ?? "arn:aws:ecs:us-east-2:442359104502:cluster/test" }, artifact_bucket: { value: "artifacts" }, checkpoint_bucket: { value: "checkpoints" },
       runner_ecr_repository_url: { value: "host/runner" }, egress_proxy_repository_url: { value: "host/proxy" },
     }) }
     if (command === "aws" && args[1] === "list-tasks") return { status: 0, stdout: JSON.stringify({ taskArns: changes.tasks ?? [] }) }
@@ -116,6 +117,58 @@ test("plan preflight blocks active workloads, retained objects, and images", () 
       assert.equal(run(root, ["plan", "staging", `--account=${account}`, `--confirm=plan teardown staging in ${account}`], changes).status, 1)
     } finally { rmSync(root, { recursive: true }) }
   }
+})
+
+test("preflight applies the cluster region to every regional AWS inspection", () => {
+  const root = fixture()
+  try {
+    assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
+    const result = run(root, ["plan", "staging", `--account=${account}`, `--confirm=plan teardown staging in ${account}`])
+    assert.equal(result.status, 0)
+    const regionalCalls = result.calls.filter(([command, args]) => command === "aws" && ["ecs", "s3api", "ecr"].includes(args[0]))
+    assert.ok(regionalCalls.length > 0)
+    for (const [, args] of regionalCalls) {
+      assert.deepEqual(args.slice(args.indexOf("--region"), args.indexOf("--region") + 2), ["--region", "us-east-2"])
+    }
+  } finally { rmSync(root, { recursive: true }) }
+})
+
+test("malformed or non-ECS cluster ARN blocks before AWS resource inspection", () => {
+  for (const clusterArn of ["not-an-arn", "arn:aws:s3:us-east-2:442359104502:cluster/test", "arn:other:ecs:us-east-2:442359104502:cluster/test"]) {
+    const root = fixture()
+    try {
+      assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
+      const result = run(root, ["plan", "staging", `--account=${account}`, `--confirm=plan teardown staging in ${account}`], { clusterArn })
+      assert.equal(result.status, 1)
+      assert.equal(result.calls.some(([command, args]) => command === "aws" && ["ecs", "s3api", "ecr"].includes(args[0])), false)
+    } finally { rmSync(root, { recursive: true }) }
+  }
+})
+
+test("preflight accepts AWS China and GovCloud ECS cluster ARNs", () => {
+  for (const [clusterArn, region] of [
+    ["arn:aws-cn:ecs:cn-north-1:442359104502:cluster/test", "cn-north-1"],
+    ["arn:aws-us-gov:ecs:us-gov-west-1:442359104502:cluster/test", "us-gov-west-1"],
+  ]) {
+    const root = fixture()
+    try {
+      assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
+      const result = run(root, ["plan", "staging", `--account=${account}`, `--confirm=plan teardown staging in ${account}`], { clusterArn })
+      assert.equal(result.status, 0)
+      const ecsCall = result.calls.find(([command, args]) => command === "aws" && args[0] === "ecs")
+      assert.deepEqual(ecsCall[1].slice(2, 4), ["--region", region])
+    } finally { rmSync(root, { recursive: true }) }
+  }
+})
+
+test("generated teardown override is terraform fmt stable", () => {
+  const root = fixture()
+  try {
+    const path = join(root, "teardown_override.tf")
+    writeFileSync(path, teardownOverride)
+    const result = spawnSync("terraform", ["fmt", "-check", path], { encoding: "utf8" })
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+  } finally { rmSync(root, { recursive: true }) }
 })
 
 test("apply rejects missing and tampered plans", () => {
