@@ -18,21 +18,121 @@ Editor and preview workspace:
 
 ## Architecture
 
-- React/Vite frontend for the learner/admin UI.
-- Clerk for hosted user authentication and account management.
-- Convex schema and functions for labs, sessions, and session events.
-- Lab manifests under `lab-definitions/`.
-- Local runner integration under `runner/`.
-- Future AWS infrastructure isolated under `infra/`.
+Solid lines show the implemented local and control-plane paths. Dashed lines
+show the planned hosted path from the [AWS Hosted Launch Plan](ROADMAP.md#aws-hosted-launch-plan).
+
+```mermaid
+flowchart TB
+  browser["Learner browser<br/>React and Vite UI"]
+  clerk["Clerk identity"]
+  convex["Convex control plane<br/>labs, accounts, sessions, progress"]
+  manifests["Scenario manifests<br/>lab-definitions/"]
+
+  subgraph local["Implemented local execution"]
+    localRunner["Local runner"]
+    workspace["Per-session workspace"]
+    editor["OpenVSCode container"]
+    preview["Vite preview"]
+    tools["Tools and checks server"]
+  end
+
+  subgraph aws["Planned AWS hosted execution"]
+    frontendBucket["Private S3 frontend origin"]
+    cloudfront["CloudFront"]
+    gateway["ALB and session gateway<br/>ECS service"]
+    dispatcher["AWS dispatcher<br/>ECS service"]
+    task["Standalone learner task<br/>ECS on Fargate"]
+    artifactBucket["S3 artifacts and checkpoints"]
+  end
+
+  frontendBucket -.->|Private origin| cloudfront
+  cloudfront -.->|Delivers UI assets| browser
+  browser -->|Sign-in and session token| clerk
+  browser -->|Clerk JWT and API calls| convex
+  convex -->|Validates JWT with issuer and JWKS| clerk
+  manifests -->|Imports definitions| convex
+  convex -->|Claims session work| localRunner
+  localRunner -->|Creates| workspace
+  workspace --> editor
+  workspace --> preview
+  workspace --> tools
+
+  browser -.->|Workspace HTTP and WebSocket| gateway
+  gateway -.->|Routes owned session| task
+  convex -.->|Dispatch requests| dispatcher
+  dispatcher -.->|Starts and reconciles| task
+  dispatcher -.->|Reads artifacts| artifactBucket
+  task -.->|Artifacts and checkpoints| artifactBucket
+
+  classDef planned fill:#fff7ed,stroke:#c2410c,stroke-width:2px,stroke-dasharray:6 4,color:#7c2d12;
+  class frontendBucket,cloudfront,gateway,dispatcher,task,artifactBucket planned;
+```
+
+| Component | Owns | Runtime status |
+| --- | --- | --- |
+| React/Vite application | Learner dashboard and local platform controls | Implemented |
+| Clerk | Hosted identity, sign-in, sign-out, and account management | Implemented for configured auth |
+| Convex | Labs, accounts, session state, progress, events, session ownership checks, and runner coordination | Implemented |
+| Local runner | Local workspace creation, process lifecycle, checks, and cleanup | Implemented and preserved |
+| AWS dispatcher | Idempotent Fargate launch, reconciliation, registration, and cleanup | Planned ECS service |
+| Session gateway | Authenticated HTTP and WebSocket routing to private learner tasks | Planned ECS service |
+| Learner session task | One isolated interactive workspace for one learner session | Validation image proven in Fargate; interactive runtime planned |
+| S3 artifact storage | Immutable scenarios and bounded workspace checkpoints | Infrastructure provisioned; application workflow planned |
 
 Each local session is container/process-backed: a copied Node workspace, OpenVSCode editor, Vite preview, tools/check server, and a `Run checks` action that runs Vitest.
 
+### Session Lifecycle
+
+`stopping` is intentionally separate from `stopped`. A Stop request first
+blocks further workspace activity, then the runner removes the actual runtime
+resources. Only successful cleanup produces the final `stopped` state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> requested: Request session
+  requested --> starting: Runner claims request
+  starting --> running: Workspace ready
+  running --> checking: Run checks
+  checking --> passed: Checks pass
+  checking --> failed: Checks fail
+  failed --> checking: Run checks again
+  passed --> checking: Run checks again
+
+  running --> stopping: Stop
+  stopping --> stopped: Runner cleanup succeeds
+  note right of stopping
+    Stop applies from every live state.
+    Failed cleanup stays stopping and retries.
+  end note
+
+  running --> expired: TTL expires
+  note right of expired
+    TTL expiry applies to requested, starting,
+    running, checking, and failed. Passed expires
+    after its review window. Cleanup retries while
+    preserving the visible expired status.
+  end note
+
+  running --> errored: Runtime fails
+  note right of errored
+    Startup and runtime failures can enter errored
+    from any applicable live state. Cleanup retries
+    while preserving the visible errored status.
+  end note
+
+  stopped --> [*]
+```
+
 ## Current Scenarios
 
-Use `Seed scenarios` in the dashboard to create or update the MVP scenarios in Convex:
+Use `Seed scenarios` in the dashboard to create or update the active MVP scenarios in Convex:
 
-- `Update Welcome Message`: React Fundamentals smoke scenario. Change one heading to `Welcome to React Labs`.
-- `Optimize Product Dashboard`: Rendering Optimization scenario based on the existing React performance lab.
+| Scenario | Domain | Exercise |
+| --- | --- | --- |
+| Update Welcome Message | React Fundamentals | Change a heading and verify the exact text. |
+| Update Button Label | React Fundamentals | Clarify a primary action with a one-button JSX edit. |
+| Add Empty State Message | React Fundamentals | Render helpful guidance when a task list is empty. |
+| Optimize Product Dashboard | Rendering Optimization | Prevent unnecessary renders with stable memoization. |
 
 Seeding also creates the default `React Labs` course and module records used to group scenarios above the individual exercise level.
 
@@ -98,6 +198,15 @@ The local runner owns ephemeral execution:
 
 The future AWS runner should preserve this boundary: Convex remains the control plane, and hosted runner infrastructure owns per-session execution.
 
+| Concern | Convex control plane | Runner execution plane |
+| --- | --- | --- |
+| Durable scenario and progress data | Owns | Reads only what a session requires |
+| Session lifecycle state | Authoritative record | Reconciles real resources into that record |
+| Workspace files and processes | Stores metadata only | Owns ephemeral runtime resources |
+| Validation | Stores results and events | Executes the scenario command |
+| Stop and expiry | Records intent and policy | Removes resources, then confirms cleanup |
+| Hosted credentials | Validates scoped identity | Learner tasks must never receive reusable platform credentials |
+
 ## Complete Local MVP Workflow
 
 1. Start Convex: `npx convex dev`.
@@ -162,12 +271,16 @@ OPENVSCODE_SERVER_BIN=/path/to/openvscode-server
 
 ## Session Cleanup
 
-The dashboard `Stop` button marks the session as stopped in Convex. The local runner performs actual cleanup on its next poll:
+The dashboard `Stop` button moves the session to `stopping` in Convex. The local runner performs actual cleanup on its next poll:
 
 - stops the Vite preview process
 - stops the tools server process
 - stops the OpenVSCode Docker container
 - records cleanup metadata in Convex
+
+After those operations succeed, the runner moves the session to `stopped`.
+If cleanup fails, the session remains `stopping` so reconciliation can retry
+without falsely claiming that its resources are gone.
 
 Expired sessions are handled the same way. The runner marks them `expired`, cleans local resources, and records a cleanup event.
 
