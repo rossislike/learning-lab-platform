@@ -16,7 +16,9 @@ module "hosted_runner" {
   checkpoint_retention_days       = var.checkpoint_retention_days
   deletion_protection             = var.deletion_protection
   ecr_force_delete                = var.ecr_force_delete
+  egress_proxy_image_uri          = var.egress_proxy_image_uri
   enable_nat_gateway              = var.enable_nat_gateway
+  enable_egress_proxy             = var.enable_egress_proxy
   environment                     = var.environment
   log_retention_days              = var.log_retention_days
   module_contract_version         = var.module_contract_version

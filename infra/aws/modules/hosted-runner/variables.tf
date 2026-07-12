@@ -44,6 +44,44 @@ variable "enable_nat_gateway" {
   default     = true
 }
 
+variable "alb_ingress_cidrs" {
+  description = "IPv4 CIDRs allowed to reach the future public ALB on HTTPS."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "gateway_port" {
+  description = "Internal port used by the future session gateway service."
+  type        = number
+  default     = 8080
+}
+
+variable "egress_proxy_port" {
+  description = "Internal port reserved for the controlled outbound proxy."
+  type        = number
+  default     = 3128
+}
+
+variable "enable_egress_proxy" {
+  description = "Run the managed allowlisting HTTPS proxy service."
+  type        = bool
+  default     = false
+}
+
+variable "egress_proxy_image_uri" {
+  description = "Immutable image URI for the allowlisting egress proxy."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      !var.enable_egress_proxy ||
+      can(regex("@sha256:[0-9a-f]{64}$", var.egress_proxy_image_uri))
+    )
+    error_message = "Enabled egress_proxy_image_uri values must be pinned by sha256 digest."
+  }
+}
+
 variable "runner_image_uri" {
   description = "Immutable image URI used by the hosted runner task definition."
   type        = string

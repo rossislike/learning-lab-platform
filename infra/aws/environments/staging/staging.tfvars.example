@@ -1,4 +1,5 @@
 expected_aws_account_id       = "442359104502"
+egress_proxy_image_uri        = "442359104502.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-staging-egress-proxy@sha256:6ff10a7317f72fb6d891ecfceb6e4c85730b7e77d950ef78a69e0046956a9ba3"
 runner_image_uri              = "442359104502.dkr.ecr.us-east-2.amazonaws.com/learning-lab-platform-staging-runner@sha256:c41aa11a664c9b5599dbefe2c2134be8a9dce48a8fd3da8084afd75dd2ca221c"
 vpc_cidr                     = "10.52.0.0/16"
 enable_nat_gateway           = true

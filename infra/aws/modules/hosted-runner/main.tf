@@ -13,7 +13,36 @@ locals {
   artifact_bucket   = var.deletion_protection ? aws_s3_bucket.artifacts_protected[0] : aws_s3_bucket.artifacts_disposable[0]
   checkpoint_bucket = var.deletion_protection ? aws_s3_bucket.checkpoints_protected[0] : aws_s3_bucket.checkpoints_disposable[0]
   data_kms_key      = var.deletion_protection ? aws_kms_key.data_protected[0] : aws_kms_key.data_disposable[0]
+  proxy_repository  = var.enable_egress_proxy ? (var.deletion_protection ? aws_ecr_repository.proxy_protected[0] : aws_ecr_repository.proxy_disposable[0]) : null
   runner_repository = var.deletion_protection ? aws_ecr_repository.runner_protected[0] : aws_ecr_repository.runner_disposable[0]
+  session_ports = {
+    editor  = 3000
+    preview = 5173
+    tools   = 8080
+  }
+  interface_endpoint_services = toset([
+    "ecr.api",
+    "ecr.dkr",
+    "ecs",
+    "ecs-agent",
+    "ecs-telemetry",
+    "kms",
+    "logs",
+    "secretsmanager",
+    "sts",
+  ])
+  runner_no_proxy = join(",", [
+    "127.0.0.1",
+    "localhost",
+    "169.254.169.254",
+    "169.254.170.2",
+    "api.ecr.${var.aws_region}.amazonaws.com",
+    "ecs.${var.aws_region}.amazonaws.com",
+    "kms.${var.aws_region}.amazonaws.com",
+    "logs.${var.aws_region}.amazonaws.com",
+    "secretsmanager.${var.aws_region}.amazonaws.com",
+    "sts.${var.aws_region}.amazonaws.com",
+  ])
 
 }
 
@@ -113,14 +142,276 @@ resource "aws_security_group" "session_task" {
   description = "Outbound access for private hosted session tasks"
   vpc_id      = aws_vpc.runner.id
 
-  egress {
-    from_port   = 0
-    protocol    = "-1"
-    to_port     = 0
-    cidr_blocks = ["0.0.0.0/0"]
+  tags = { Name = "${local.name}-session-task" }
+}
+
+resource "aws_security_group" "alb" {
+  name        = "${local.name}-alb"
+  description = "Public HTTPS ingress for the future session ALB"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-alb" }
+}
+
+resource "aws_security_group" "gateway" {
+  name        = "${local.name}-gateway"
+  description = "Private session gateway boundary"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-gateway" }
+}
+
+resource "aws_security_group" "dispatcher" {
+  name        = "${local.name}-dispatcher"
+  description = "Private dispatcher with no inbound path"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-dispatcher" }
+}
+
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${local.name}-vpc-endpoints"
+  description = "AWS PrivateLink endpoints for hosted workloads"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-vpc-endpoints" }
+}
+
+resource "aws_security_group" "egress_proxy" {
+  name        = "${local.name}-egress-proxy"
+  description = "Controlled external HTTPS egress boundary"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-egress-proxy" }
+}
+
+resource "aws_security_group" "egress_proxy_lb" {
+  name        = "${local.name}-egress-proxy-lb"
+  description = "Internal load balancer for the controlled egress proxy"
+  vpc_id      = aws_vpc.runner.id
+
+  tags = { Name = "${local.name}-egress-proxy-lb" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_https" {
+  for_each = toset(var.alb_ingress_cidrs)
+
+  security_group_id = aws_security_group.alb.id
+  cidr_ipv4         = each.value
+  from_port         = 443
+  ip_protocol       = "tcp"
+  to_port           = 443
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_gateway" {
+  security_group_id            = aws_security_group.alb.id
+  referenced_security_group_id = aws_security_group.gateway.id
+  from_port                    = var.gateway_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.gateway_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "gateway_from_alb" {
+  security_group_id            = aws_security_group.gateway.id
+  referenced_security_group_id = aws_security_group.alb.id
+  from_port                    = var.gateway_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.gateway_port
+}
+
+resource "aws_vpc_security_group_egress_rule" "gateway_to_session" {
+  for_each = local.session_ports
+
+  security_group_id            = aws_security_group.gateway.id
+  referenced_security_group_id = aws_security_group.session_task.id
+  from_port                    = each.value
+  ip_protocol                  = "tcp"
+  to_port                      = each.value
+}
+
+resource "aws_vpc_security_group_ingress_rule" "session_from_gateway" {
+  for_each = local.session_ports
+
+  security_group_id            = aws_security_group.session_task.id
+  referenced_security_group_id = aws_security_group.gateway.id
+  from_port                    = each.value
+  ip_protocol                  = "tcp"
+  to_port                      = each.value
+}
+
+locals {
+  private_workload_security_groups = {
+    dispatcher = aws_security_group.dispatcher.id
+    gateway    = aws_security_group.gateway.id
+    session    = aws_security_group.session_task.id
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "workload_to_endpoints" {
+  for_each = local.private_workload_security_groups
+
+  security_group_id            = each.value
+  referenced_security_group_id = aws_security_group.vpc_endpoints.id
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "endpoints_from_workload" {
+  for_each = local.private_workload_security_groups
+
+  security_group_id            = aws_security_group.vpc_endpoints.id
+  referenced_security_group_id = each.value
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "endpoints_from_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  security_group_id            = aws_security_group.vpc_endpoints.id
+  referenced_security_group_id = aws_security_group.egress_proxy.id
+  from_port                    = 443
+  ip_protocol                  = "tcp"
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_egress_rule" "workload_to_s3" {
+  for_each = local.private_workload_security_groups
+
+  security_group_id = each.value
+  prefix_list_id    = aws_vpc_endpoint.s3.prefix_list_id
+  from_port         = 443
+  ip_protocol       = "tcp"
+  to_port           = 443
+}
+
+resource "aws_vpc_security_group_egress_rule" "workload_to_proxy" {
+  for_each = var.enable_egress_proxy ? local.private_workload_security_groups : {}
+
+  security_group_id            = each.value
+  referenced_security_group_id = aws_security_group.egress_proxy_lb.id
+  from_port                    = var.egress_proxy_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.egress_proxy_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "proxy_from_workload" {
+  for_each = var.enable_egress_proxy ? local.private_workload_security_groups : {}
+
+  security_group_id            = aws_security_group.egress_proxy_lb.id
+  referenced_security_group_id = each.value
+  from_port                    = var.egress_proxy_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.egress_proxy_port
+}
+
+resource "aws_vpc_security_group_egress_rule" "proxy_lb_to_tasks" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  security_group_id            = aws_security_group.egress_proxy_lb.id
+  referenced_security_group_id = aws_security_group.egress_proxy.id
+  from_port                    = var.egress_proxy_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.egress_proxy_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "proxy_from_lb" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  security_group_id            = aws_security_group.egress_proxy.id
+  referenced_security_group_id = aws_security_group.egress_proxy_lb.id
+  from_port                    = var.egress_proxy_port
+  ip_protocol                  = "tcp"
+  to_port                      = var.egress_proxy_port
+}
+
+resource "aws_vpc_security_group_egress_rule" "proxy_https" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  security_group_id = aws_security_group.egress_proxy.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  ip_protocol       = "tcp"
+  to_port           = 443
+}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each = local.interface_endpoint_services
+
+  vpc_id              = aws_vpc.runner.id
+  service_name        = "com.amazonaws.${var.aws_region}.${each.value}"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids          = values(aws_subnet.private)[*].id
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+
+  tags = { Name = "${local.name}-${replace(each.value, ".", "-")}" }
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.runner.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = values(aws_route_table.private)[*].id
+  policy            = data.aws_iam_policy_document.s3_endpoint.json
+
+  tags = { Name = "${local.name}-s3" }
+}
+
+data "aws_iam_policy_document" "s3_endpoint" {
+  statement {
+    sid       = "ReadRegionalEcrLayers"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:${data.aws_partition.current.partition}:s3:::prod-${var.aws_region}-starport-layer-bucket/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
   }
 
-  tags = { Name = "${local.name}-session-task" }
+  statement {
+    sid = "ReadOwnedBucketMetadata"
+    actions = [
+      "s3:GetBucketLocation",
+    ]
+    resources = [
+      local.artifact_bucket.arn,
+      local.checkpoint_bucket.arn,
+    ]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+  statement {
+    sid     = "ReadOwnedObjects"
+    actions = ["s3:GetObject"]
+    resources = [
+      "${local.artifact_bucket.arn}/*",
+      "${local.checkpoint_bucket.arn}/*",
+    ]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "WriteOwnedCheckpoints"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.checkpoint_bucket.arn}/*"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
 }
 
 resource "aws_ecs_cluster" "runner" {
@@ -198,6 +489,62 @@ resource "aws_ecr_repository" "runner_disposable" {
     encryption_type = "KMS"
     kms_key         = local.data_kms_key.arn
   }
+}
+
+resource "aws_ecr_repository" "proxy_protected" {
+  count = var.enable_egress_proxy && var.deletion_protection ? 1 : 0
+
+  name                 = "${local.name}-egress-proxy"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_ecr_repository" "proxy_disposable" {
+  count = var.enable_egress_proxy && !var.deletion_protection ? 1 : 0
+
+  name                 = "${local.name}-egress-proxy"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = var.ecr_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  repository = local.proxy_repository.name
+  policy = jsonencode({
+    rules = [{
+      action       = { type = "expire" }
+      description  = "Keep all tagged releases and the newest 20 untagged images"
+      rulePriority = 1
+      selection = {
+        countNumber = 20
+        countType   = "imageCountMoreThan"
+        tagStatus   = "untagged"
+      }
+    }]
+  })
 }
 
 resource "aws_ecr_lifecycle_policy" "runner" {
@@ -550,10 +897,13 @@ data "aws_iam_policy_document" "task_execution" {
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
     ]
-    resources = [
-      local.runner_repository.arn,
-      "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:*:repository/aws-guardduty-agent-fargate",
-    ]
+    resources = concat(
+      [
+        local.runner_repository.arn,
+        "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:*:repository/aws-guardduty-agent-fargate",
+      ],
+      var.enable_egress_proxy ? [local.proxy_repository.arn] : [],
+    )
   }
 
   statement {
@@ -600,10 +950,20 @@ resource "aws_ecs_task_definition" "runner" {
     name      = "learning-lab-runner"
     image     = var.runner_image_uri
     essential = true
-    environment = [
-      { name = "LAB_RUNNER_MODE", value = "aws-ecs-fargate" },
-      { name = "AWS_REGION", value = var.aws_region }
-    ]
+    environment = concat(
+      [
+        { name = "LAB_RUNNER_MODE", value = "aws-ecs-fargate" },
+        { name = "AWS_REGION", value = var.aws_region }
+      ],
+      var.enable_egress_proxy ? [
+        { name = "HTTP_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "HTTPS_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "NO_PROXY", value = local.runner_no_proxy },
+        { name = "http_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "https_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "no_proxy", value = local.runner_no_proxy }
+      ] : [],
+    )
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -613,6 +973,138 @@ resource "aws_ecs_task_definition" "runner" {
       }
     }
   }])
+}
+
+resource "aws_iam_role" "egress_proxy_task" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  name               = "${local.name}-egress-proxy-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+
+resource "aws_ecs_task_definition" "egress_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  family                   = "${local.name}-egress-proxy"
+  cpu                      = "256"
+  memory                   = "512"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.egress_proxy_task[0].arn
+
+  depends_on = [aws_iam_role_policy.task_execution]
+
+  runtime_platform {
+    cpu_architecture        = var.runner_cpu_architecture
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "egress-proxy"
+    image     = var.egress_proxy_image_uri
+    essential = true
+    linuxParameters = {
+      capabilities = {
+        add  = []
+        drop = ["ALL"]
+      }
+      initProcessEnabled = true
+    }
+    portMappings = [{
+      containerPort = var.egress_proxy_port
+      hostPort      = var.egress_proxy_port
+      protocol      = "tcp"
+    }]
+    healthCheck = {
+      command     = ["CMD-SHELL", "squidclient -h 127.0.0.1 -p ${var.egress_proxy_port} mgr:info >/dev/null 2>&1 || exit 1"]
+      interval    = 30
+      retries     = 3
+      startPeriod = 20
+      timeout     = 5
+    }
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.runner.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "egress-proxy"
+      }
+    }
+  }])
+}
+
+resource "aws_ecs_service" "egress_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  name            = "${local.name}-egress-proxy"
+  cluster         = aws_ecs_cluster.runner.id
+  task_definition = aws_ecs_task_definition.egress_proxy[0].arn
+  desired_count   = 2
+  launch_type     = "FARGATE"
+
+  depends_on = [aws_lb_listener.egress_proxy]
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  load_balancer {
+    container_name   = "egress-proxy"
+    container_port   = var.egress_proxy_port
+    target_group_arn = aws_lb_target_group.egress_proxy[0].arn
+  }
+
+  network_configuration {
+    assign_public_ip = false
+    security_groups  = [aws_security_group.egress_proxy.id]
+    subnets          = values(aws_subnet.private)[*].id
+  }
+}
+
+resource "aws_lb" "egress_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  name               = substr("${local.name}-proxy", 0, 32)
+  internal           = true
+  load_balancer_type = "network"
+  security_groups    = [aws_security_group.egress_proxy_lb.id]
+  subnets            = values(aws_subnet.private)[*].id
+
+  enable_cross_zone_load_balancing = true
+
+  enable_deletion_protection = var.deletion_protection
+
+  tags = { Name = "${local.name}-egress-proxy" }
+}
+
+resource "aws_lb_target_group" "egress_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  name        = substr("${local.name}-proxy", 0, 32)
+  port        = var.egress_proxy_port
+  protocol    = "TCP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.runner.id
+
+  health_check {
+    enabled  = true
+    protocol = "TCP"
+  }
+}
+
+resource "aws_lb_listener" "egress_proxy" {
+  count = var.enable_egress_proxy ? 1 : 0
+
+  load_balancer_arn = aws_lb.egress_proxy[0].arn
+  port              = var.egress_proxy_port
+  protocol          = "TCP"
+
+  default_action {
+    target_group_arn = aws_lb_target_group.egress_proxy[0].arn
+    type             = "forward"
+  }
 }
 
 data "archive_file" "ttl_cleanup" {

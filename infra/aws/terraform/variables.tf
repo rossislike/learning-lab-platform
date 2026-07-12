@@ -37,6 +37,16 @@ variable "ecr_force_delete" {
   default = false
 }
 
+variable "enable_egress_proxy" {
+  type    = bool
+  default = false
+}
+
+variable "egress_proxy_image_uri" {
+  type    = string
+  default = ""
+}
+
 variable "deletion_protection" {
   type    = bool
   default = false

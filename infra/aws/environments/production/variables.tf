@@ -26,6 +26,19 @@ variable "runner_image_uri" {
   }
 }
 
+variable "egress_proxy_image_uri" {
+  description = "Approved production egress proxy image pinned by digest."
+  type        = string
+
+  validation {
+    condition = can(regex(
+      "^${var.expected_aws_account_id}\\.dkr\\.ecr\\.${var.aws_region}\\.amazonaws\\.com/learning-lab-platform-production-egress-proxy@sha256:[0-9a-f]{64}$",
+      var.egress_proxy_image_uri,
+    ))
+    error_message = "egress_proxy_image_uri must be the production proxy repository in expected_aws_account_id and aws_region, pinned by sha256 digest."
+  }
+}
+
 variable "vpc_cidr" {
   type    = string
   default = "10.62.0.0/16"

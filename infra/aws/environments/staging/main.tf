@@ -16,7 +16,9 @@ module "hosted_runner" {
   checkpoint_retention_days       = 2
   deletion_protection             = true
   ecr_force_delete                = false
+  egress_proxy_image_uri          = var.egress_proxy_image_uri
   enable_nat_gateway              = var.enable_nat_gateway
+  enable_egress_proxy             = true
   environment                     = "staging"
   log_retention_days              = 14
   module_contract_version         = "1.0.0"

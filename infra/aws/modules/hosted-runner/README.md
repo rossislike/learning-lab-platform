@@ -8,6 +8,25 @@ cleanup safety net.
 Each environment receives a rotation-enabled KMS key. ECR and both S3 data
 buckets use that key, and S3 Bucket Keys reduce recurring KMS request cost.
 
+The network contract uses separate security groups for the future public ALB,
+private gateway, private dispatcher, learner sessions, AWS interface endpoints,
+and controlled egress proxy. Session ports `3000`, `5173`, and `8080` accept
+traffic only from the gateway group. The dispatcher has no ingress rules.
+Private workloads can reach AWS APIs through interface endpoints and S3 through
+the gateway endpoint. The S3 endpoint policy limits that route to regional ECR
+image layers and the environment's owned artifact and checkpoint buckets, so
+arbitrary third-party buckets remain blocked. Learner data access still
+requires exact-key presigned URLs because the task role has no ambient S3 data
+permissions. External HTTPS uses the internal proxy load balancer on port
+`3128`. Only the proxy task security group has direct HTTPS internet egress,
+and Squid permits CONNECT requests only to reviewed domains and the four owned
+environment bucket hostnames.
+
+The proxy runs as the image's non-root `squid` user, drops every Linux
+capability, and enables the container init process. Its container root remains
+writable because Fargate anonymous volumes are root-owned and prevent the
+non-root process from writing its PID beneath `/tmp`.
+
 ## Compatibility contract and source version
 
 The current compatibility contract is `1.0.0`. Every caller passes
