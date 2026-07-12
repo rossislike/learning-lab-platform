@@ -19,3 +19,5 @@ infra/aws/environments/staging/staging.s3.tfbackend
 infra/aws/environments/staging/staging.tfvars
 infra/aws/environments/production/production.s3.tfbackend
 infra/aws/environments/production/production.tfvars
+infra/aws/modules/hosted-runner/teardown_override.tf
+infra/aws/modules/hosted-runner/.teardown-owner.json

@@ -147,3 +147,7 @@ terraform -chdir=infra/aws/terraform destroy \
 ```
 
 Production artifact data is not configured for forced deletion. Empty or retain required data before destroying a production stack.
+
+Staging and production use a guarded multi-phase teardown instead of a direct
+`terraform destroy`. Follow the
+[hosted environment teardown runbook](../../docs/aws-environment-teardown.md).

@@ -25,6 +25,7 @@
     "infra:staging:apply": "node scripts/run-hosted-command.mjs terraform apply staging",
     "infra:production:plan": "node scripts/run-hosted-command.mjs terraform plan production",
     "infra:production:apply": "node scripts/run-hosted-command.mjs terraform apply production",
+    "infra:teardown": "node scripts/teardown-hosted-environment.mjs",
     "convex:staging:deploy": "node scripts/run-hosted-command.mjs convex deploy staging",
     "convex:production:deploy": "node scripts/run-hosted-command.mjs convex deploy production",
     "test:runner": "npm run infra:lambda:build && node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs infra/aws/modules/hosted-runner/lambda/*.test.mjs",
