@@ -41,7 +41,7 @@ terraform -chdir=infra/aws/bootstrap/terraform-backend output bootstrap_backend_
 
 Only after the bucket exists, copy `backend.tf.example` to the ignored
 `backend.tf`. Copy `bootstrap.s3.tfbackend.example` to the ignored
-`bootstrap.s3.tfbackend`, replace the bucket, account owner, and KMS
+`bootstrap.s3.tfbackend`, replace the bucket, allowed account, and KMS
 placeholders with those outputs, then back up and migrate the bootstrap state:
 
 ```sh
@@ -72,8 +72,8 @@ Copy the runner backend example from `infra/aws/terraform`, fill it with the
 Every object write is denied unless it requests `aws:kms` with this stack's
 exact KMS key ARN. The backend examples set `kms_key_id`, so Terraform applies
 those headers to both state and native `.tflock` writes. They also set
-`expected_bucket_owner`, which prevents accidentally operating on a bucket
-owned by another AWS account.
+`allowed_account_ids`, which makes backend initialization fail if the active
+AWS credentials resolve to any other account.
 
 ## Required operator permissions
 

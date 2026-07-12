@@ -110,7 +110,7 @@ cp infra/aws/terraform/production.s3.tfbackend.example \
   infra/aws/terraform/production.s3.tfbackend
 ```
 
-Replace the bucket, expected bucket owner, and KMS key placeholders with the
+Replace the bucket, allowed account, and KMS key placeholders with the
 bootstrap outputs, then initialize with migration enabled:
 
 ```sh
@@ -122,6 +122,8 @@ terraform -chdir=infra/aws/terraform init \
 The backend bucket and KMS key are deliberately outside this stack so
 destroying runner infrastructure cannot destroy its own state or lock. Never
 commit generated backend files, which contain environment-specific details.
+The production deployment and recovery evidence is recorded in
+[`docs/aws-production-backend-validation.md`](../../docs/aws-production-backend-validation.md).
 
 ## Destroy a validation stack
 

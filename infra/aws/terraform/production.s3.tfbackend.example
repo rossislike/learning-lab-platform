@@ -1,7 +1,7 @@
-bucket         = "REPLACE_WITH_TERRAFORM_STATE_BUCKET"
-key            = "learning-lab-platform/production/terraform.tfstate"
-region         = "us-east-2"
-expected_bucket_owner = "REPLACE_WITH_12_DIGIT_AWS_ACCOUNT_ID"
-encrypt        = true
-kms_key_id     = "REPLACE_WITH_TERRAFORM_STATE_KMS_KEY_ARN"
-use_lockfile   = true
+bucket              = "REPLACE_WITH_TERRAFORM_STATE_BUCKET"
+key                 = "learning-lab-platform/production/terraform.tfstate"
+region              = "us-east-2"
+allowed_account_ids = ["REPLACE_WITH_12_DIGIT_AWS_ACCOUNT_ID"]
+encrypt             = true
+kms_key_id          = "REPLACE_WITH_TERRAFORM_STATE_KMS_KEY_ARN"
+use_lockfile        = true
