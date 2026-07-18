@@ -76,9 +76,9 @@ test("proxy bypass and validation image preserve the learner boundary", () => {
   assert.match(dockerfile, /COPY --chown=node:node lab-definitions lab-definitions/)
 })
 
-test("only the staging root enables the learner metadata boundary", () => {
+test("persistent environment roots enable the learner metadata boundary", () => {
   assert.match(stagingRoot, /enable_learner_metadata_boundary\s+= true/)
-  assert.match(productionRoot, /enable_learner_metadata_boundary\s+= false/)
+  assert.match(productionRoot, /enable_learner_metadata_boundary\s+= true/)
   assert.match(validationRoot, /enable_learner_metadata_boundary\s+= false/)
 })
 

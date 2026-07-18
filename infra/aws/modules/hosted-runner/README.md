@@ -16,9 +16,9 @@ Private workloads can reach AWS APIs through interface endpoints and S3 through
 the gateway endpoint. The S3 endpoint policy limits that route to regional ECR
 image layers and the environment's owned artifact and checkpoint buckets, so
 arbitrary third-party buckets remain blocked. Learner data access still
-requires exact-key presigned URLs. The boundary-enabled staging learner has no
-task IAM role, while the disabled roots retain the prior task role without S3
-permissions. External HTTPS uses the internal proxy load balancer on port
+requires exact-key presigned URLs. Boundary-enabled staging and production
+learners have no task IAM role, while disabled roots retain the prior task role
+without S3 permissions. External HTTPS uses the internal proxy load balancer on port
 `3128`. Only the proxy task security group has direct HTTPS internet egress,
 and Squid permits CONNECT requests only to reviewed domains and the four owned
 environment bucket hostnames.
@@ -70,8 +70,8 @@ resource address and is not supported. Treat it as an immutable environment
 property.
 
 Set `enable_learner_metadata_boundary = true` only after qualification in the
-target environment. Staging is currently the only enabled environment. When
-enabled, the learner task has no task IAM role, so ECS does not vend task
+target environment. Staging and production are currently enabled. When enabled,
+the learner task has no task IAM role, so ECS does not vend task
 credentials to learner processes. The execution role remains agent-only for
 image pulls and log delivery. The learner container entrypoint removes AWS
 credential, ECS agent, and ECS metadata endpoint variables before it starts
@@ -86,8 +86,8 @@ does not reference that role, so ECS does not vend its credentials.
 
 When the setting is false, the module preserves the previous learner task
 definition, including its empty task IAM role and link-local proxy bypass
-entries. This is the default and is explicitly selected by the production and
-disposable validation roots.
+entries. This is the default and is explicitly selected by the disposable
+validation root.
 
 With the boundary enabled, the task definition supplies `runner_command`
 explicitly because an ECS entrypoint override does not inherit the image's

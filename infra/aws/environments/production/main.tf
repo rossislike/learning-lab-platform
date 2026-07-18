@@ -19,7 +19,7 @@ module "hosted_runner" {
   egress_proxy_image_uri           = var.egress_proxy_image_uri
   enable_nat_gateway               = var.enable_nat_gateway
   enable_egress_proxy              = true
-  enable_learner_metadata_boundary = false
+  enable_learner_metadata_boundary = true
   enable_public_alb                = true
   environment                      = "production"
   log_retention_days               = 30

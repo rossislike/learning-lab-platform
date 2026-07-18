@@ -21,8 +21,8 @@ CIDRs, retention settings, and immutable image inputs. See the
 - Private, KMS-encrypted S3 buckets for scenario artifacts and short-lived checkpoints
 - CloudWatch log groups with finite retention
 - A scheduled Lambda reaper that stops expired managed ECS tasks every minute
-- An optional learner metadata boundary, enabled and validated only in staging,
-  plus scoped agent-only execution and cleanup roles
+- An optional learner metadata boundary, enabled and validated in staging and
+  production, plus scoped agent-only execution and cleanup roles
 
 The default task size is 1 vCPU, 2 GiB of memory, and 21 GiB of ephemeral storage. Override the variables when measurements from a production workload justify different values.
 
@@ -99,12 +99,12 @@ The application dispatcher still stops sessions during normal lifecycle processi
 
 ## Session storage access
 
-In staging, the Fargate learner task intentionally has no task IAM role, so ECS
-does not vend task-role credentials to learner processes. The production and
-disposable validation roots retain the prior empty task role until each target
-environment is separately qualified. This enforces the storage decision in
-ADR 0002: a trusted dispatcher or signing endpoint must issue short-lived,
-operation-specific presigned access for one exact artifact or checkpoint key.
+In staging and production, the Fargate learner task intentionally has no task
+IAM role, so ECS does not vend task-role credentials to learner processes. The
+disposable validation root retains the prior empty task role until separately
+qualified. This enforces the storage decision in ADR 0002: a trusted dispatcher
+or signing endpoint must issue short-lived, operation-specific presigned access
+for one exact artifact or checkpoint key.
 Cleanup deletion remains a trusted control-plane operation. Do not add
 bucket-prefix permissions to any learner task role. Both buckets deny requests
 that do not use TLS. They reject explicit non-KMS encryption and explicit KMS
