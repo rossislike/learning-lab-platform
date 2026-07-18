@@ -146,6 +146,12 @@ variable "enable_learner_metadata_boundary" {
   default     = false
 }
 
+variable "enable_service_secret_boundary" {
+  description = "Create the dispatcher service secret and separate startup and runtime IAM roles. Secret values remain outside Terraform state."
+  type        = bool
+  default     = false
+}
+
 variable "deletion_protection" {
   description = "Require non-destructive data-resource settings for persistent environments."
   type        = bool

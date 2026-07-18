@@ -20,6 +20,7 @@ module "hosted_runner" {
   enable_nat_gateway               = var.enable_nat_gateway
   enable_egress_proxy              = var.enable_egress_proxy
   enable_learner_metadata_boundary = false
+  enable_service_secret_boundary   = false
   enable_public_alb                = var.enable_public_alb
   environment                      = var.environment
   log_retention_days               = var.log_retention_days

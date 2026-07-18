@@ -20,6 +20,7 @@ module "hosted_runner" {
   enable_nat_gateway               = var.enable_nat_gateway
   enable_egress_proxy              = true
   enable_learner_metadata_boundary = true
+  enable_service_secret_boundary   = true
   enable_public_alb                = true
   environment                      = "staging"
   log_retention_days               = 14

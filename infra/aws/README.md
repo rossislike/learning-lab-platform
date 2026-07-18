@@ -23,6 +23,8 @@ CIDRs, retention settings, and immutable image inputs. See the
 - A scheduled Lambda reaper that stops expired managed ECS tasks every minute
 - An optional learner metadata boundary, enabled and validated in staging and
   production, plus scoped agent-only execution and cleanup roles
+- A protected dispatcher service secret with separate startup secret access
+  and runtime learner-task permissions in staging and production
 
 The default task size is 1 vCPU, 2 GiB of memory, and 21 GiB of ephemeral storage. Override the variables when measurements from a production workload justify different values.
 

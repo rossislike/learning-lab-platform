@@ -13,6 +13,12 @@ locals {
   artifact_bucket   = var.deletion_protection ? aws_s3_bucket.artifacts_protected[0] : aws_s3_bucket.artifacts_disposable[0]
   checkpoint_bucket = var.deletion_protection ? aws_s3_bucket.checkpoints_protected[0] : aws_s3_bucket.checkpoints_disposable[0]
   data_kms_key      = var.deletion_protection ? aws_kms_key.data_protected[0] : aws_kms_key.data_disposable[0]
+  service_secrets_kms_key = var.enable_service_secret_boundary ? (
+    var.deletion_protection ? aws_kms_key.service_secrets_protected[0] : aws_kms_key.service_secrets_disposable[0]
+  ) : null
+  dispatcher_runner_shared_secret = var.enable_service_secret_boundary ? (
+    var.deletion_protection ? aws_secretsmanager_secret.dispatcher_runner_shared_secret_protected[0] : aws_secretsmanager_secret.dispatcher_runner_shared_secret_disposable[0]
+  ) : null
   proxy_repository  = var.enable_egress_proxy ? (var.deletion_protection ? aws_ecr_repository.proxy_protected[0] : aws_ecr_repository.proxy_disposable[0]) : null
   runner_repository = var.deletion_protection ? aws_ecr_repository.runner_protected[0] : aws_ecr_repository.runner_disposable[0]
   session_ports = {
@@ -629,6 +635,122 @@ resource "aws_kms_alias" "data" {
   target_key_id = local.data_kms_key.key_id
 }
 
+resource "aws_kms_key" "service_secrets_protected" {
+  count = var.enable_service_secret_boundary && var.deletion_protection ? 1 : 0
+
+  description             = "KMS key for ${local.name} dispatcher service secrets"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.service_secrets_kms[0].json
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_kms_key" "service_secrets_disposable" {
+  count = var.enable_service_secret_boundary && !var.deletion_protection ? 1 : 0
+
+  description             = "KMS key for ${local.name} dispatcher service secrets"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.service_secrets_kms[0].json
+}
+
+data "aws_iam_policy_document" "service_secrets_kms" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  statement {
+    sid       = "EnableAccountKeyAdministration"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "DenySecretDecryptionOutsideDispatcherExecution"
+    effect    = "Deny"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "ArnNotEquals"
+      variable = "aws:PrincipalArn"
+      values   = [aws_iam_role.dispatcher_execution[0].arn]
+    }
+  }
+}
+
+resource "aws_kms_alias" "service_secrets" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  name          = "alias/${local.name}-service-secrets"
+  target_key_id = local.service_secrets_kms_key.key_id
+}
+
+resource "aws_secretsmanager_secret" "dispatcher_runner_shared_secret_protected" {
+  count = var.enable_service_secret_boundary && var.deletion_protection ? 1 : 0
+
+  description             = "Shared dispatcher credential for ${local.name}. Seed and rotate outside Terraform."
+  kms_key_id              = local.service_secrets_kms_key.arn
+  name                    = "${local.name}/dispatcher/runner-shared-secret"
+  recovery_window_in_days = 30
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_secretsmanager_secret" "dispatcher_runner_shared_secret_disposable" {
+  count = var.enable_service_secret_boundary && !var.deletion_protection ? 1 : 0
+
+  description                    = "Shared dispatcher credential for ${local.name}. Seed and rotate outside Terraform."
+  force_overwrite_replica_secret = false
+  kms_key_id                     = local.service_secrets_kms_key.arn
+  name                           = "${local.name}/dispatcher/runner-shared-secret"
+  recovery_window_in_days        = 7
+}
+
+data "aws_iam_policy_document" "dispatcher_runner_shared_secret" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  statement {
+    sid       = "DenyRetrievalOutsideDispatcherExecution"
+    effect    = "Deny"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.dispatcher_runner_shared_secret.arn]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "ArnNotEquals"
+      variable = "aws:PrincipalArn"
+      values   = [aws_iam_role.dispatcher_execution[0].arn]
+    }
+  }
+}
+
+resource "aws_secretsmanager_secret_policy" "dispatcher_runner_shared_secret" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  block_public_policy = true
+  policy              = data.aws_iam_policy_document.dispatcher_runner_shared_secret[0].json
+  secret_arn          = local.dispatcher_runner_shared_secret.arn
+}
+
 resource "aws_ecr_repository" "runner_protected" {
   count = var.deletion_protection ? 1 : 0
 
@@ -1100,6 +1222,174 @@ resource "aws_iam_role_policy" "task_execution" {
   name   = "runner-image-and-logs"
   role   = aws_iam_role.task_execution.id
   policy = data.aws_iam_policy_document.task_execution.json
+}
+
+resource "aws_iam_role" "dispatcher_execution" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  name               = "${local.name}-dispatcher-execution"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+
+data "aws_iam_policy_document" "dispatcher_execution" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  statement {
+    sid       = "ReadRunnerSharedSecret"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.dispatcher_runner_shared_secret.arn]
+  }
+
+  statement {
+    sid       = "DecryptRunnerSharedSecret"
+    actions   = ["kms:Decrypt"]
+    resources = [local.service_secrets_kms_key.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:EncryptionContext:SecretARN"
+      values   = [local.dispatcher_runner_shared_secret.arn]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "dispatcher_execution" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  name   = "runner-shared-secret-startup"
+  role   = aws_iam_role.dispatcher_execution[0].id
+  policy = data.aws_iam_policy_document.dispatcher_execution[0].json
+}
+
+resource "aws_iam_role" "dispatcher_task" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  name               = "${local.name}-dispatcher-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+
+data "aws_iam_policy_document" "dispatcher_task" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  statement {
+    sid       = "RunLearnerTasks"
+    actions   = ["ecs:RunTask"]
+    resources = ["${aws_ecs_task_definition.runner.arn_without_revision}:*"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = [aws_ecs_cluster.runner.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/learning-lab:managed"
+      values   = ["true"]
+    }
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "aws:TagKeys"
+      values = [
+        "learning-lab:expires-at",
+        "learning-lab:lab-slug",
+        "learning-lab:managed",
+        "learning-lab:session-id",
+      ]
+    }
+  }
+
+  statement {
+    sid = "ManageLearnerTasks"
+    actions = [
+      "ecs:DescribeTasks",
+      "ecs:StopTask",
+    ]
+    resources = ["arn:${data.aws_partition.current.partition}:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${aws_ecs_cluster.runner.name}/*"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = [aws_ecs_cluster.runner.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/learning-lab:managed"
+      values   = ["true"]
+    }
+  }
+
+  statement {
+    sid       = "TagLearnerTasksOnCreate"
+    actions   = ["ecs:TagResource"]
+    resources = ["arn:${data.aws_partition.current.partition}:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${aws_ecs_cluster.runner.name}/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ecs:CreateAction"
+      values   = ["RunTask"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/learning-lab:managed"
+      values   = ["true"]
+    }
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "aws:TagKeys"
+      values = [
+        "learning-lab:expires-at",
+        "learning-lab:lab-slug",
+        "learning-lab:managed",
+        "learning-lab:session-id",
+      ]
+    }
+  }
+
+  statement {
+    sid       = "ListLearnerTasks"
+    actions   = ["ecs:ListTasks"]
+    resources = ["*"]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "ecs:cluster"
+      values   = [aws_ecs_cluster.runner.arn]
+    }
+  }
+
+  statement {
+    sid     = "PassLearnerRoles"
+    actions = ["iam:PassRole"]
+    resources = concat(
+      [aws_iam_role.task_execution.arn],
+      var.enable_learner_metadata_boundary ? [] : [aws_iam_role.task.arn],
+    )
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "dispatcher_task" {
+  count = var.enable_service_secret_boundary ? 1 : 0
+
+  name   = "learner-task-lifecycle"
+  role   = aws_iam_role.dispatcher_task[0].id
+  policy = data.aws_iam_policy_document.dispatcher_task[0].json
 }
 
 resource "aws_iam_role" "task" {

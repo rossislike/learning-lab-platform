@@ -96,3 +96,18 @@ a different runner image.
 
 Future artifact and checkpoint access must remain exact-key, short-lived, and
 issued by a trusted control-plane component.
+
+## Service credential boundary
+
+Set `enable_service_secret_boundary = true` for persistent environments after
+qualification. The module then creates protected metadata for the dispatcher
+runner shared secret, an independent KMS key, a startup execution role scoped
+to that exact secret, and a separate runtime role scoped to learner task
+lifecycle operations in the environment cluster. Terraform intentionally does
+not create a secret version, so plaintext never enters Terraform state.
+
+Staging and production enable this boundary. Disposable validation leaves it
+disabled. The learner task definition and its image-and-logs execution role do
+not receive Secrets Manager or KMS decryption access. Follow the
+[service credential runbook](../../../../docs/aws-service-credential-boundary.md)
+to seed and validate secret versions without exposing their values.
