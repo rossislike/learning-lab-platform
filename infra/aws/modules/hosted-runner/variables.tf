@@ -129,6 +129,23 @@ variable "runner_image_uri" {
   }
 }
 
+variable "runner_command" {
+  description = "Explicit command started after the optional metadata-sanitizing runner entrypoint."
+  type        = list(string)
+  default     = ["node", "scripts/smoke-test-scenarios.mjs", "--scenario", "react-welcome-message"]
+
+  validation {
+    condition     = length(var.runner_command) > 0 && alltrue([for part in var.runner_command : length(trimspace(part)) > 0])
+    error_message = "runner_command must contain at least one non-empty argument."
+  }
+}
+
+variable "enable_learner_metadata_boundary" {
+  description = "Remove task IAM credentials and metadata endpoint variables from the learner container. Enable only after qualification in the target environment."
+  type        = bool
+  default     = false
+}
+
 variable "deletion_protection" {
   description = "Require non-destructive data-resource settings for persistent environments."
   type        = bool

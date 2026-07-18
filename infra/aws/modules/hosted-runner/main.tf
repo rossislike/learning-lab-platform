@@ -31,18 +31,48 @@ locals {
     "secretsmanager",
     "sts",
   ])
-  runner_no_proxy = join(",", [
-    "127.0.0.1",
-    "localhost",
-    "169.254.169.254",
-    "169.254.170.2",
-    "api.ecr.${var.aws_region}.amazonaws.com",
-    "ecs.${var.aws_region}.amazonaws.com",
-    "kms.${var.aws_region}.amazonaws.com",
-    "logs.${var.aws_region}.amazonaws.com",
-    "secretsmanager.${var.aws_region}.amazonaws.com",
-    "sts.${var.aws_region}.amazonaws.com",
-  ])
+  runner_no_proxy = join(",", concat(
+    ["127.0.0.1", "localhost"],
+    var.enable_learner_metadata_boundary ? [] : [
+      "169.254.169.254",
+      "169.254.170.2",
+    ],
+    [
+      "api.ecr.${var.aws_region}.amazonaws.com",
+      "ecs.${var.aws_region}.amazonaws.com",
+      "kms.${var.aws_region}.amazonaws.com",
+      "logs.${var.aws_region}.amazonaws.com",
+      "secretsmanager.${var.aws_region}.amazonaws.com",
+      "sts.${var.aws_region}.amazonaws.com",
+    ],
+  ))
+  runner_container_definition = {
+    name      = "learning-lab-runner"
+    image     = var.runner_image_uri
+    essential = true
+    environment = concat(
+      [
+        { name = "LAB_RUNNER_MODE", value = "aws-ecs-fargate" },
+        { name = "AWS_REGION", value = var.aws_region }
+      ],
+      var.enable_egress_proxy ? [
+        { name = "HTTP_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "HTTPS_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "NO_PROXY", value = local.runner_no_proxy },
+        { name = "http_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "https_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
+        { name = "no_proxy", value = local.runner_no_proxy }
+      ] : [],
+    )
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.runner.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "ecs"
+      }
+    }
+  }
 
 }
 
@@ -1084,7 +1114,7 @@ resource "aws_ecs_task_definition" "runner" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.task_execution.arn
-  task_role_arn            = aws_iam_role.task.arn
+  task_role_arn            = var.enable_learner_metadata_boundary ? null : aws_iam_role.task.arn
 
   depends_on = [
     aws_iam_role_policy.task_execution,
@@ -1097,33 +1127,31 @@ resource "aws_ecs_task_definition" "runner" {
 
   ephemeral_storage { size_in_gib = var.runner_ephemeral_storage_gib }
 
-  container_definitions = jsonencode([{
-    name      = "learning-lab-runner"
-    image     = var.runner_image_uri
-    essential = true
-    environment = concat(
-      [
-        { name = "LAB_RUNNER_MODE", value = "aws-ecs-fargate" },
-        { name = "AWS_REGION", value = var.aws_region }
-      ],
-      var.enable_egress_proxy ? [
-        { name = "HTTP_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
-        { name = "HTTPS_PROXY", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
-        { name = "NO_PROXY", value = local.runner_no_proxy },
-        { name = "http_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
-        { name = "https_proxy", value = "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" },
-        { name = "no_proxy", value = local.runner_no_proxy }
-      ] : [],
+  container_definitions = var.enable_learner_metadata_boundary ? jsonencode([
+    merge(
+      local.runner_container_definition,
+      {
+        user    = "1000:1000"
+        command = var.runner_command
+        entryPoint = [
+          "/usr/bin/env",
+          "-u", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+          "-u", "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+          "-u", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+          "-u", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+          "-u", "ECS_AGENT_URI",
+          "-u", "ECS_CONTAINER_METADATA_URI",
+          "-u", "ECS_CONTAINER_METADATA_URI_V4",
+        ]
+        linuxParameters = {
+          capabilities = {
+            add  = []
+            drop = ["ALL"]
+          }
+        }
+      },
     )
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        awslogs-group         = aws_cloudwatch_log_group.runner.name
-        awslogs-region        = var.aws_region
-        awslogs-stream-prefix = "ecs"
-      }
-    }
-  }])
+  ]) : jsonencode([local.runner_container_definition])
 }
 
 resource "aws_iam_role" "egress_proxy_task" {

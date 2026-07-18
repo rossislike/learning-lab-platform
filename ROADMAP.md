@@ -122,7 +122,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [ ] Isolate production from staging in separate AWS accounts, with separate Clerk applications and Convex deployments; document any temporary exception and its migration deadline. A blocking inventory exception and automated readiness gate are documented in `docs/environment-isolation.md`; external staging and production identities remain to be provisioned by 2026-08-12.
 - [x] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
 - [x] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.
-- [ ] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.
+- [ ] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes. Staging is hardened and validated; production is intentionally deferred.
 - [ ] Store long-lived operator and service credentials in AWS Secrets Manager. Grant secret retrieval to ECS execution roles only when needed during task startup, and grant runtime AWS API permissions to separate, narrowly scoped task roles.
 - [x] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
 - [ ] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.

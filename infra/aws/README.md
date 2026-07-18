@@ -21,7 +21,8 @@ CIDRs, retention settings, and immutable image inputs. See the
 - Private, KMS-encrypted S3 buckets for scenario artifacts and short-lived checkpoints
 - CloudWatch log groups with finite retention
 - A scheduled Lambda reaper that stops expired managed ECS tasks every minute
-- A task role with no ambient S3 data access, plus scoped execution and cleanup roles
+- An optional learner metadata boundary, enabled and validated only in staging,
+  plus scoped agent-only execution and cleanup roles
 
 The default task size is 1 vCPU, 2 GiB of memory, and 21 GiB of ephemeral storage. Override the variables when measurements from a production workload justify different values.
 
@@ -98,7 +99,17 @@ The application dispatcher still stops sessions during normal lifecycle processi
 
 ## Session storage access
 
-The Fargate task role intentionally has no S3 data permissions. This enforces the storage decision in ADR 0002: a trusted dispatcher or signing endpoint must issue short-lived, operation-specific presigned access for one exact artifact or checkpoint key. Cleanup deletion remains a trusted control-plane operation. Do not add bucket-prefix permissions to the shared task role. Both buckets deny requests that do not use TLS. They reject explicit non-KMS encryption and explicit KMS keys other than the environment key. Headerless writes use the bucket's default environment KMS key.
+In staging, the Fargate learner task intentionally has no task IAM role, so ECS
+does not vend task-role credentials to learner processes. The production and
+disposable validation roots retain the prior empty task role until each target
+environment is separately qualified. This enforces the storage decision in
+ADR 0002: a trusted dispatcher or signing endpoint must issue short-lived,
+operation-specific presigned access for one exact artifact or checkpoint key.
+Cleanup deletion remains a trusted control-plane operation. Do not add
+bucket-prefix permissions to any learner task role. Both buckets deny requests
+that do not use TLS. They reject explicit non-KMS encryption and explicit KMS
+keys other than the environment key. Headerless writes use the bucket's
+default environment KMS key.
 
 The signing endpoint, safe archive extraction, checkpoint upload and restore, and metadata reporting are future platform work. The completed hosted validation covers the scoped React scenario runner, not a full interactive learner session.
 
