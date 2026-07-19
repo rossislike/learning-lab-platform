@@ -23,3 +23,4 @@ infra/aws/account-security/account-security.s3.tfbackend
 infra/aws/account-security/terraform.tfvars
 infra/aws/modules/hosted-runner/teardown_override.tf
 infra/aws/modules/hosted-runner/.teardown-owner.json
+znotes.txt
