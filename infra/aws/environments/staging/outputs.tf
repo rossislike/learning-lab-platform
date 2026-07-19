@@ -24,3 +24,6 @@ output "vpc_endpoint_ids" { value = module.hosted_runner.vpc_endpoint_ids }
 output "public_alb_dns_name" { value = module.hosted_runner.public_alb_dns_name }
 output "public_certificate_arn" { value = module.hosted_runner.public_certificate_arn }
 output "public_url" { value = module.hosted_runner.public_url }
+output "alb_access_log_bucket" { value = module.hosted_runner.alb_access_log_bucket }
+output "public_waf_arn" { value = module.hosted_runner.public_waf_arn }
+output "waf_log_group" { value = module.hosted_runner.waf_log_group }

@@ -25,3 +25,6 @@ output "module_contract_version" { value = var.module_contract_version }
 output "public_alb_dns_name" { value = var.enable_public_alb ? aws_lb.public[0].dns_name : null }
 output "public_certificate_arn" { value = var.enable_public_alb ? aws_acm_certificate_validation.public[0].certificate_arn : null }
 output "public_url" { value = var.enable_public_alb ? "https://${var.public_hostname}" : null }
+output "alb_access_log_bucket" { value = var.enable_security_observability ? aws_s3_bucket.alb_access_logs[0].id : null }
+output "public_waf_arn" { value = var.enable_security_observability ? aws_wafv2_web_acl.public[0].arn : null }
+output "waf_log_group" { value = var.enable_security_observability ? aws_cloudwatch_log_group.waf[0].name : null }

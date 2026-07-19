@@ -125,7 +125,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [x] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.
 - [x] Use IAM Identity Center temporary sessions for human operator access, store the dispatcher control-plane credential in AWS Secrets Manager, grant secret retrieval only to its dedicated ECS execution role during task startup, and grant runtime AWS API permissions to a separate, narrowly scoped task role.
 - [x] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
-- [ ] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.
+- [x] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.
 - [ ] Define environment ownership, operator access, emergency access, secret rotation, and production change procedures.
 
 ### 2. Versioned ECS Images And Delivery

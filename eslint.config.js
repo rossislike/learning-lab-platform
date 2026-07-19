@@ -11,6 +11,7 @@ export default [
       "convex/_generated",
       "lab-definitions/**",
       "infra/aws/terraform/lambda/index.cjs",
+      "infra/aws/modules/hosted-runner/lambda/index.cjs",
     ],
   },
   js.configs.recommended,

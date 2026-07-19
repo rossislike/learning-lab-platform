@@ -329,6 +329,22 @@ resource "aws_lb" "public" {
   drop_invalid_header_fields = true
   enable_deletion_protection = var.deletion_protection
 
+  dynamic "access_logs" {
+    for_each = var.enable_security_observability ? [1] : []
+
+    content {
+      bucket  = aws_s3_bucket.alb_access_logs[0].id
+      enabled = true
+      prefix  = "alb"
+    }
+  }
+
+  depends_on = [
+    aws_s3_bucket_ownership_controls.alb_access_logs,
+    aws_s3_bucket_policy.alb_access_logs,
+    aws_s3_bucket_server_side_encryption_configuration.alb_access_logs,
+  ]
+
   tags = { Name = "${local.name}-public" }
 }
 
@@ -1167,6 +1183,7 @@ resource "aws_cloudwatch_metric_alarm" "ttl_cleanup_errors" {
   statistic           = "Sum"
   threshold           = 1
   treat_missing_data  = "notBreaching"
+  alarm_actions       = var.enable_security_observability ? [var.security_alarm_topic_arn] : []
 
   dimensions = {
     FunctionName = aws_lambda_function.ttl_cleanup.function_name

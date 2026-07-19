@@ -152,6 +152,42 @@ variable "enable_service_secret_boundary" {
   default     = false
 }
 
+variable "enable_security_observability" {
+  description = "Enable WAF, ALB access logging, and environment security alarms for the public endpoint."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_security_observability || (var.enable_public_alb && var.deletion_protection)
+    error_message = "Security observability requires an enabled public ALB and deletion protection."
+  }
+}
+
+variable "alb_access_log_retention_days" {
+  description = "Retention period for public ALB access logs."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.alb_access_log_retention_days >= 30
+    error_message = "ALB access logs must be retained for at least 30 days."
+  }
+}
+
+variable "security_alarm_topic_arn" {
+  description = "SNS topic ARN that receives environment security alarm notifications."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      !var.enable_security_observability ||
+      can(regex("^arn:[a-z0-9-]+:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]+$", var.security_alarm_topic_arn))
+    )
+    error_message = "Security observability requires a valid SNS topic ARN."
+  }
+}
+
 variable "deletion_protection" {
   description = "Require non-destructive data-resource settings for persistent environments."
   type        = bool

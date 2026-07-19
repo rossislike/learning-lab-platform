@@ -1,0 +1,2 @@
+expected_aws_account_id = "442359104502"
+security_alert_email    = "security@example.com"
