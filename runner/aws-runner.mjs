@@ -1,10 +1,9 @@
 import { ConvexHttpClient } from "convex/browser"
 import { readFile } from "node:fs/promises"
 import { hostname } from "node:os"
+import { fileURLToPath } from "node:url"
 import { api } from "../convex/_generated/api.js"
 
-const runnerSecret = process.env.RUNNER_SHARED_SECRET
-if (!runnerSecret) throw new Error("RUNNER_SHARED_SECRET is required")
 import { AwsEcsFargateRunner } from "./aws-ecs-fargate-runner.mjs"
 import { cleanupCancelledStartup } from "./startup-cancellation.mjs"
 
@@ -40,7 +39,7 @@ async function sendHeartbeat(client) {
   })
 }
 
-async function expireSessions(client) {
+async function expireSessions(client, runnerSecret) {
   const sessions = await client.query(api.sessions.listExpired, { runnerSecret })
   for (const session of sessions) {
     if (session.runner !== mode) continue
@@ -52,7 +51,32 @@ async function expireSessions(client) {
   }
 }
 
-async function startSessions(client, runner, convexUrl) {
+export function hostedDispatchInput(session, convexUrl, runnerSecret) {
+  const scenario = session.hostedScenario
+  if (!scenario) {
+    throw new Error(`Hosted session ${session._id} is missing its approved scenario snapshot`)
+  }
+  return {
+    sessionId: session._id,
+    scenarioApprovalId: scenario.approvalId,
+    labSlug: scenario.slug,
+    hostedEnvironment: scenario.environment,
+    artifactKey: scenario.artifactKey,
+    artifactSha256: scenario.artifactSha256,
+    artifactSizeBytes: scenario.artifactSizeBytes,
+    manifestKey: scenario.manifestKey,
+    manifestSha256: scenario.manifestSha256,
+    sourceManifestSha256: scenario.sourceManifestSha256,
+    runtime: scenario.runtime,
+    schemaVersion: scenario.schemaVersion,
+    ttlSeconds: session.ttlSeconds,
+    expiresAt: session.expiresAt,
+    convexUrl,
+    runnerSecret,
+  }
+}
+
+export async function startSessions(client, runner, convexUrl, runnerSecret) {
   const sessions = await client.query(api.sessions.listStartable, {
     runnerSecret,
     runner: mode,
@@ -69,19 +93,9 @@ async function startSessions(client, runner, convexUrl) {
         sessionId: session._id,
       })
       if (!startupClaimed) continue
-      const lab = await client.query(api.labs.get, { labId: session.labId })
-      if (!lab) throw new Error(`Lab not found for session ${session._id}`)
-
-      const result = await runner.start({
-        sessionId: session._id,
-        labSlug: lab.slug,
-        workspaceTemplatePath: lab.templatePath,
-        validationCommand: lab.validationCommand,
-        ttlSeconds: session.ttlSeconds,
-        expiresAt: session.expiresAt,
-        convexUrl,
-        runnerSecret,
-      })
+      const result = await runner.start(
+        hostedDispatchInput(session, convexUrl, runnerSecret),
+      )
       dispatched = true
       const metadataAccepted = await client.mutation(api.sessions.updateRunnerMetadata, {
         runnerSecret,
@@ -129,7 +143,7 @@ async function startSessions(client, runner, convexUrl) {
   return startedCount
 }
 
-async function stopSessions(client, runner) {
+async function stopSessions(client, runner, runnerSecret) {
   const sessions = await client.query(api.sessions.listCleanupNeeded, {
     runnerSecret,
     runner: mode,
@@ -151,15 +165,17 @@ async function stopSessions(client, runner) {
   }
 }
 
-async function tick(client, runner, convexUrl) {
+async function tick(client, runner, convexUrl, runnerSecret) {
   await sendHeartbeat(client)
-  await expireSessions(client)
-  const startedCount = await startSessions(client, runner, convexUrl)
-  await stopSessions(client, runner)
+  await expireSessions(client, runnerSecret)
+  const startedCount = await startSessions(client, runner, convexUrl, runnerSecret)
+  await stopSessions(client, runner, runnerSecret)
   return startedCount
 }
 
 async function main() {
+  const runnerSecret = process.env.RUNNER_SHARED_SECRET
+  if (!runnerSecret) throw new Error("RUNNER_SHARED_SECRET is required")
   const convexUrl = await readConvexUrl()
   if (!convexUrl) {
     throw new Error(
@@ -171,19 +187,21 @@ async function main() {
   const runner = new AwsEcsFargateRunner()
 
   if (once) {
-    const count = await tick(client, runner, convexUrl)
+    const count = await tick(client, runner, convexUrl, runnerSecret)
     console.log(`[aws-runner] dispatched ${count} requested session(s)`)
     return
   }
 
   console.log(`[aws-runner] polling Convex every ${pollMs}ms`)
   while (true) {
-    await tick(client, runner, convexUrl)
+    await tick(client, runner, convexUrl, runnerSecret)
     await new Promise((resolvePoll) => setTimeout(resolvePoll, pollMs))
   }
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}

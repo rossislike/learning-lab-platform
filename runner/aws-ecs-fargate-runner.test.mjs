@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   AwsEcsFargateRunner,
+  assertHostedArtifactInput,
   assertAwsEcsConfig,
   awsEcsConfigFromEnv,
 } from "./aws-ecs-fargate-runner.mjs"
@@ -14,6 +15,33 @@ const config = {
   securityGroupIds: ["sg-a"],
   containerName: "runner-agent",
   assignPublicIp: false,
+  hostedEnvironment: "staging",
+}
+
+const artifactSha256 = "a".repeat(64)
+const manifestSha256 = "b".repeat(64)
+const hostedArtifact = {
+  scenarioApprovalId: "approval-1",
+  hostedEnvironment: "staging",
+  artifactKey: `scenarios/react-welcome/artifacts/sha256/${artifactSha256}.tar`,
+  artifactSha256,
+  artifactSizeBytes: 4096,
+  manifestKey: `scenarios/react-welcome/manifests/sha256/${manifestSha256}.json`,
+  manifestSha256,
+  sourceManifestSha256: "c".repeat(64),
+  runtime: {
+    expectedBehavior: "Welcome text changes",
+    expectedPorts: [
+      { name: "preview", containerPort: 5173, public: true },
+    ],
+    packagedWorkspaceTemplatePath:
+      "lab-definitions/react-welcome/workspace-template/starter",
+    previewCommand: "npm run dev",
+    remediationFile: "src/App.jsx",
+    ttlSeconds: 3600,
+    validationCommand: "npm test -- --run --reporter=json",
+  },
+  schemaVersion: 1,
 }
 
 test("start dispatches one Fargate task with the session contract", async () => {
@@ -29,8 +57,7 @@ test("start dispatches one Fargate task with the session contract", async () => 
   const result = await runner.start({
     sessionId: "session-123",
     labSlug: "react-welcome",
-    workspaceTemplatePath: "lab-definitions/react-welcome",
-    validationCommand: "npm test -- --run --reporter=json",
+    ...hostedArtifact,
     ttlSeconds: 3600,
     expiresAt: Date.parse("2026-07-10T12:00:00.000Z"),
     convexUrl: "https://example.convex.cloud",
@@ -53,6 +80,17 @@ test("start dispatches one Fargate task with the session contract", async () => 
         entry.name === "LAB_SESSION_ID" && entry.value === "session-123",
     ),
   )
+  for (const [name, value] of [
+    ["LAB_HOSTED_ENVIRONMENT", "staging"],
+    ["LAB_ARTIFACT_SHA256", artifactSha256],
+    ["LAB_SCENARIO_MANIFEST_SHA256", manifestSha256],
+  ]) {
+    assert.ok(
+      commandInput.overrides.containerOverrides[0].environment.some(
+        (entry) => entry.name === name && entry.value === value,
+      ),
+    )
+  }
   assert.ok(
     commandInput.overrides.containerOverrides[0].environment.some(
       (entry) =>
@@ -113,7 +151,37 @@ test("stop paginates and stops every running task for the session", async () => 
 test("configuration validation reports all missing required values", () => {
   assert.throws(
     () => assertAwsEcsConfig({ subnetIds: [], securityGroupIds: [] }),
-    /clusterArn, taskDefinitionArn, subnetIds, securityGroupIds/,
+    /clusterArn, taskDefinitionArn, subnetIds, securityGroupIds, hostedEnvironment/,
+  )
+  assert.throws(
+    () => assertAwsEcsConfig({ ...config, hostedEnvironment: "development" }),
+    /must be staging or production/,
+  )
+})
+
+test("hosted task input rejects unapproved or mismatched artifact references", () => {
+  assert.doesNotThrow(() =>
+    assertHostedArtifactInput(
+      { labSlug: "react-welcome", ...hostedArtifact },
+      "staging",
+    ),
+  )
+  assert.throws(
+    () =>
+      assertHostedArtifactInput({
+        labSlug: "react-welcome",
+        ...hostedArtifact,
+        artifactKey: "scenarios/react-welcome/artifacts/latest.tar",
+      }, "staging"),
+    /must match their approved digests/,
+  )
+  assert.throws(
+    () =>
+      assertHostedArtifactInput(
+        { labSlug: "react-welcome", ...hostedArtifact },
+        "production",
+      ),
+    /does not match this dispatcher/,
   )
 })
 

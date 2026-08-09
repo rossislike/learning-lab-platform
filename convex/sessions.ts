@@ -2,6 +2,11 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import {
+  assertScenarioArtifactApproval,
+  configuredHostedEnvironment,
+} from "./scenarioArtifactPolicy";
+import { resolveScenarioSessionSnapshot } from "./scenarioSessionPolicy";
 import { learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
 import {
   ACTIVE_SESSION_STATUSES,
@@ -210,6 +215,24 @@ export const request = mutation({
       throw new Error("Hosted sessions require an authenticated owner subject");
     }
 
+    const hostedScenario = await resolveScenarioSessionSnapshot({
+      runner,
+      labId: args.labId,
+      configuredEnvironment: configuredHostedEnvironment,
+      validateApproval: assertScenarioArtifactApproval,
+      loadLab: () => ctx.db.get(args.labId),
+      loadApproval: (environment) =>
+        ctx.db
+          .query("scenarioArtifactApprovals")
+          .withIndex("by_lab_environment_status", (q) =>
+            q
+              .eq("labId", args.labId)
+              .eq("environment", environment)
+              .eq("status", "active")
+          )
+          .unique(),
+    });
+
     const sessionOwnerKey =
       authenticatedOwnerKey ?? `local:${learnerLabel.toLocaleLowerCase()}`;
     const sessionsForOwner = await ctx.db
@@ -265,6 +288,7 @@ export const request = mutation({
       sessionOwnerKey,
       status: "requested",
       runner,
+      ...(hostedScenario ? { hostedScenario } : {}),
       ttlSeconds,
       createdAt: timestamp,
       updatedAt: timestamp,

@@ -6,9 +6,11 @@ and must run in a maintenance window with no concurrent Terraform operations.
 
 Terraform does not permit `prevent_destroy` to depend on a variable. The
 teardown command therefore creates a temporary, ignored override inside the
-shared hosted-runner module. An ignored ownership manifest atomically binds
-that shared override to one environment and AWS account. Every later phase
-verifies that ownership and refuses cross-environment or cross-account use.
+shared hosted-runner module. The override also temporarily removes the scenario
+artifact deletion deny so retained object versions can be emptied. An ignored
+ownership manifest atomically binds that shared override to one environment and
+AWS account. Every later phase verifies that ownership and refuses
+cross-environment or cross-account use.
 
 ## 1. Approve and preserve
 
@@ -26,13 +28,14 @@ store exported state in the repository.
 
 ## 2. Quiesce workloads and retained data
 
-Stop active learner tasks and scale managed ECS services to zero. Empty every
-version and delete marker from the environment artifact and checkpoint
-buckets. Delete all images from the environment runner and egress-proxy ECR
-repositories, plus the trusted dispatcher and session gateway repositories.
-The plan phase checks running and pending ECS tasks, service
-counts, all S3 object versions and delete markers, and ECR image inventories.
-It refuses to create a destroy plan until every check is clear.
+Stop active learner tasks and scale managed ECS services to zero. Identify every
+artifact and checkpoint version or delete marker that must be removed, but do
+not attempt to delete protected scenario objects before the prepare phase.
+Delete all images from the environment runner and egress-proxy ECR repositories,
+plus the trusted dispatcher and session gateway repositories. The plan phase
+checks running and pending ECS tasks, service counts, all S3 object versions and
+delete markers, and ECR image inventories. It refuses to create a destroy plan
+until every check is clear.
 
 Do not delete Route 53 records, certificates, load balancers, KMS keys, or
 other Terraform-managed resources manually.
@@ -41,7 +44,7 @@ other Terraform-managed resources manually.
 
 The prepare phase verifies the active AWS account, creates the temporary
 override, and uses a targeted apply to disable deletion protection on both
-environment load balancers.
+environment load balancers and temporarily update the artifact bucket policy.
 
 ```sh
 npm run infra:teardown -- prepare staging \
@@ -49,8 +52,14 @@ npm run infra:teardown -- prepare staging \
   --confirm='prepare teardown staging in 442359104502'
 ```
 
+After prepare succeeds, empty every version and delete marker from the artifact
+and checkpoint buckets. Scenario object deletion is allowed only while the
+owned teardown override remains active. Continue directly to plan, or use abort
+to restore the deletion deny and normal resource protections.
+
 If prepare fails, the command removes the override and reapplies the normal
-configuration to restore load balancer deletion protection. It removes the
+configuration to restore load balancer deletion protection and the scenario
+artifact deletion deny. It removes the
 ownership manifest only after that restoration succeeds. If restoration also
 fails, ownership and the override remain in place so a later abort can retry
 safely. Do not edit state or bypass the account guard.

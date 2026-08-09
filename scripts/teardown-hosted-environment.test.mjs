@@ -192,6 +192,31 @@ test("generated teardown override unlocks every protected ECR repository", () =>
   }
 })
 
+test("guarded prepare temporarily enables scenario deletion through Terraform", () => {
+  const root = fixture()
+  try {
+    const result = run(root, [
+      "prepare",
+      "staging",
+      `--account=${account}`,
+      `--confirm=prepare teardown staging in ${account}`,
+    ])
+    assert.equal(result.status, 0)
+    assert.match(teardownOverride, /allow_scenario_artifact_deletion/)
+    const apply = result.calls.find(
+      ([command, args]) => command === "terraform" && args.includes("apply"),
+    )
+    assert.ok(apply)
+    assert.ok(
+      apply[1].includes(
+        "-target=module.hosted_runner.aws_s3_bucket_policy.artifacts",
+      ),
+    )
+  } finally {
+    rmSync(root, { recursive: true })
+  }
+})
+
 test("apply rejects missing and tampered plans", () => {
   const root = fixture()
   try {

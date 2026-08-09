@@ -1083,6 +1083,59 @@ data "aws_iam_policy_document" "artifacts_bucket" {
     }
   }
 
+  dynamic "statement" {
+    for_each = var.allow_scenario_artifact_deletion ? [] : [1]
+    content {
+      sid     = "DenyScenarioArtifactDeletion"
+      effect  = "Deny"
+      actions = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
+      resources = [
+        "${local.artifact_bucket.arn}/scenarios/*",
+      ]
+      principals {
+        type        = "*"
+        identifiers = ["*"]
+      }
+    }
+  }
+
+  statement {
+    sid       = "DenyScenarioWritesWithoutCreatePrecondition"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifact_bucket.arn}/scenarios/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:if-none-match"
+      values   = ["true"]
+    }
+  }
+
+  statement {
+    sid       = "DenyScenarioWritesWithoutWildcardPrecondition"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifact_bucket.arn}/scenarios/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:if-none-match"
+      values   = ["false"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:if-none-match"
+      values   = ["*"]
+    }
+  }
+
   statement {
     sid       = "DenyExplicitNonKmsEncryption"
     effect    = "Deny"

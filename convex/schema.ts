@@ -1,6 +1,22 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const scenarioRuntimeContract = v.object({
+  expectedBehavior: v.string(),
+  expectedPorts: v.array(
+    v.object({
+      name: v.string(),
+      containerPort: v.number(),
+      public: v.boolean(),
+    })
+  ),
+  packagedWorkspaceTemplatePath: v.string(),
+  previewCommand: v.string(),
+  remediationFile: v.string(),
+  ttlSeconds: v.number(),
+  validationCommand: v.string(),
+});
+
 export default defineSchema({
   users: defineTable({
     clerkSubject: v.string(),
@@ -57,6 +73,25 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_slug", ["slug"]),
 
+  scenarioArtifactApprovals: defineTable({
+    labId: v.id("labs"),
+    slug: v.string(),
+    environment: v.union(v.literal("staging"), v.literal("production")),
+    artifactSha256: v.string(),
+    artifactKey: v.string(),
+    artifactSizeBytes: v.number(),
+    manifestSha256: v.string(),
+    manifestKey: v.string(),
+    sourceManifestSha256: v.string(),
+    runtime: scenarioRuntimeContract,
+    schemaVersion: v.number(),
+    status: v.union(v.literal("active"), v.literal("superseded")),
+    approvedAt: v.number(),
+    supersededAt: v.optional(v.number()),
+  })
+    .index("by_lab_environment_status", ["labId", "environment", "status"])
+    .index("by_slug_environment", ["slug", "environment"]),
+
   sessions: defineTable({
     labId: v.id("labs"),
     learnerLabel: v.string(),
@@ -85,6 +120,21 @@ export default defineSchema({
     toolsPort: v.optional(v.number()),
     workspacePath: v.optional(v.string()),
     runnerResourceId: v.optional(v.string()),
+    hostedScenario: v.optional(
+      v.object({
+        approvalId: v.id("scenarioArtifactApprovals"),
+        environment: v.union(v.literal("staging"), v.literal("production")),
+        slug: v.string(),
+        artifactSha256: v.string(),
+        artifactKey: v.string(),
+        artifactSizeBytes: v.number(),
+        manifestSha256: v.string(),
+        manifestKey: v.string(),
+        sourceManifestSha256: v.string(),
+        runtime: scenarioRuntimeContract,
+        schemaVersion: v.number(),
+      })
+    ),
     lastCheckSummary: v.optional(v.string()),
     lastCheckScore: v.optional(v.number()),
     ttlSeconds: v.number(),

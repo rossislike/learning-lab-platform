@@ -15,6 +15,7 @@
     "scenarios:import": "node scripts/import-scenarios.mjs",
     "scenarios:check": "node scripts/import-scenarios.mjs --check",
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
+    "scenarios:publish": "node scripts/publish-scenario-artifacts.mjs",
     "runner:local": "node runner/local-runner.mjs",
     "runner:local:once": "node runner/local-runner.mjs --once",
     "runner:aws": "node runner/aws-runner.mjs",

@@ -10,6 +10,7 @@ const requiredConfigKeys = [
   "taskDefinitionArn",
   "subnetIds",
   "securityGroupIds",
+  "hostedEnvironment",
 ]
 
 export function awsEcsConfigFromEnv(env = process.env) {
@@ -21,6 +22,7 @@ export function awsEcsConfigFromEnv(env = process.env) {
     securityGroupIds: splitList(env.AWS_ECS_SECURITY_GROUP_IDS),
     containerName: env.AWS_ECS_CONTAINER_NAME ?? "learning-lab-runner",
     assignPublicIp: env.AWS_ECS_ASSIGN_PUBLIC_IP === "true",
+    hostedEnvironment: env.HOSTED_ENVIRONMENT,
   }
 }
 
@@ -35,6 +37,9 @@ export function assertAwsEcsConfig(config) {
       `Missing AWS ECS runner configuration: ${missing.join(", ")}`,
     )
   }
+  if (!["staging", "production"].includes(config.hostedEnvironment)) {
+    throw new Error("HOSTED_ENVIRONMENT must be staging or production")
+  }
 }
 
 function splitList(value) {
@@ -44,16 +49,119 @@ function splitList(value) {
     .filter(Boolean)
 }
 
+export function assertHostedArtifactInput(input, configuredEnvironment) {
+  const digestPattern = /^[0-9a-f]{64}$/
+  if (typeof input.scenarioApprovalId !== "string" || !input.scenarioApprovalId) {
+    throw new Error("Hosted session requires a scenario approval ID")
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.labSlug ?? "")) {
+    throw new Error("Hosted session requires a valid labSlug")
+  }
+  if (input.hostedEnvironment !== configuredEnvironment) {
+    throw new Error("Hosted session environment does not match this dispatcher")
+  }
+  for (const name of [
+    "artifactSha256",
+    "manifestSha256",
+    "sourceManifestSha256",
+  ]) {
+    if (!digestPattern.test(input[name] ?? "")) {
+      throw new Error(`Hosted session requires a valid ${name}`)
+    }
+  }
+  if (
+    !Number.isSafeInteger(input.artifactSizeBytes) ||
+    input.artifactSizeBytes < 1 ||
+    input.artifactSizeBytes > 64 * 1024 * 1024
+  ) {
+    throw new Error("Hosted session requires a valid artifactSizeBytes")
+  }
+  const artifactKey = `scenarios/${input.labSlug}/artifacts/sha256/${input.artifactSha256}.tar`
+  const manifestKey = `scenarios/${input.labSlug}/manifests/sha256/${input.manifestSha256}.json`
+  if (input.artifactKey !== artifactKey || input.manifestKey !== manifestKey) {
+    throw new Error("Hosted session artifact keys must match their approved digests")
+  }
+  if (input.schemaVersion !== 1) {
+    throw new Error("Hosted session requires scenario schemaVersion 1")
+  }
+  const runtime = input.runtime
+  for (const name of [
+    "expectedBehavior",
+    "packagedWorkspaceTemplatePath",
+    "previewCommand",
+    "remediationFile",
+    "validationCommand",
+  ]) {
+    if (
+      typeof runtime?.[name] !== "string" ||
+      runtime[name].length === 0 ||
+      runtime[name].trim() !== runtime[name]
+    ) {
+      throw new Error(`Hosted session requires a valid runtime.${name}`)
+    }
+  }
+  if (
+    !runtime.packagedWorkspaceTemplatePath.startsWith(
+      `lab-definitions/${input.labSlug}/`,
+    ) ||
+    runtime.packagedWorkspaceTemplatePath.includes("\\") ||
+    runtime.packagedWorkspaceTemplatePath.split("/").includes("..")
+  ) {
+    throw new Error(
+      "Hosted session requires a bound packaged workspace template path",
+    )
+  }
+  if (
+    !Number.isSafeInteger(runtime.ttlSeconds) ||
+    runtime.ttlSeconds < 1 ||
+    runtime.ttlSeconds > 8 * 60 * 60 ||
+    !Array.isArray(runtime.expectedPorts) ||
+    runtime.expectedPorts.length > 16
+  ) {
+    throw new Error("Hosted session requires a valid runtime contract")
+  }
+  const portNames = new Set()
+  for (const port of runtime.expectedPorts) {
+    if (
+      typeof port?.name !== "string" ||
+      !/^[a-z][a-z0-9-]{0,31}$/.test(port.name) ||
+      portNames.has(port.name) ||
+      !Number.isSafeInteger(port.containerPort) ||
+      port.containerPort < 1 ||
+      port.containerPort > 65535 ||
+      typeof port.public !== "boolean"
+    ) {
+      throw new Error("Hosted session requires valid runtime.expectedPorts")
+    }
+    portNames.add(port.name)
+  }
+}
+
 function taskInput(config, input) {
+  assertHostedArtifactInput(input, config.hostedEnvironment)
   const expiresAt = new Date(
     input.expiresAt ?? Date.now() + input.ttlSeconds * 1000,
   ).toISOString()
   const environment = [
     ["LAB_RUNNER_MODE", "aws-ecs-fargate"],
     ["LAB_SESSION_ID", input.sessionId],
+    ["LAB_SCENARIO_APPROVAL_ID", input.scenarioApprovalId],
     ["LAB_SLUG", input.labSlug],
-    ["LAB_WORKSPACE_TEMPLATE_PATH", input.workspaceTemplatePath],
-    ["LAB_VALIDATION_COMMAND", input.validationCommand],
+    ["LAB_WORKSPACE_TEMPLATE_PATH", input.runtime.packagedWorkspaceTemplatePath],
+    ["LAB_VALIDATION_COMMAND", input.runtime.validationCommand],
+    ["LAB_PREVIEW_COMMAND", input.runtime.previewCommand],
+    ["LAB_EXPECTED_BEHAVIOR", input.runtime.expectedBehavior],
+    ["LAB_EXPECTED_PORTS", JSON.stringify(input.runtime.expectedPorts)],
+    ["LAB_REMEDIATION_FILE", input.runtime.remediationFile],
+    ["LAB_APPROVED_TTL_SECONDS", String(input.runtime.ttlSeconds)],
+    ["LAB_HOSTED_ENVIRONMENT", input.hostedEnvironment],
+    ["LAB_ARTIFACT_KEY", input.artifactKey],
+    ["LAB_ARTIFACT_SHA256", input.artifactSha256],
+    ["LAB_ARTIFACT_SIZE_BYTES", String(input.artifactSizeBytes)],
+    ["LAB_SCENARIO_MANIFEST_KEY", input.manifestKey],
+    ["LAB_SCENARIO_MANIFEST_SHA256", input.manifestSha256],
+    ["LAB_SOURCE_MANIFEST_SHA256", input.sourceManifestSha256],
+    ["LAB_SCENARIO_SCHEMA_VERSION", String(input.schemaVersion)],
     ["LAB_TTL_SECONDS", String(input.ttlSeconds)],
     ["LAB_EXPIRES_AT", expiresAt],
     ["CONVEX_URL", input.convexUrl],

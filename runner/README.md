@@ -155,4 +155,18 @@ gateway, checks its health endpoint, and confirms workspace traffic fails
 closed. Terraform provides separate immutable ECR repositories through the
 `dispatcher_ecr_repository_url` and `gateway_ecr_repository_url` outputs.
 
+Hosted session requests now snapshot an environment-specific approved scenario
+artifact and publication manifest from Convex. The dispatcher validates that
+both S3 keys are derived from their recorded SHA-256 digests and passes the
+snapshot to the learner task as `LAB_ARTIFACT_*` and
+`LAB_SCENARIO_MANIFEST_*` variables. See
+[`scenario-artifact-publishing.md`](../docs/scenario-artifact-publishing.md) for
+the deterministic packaging, upload, verification, and approval workflow.
+
+The AWS dispatcher must set `HOSTED_ENVIRONMENT` to exactly `staging` or
+`production`. It rejects any session snapshot whose approved environment does
+not match that configured value. It dispatches the snapshotted slug, packaged
+starter path, source digest, and runtime contract without querying mutable lab
+fields.
+
 For the Kubernetes extension path, build and push images to ECR from a controlled builder service, then deploy to a per-session namespace. Do not use the Docker Desktop `ctr images import` workflow in AWS.

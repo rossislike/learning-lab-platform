@@ -135,6 +135,15 @@ that do not use TLS. They reject explicit non-KMS encryption and explicit KMS
 keys other than the environment key. Headerless writes use the bucket's
 default environment KMS key.
 
+Scenario artifacts and publication manifests use digest-addressed keys under
+`scenarios/`. The bucket policy requires `If-None-Match: *` for those writes and
+denies scenario object and object-version deletion, so an approved digest key
+cannot be replaced after a delete marker or version removal. The guarded
+environment teardown workflow temporarily removes only that deletion deny so
+retained versions can be emptied before destruction. The publishing and Convex
+approval procedure is documented in
+[`docs/scenario-artifact-publishing.md`](../../docs/scenario-artifact-publishing.md).
+
 The signing endpoint, safe archive extraction, checkpoint upload and restore, and metadata reporting are future platform work. The completed hosted validation covers the scoped React scenario runner, not a full interactive learner session.
 
 ## Production Terraform state

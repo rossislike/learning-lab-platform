@@ -211,6 +211,12 @@ variable "deletion_protection" {
   }
 }
 
+variable "allow_scenario_artifact_deletion" {
+  description = "Temporarily allow scenario object deletion only through the guarded environment teardown override."
+  type        = bool
+  default     = false
+}
+
 variable "ecr_force_delete" {
   description = "Allow Terraform to delete the runner ECR repository while it contains images. Use only for disposable validation environments."
   type        = bool
