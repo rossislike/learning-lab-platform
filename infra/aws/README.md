@@ -149,6 +149,9 @@ The production deployment and recovery evidence is recorded in
 [`docs/aws-production-backend-validation.md`](../../docs/aws-production-backend-validation.md).
 The staging-first hosted environment deployment is recorded in
 [`docs/aws-environment-foundation-deployment.md`](../../docs/aws-environment-foundation-deployment.md).
+Production ownership, operator access, emergency access, secret rotation, and
+change procedures are defined in
+[`docs/aws-production-operations.md`](../../docs/aws-production-operations.md).
 
 ## Destroy a validation stack
 
