@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 import { api } from "../convex/_generated/api.js";
+import { learnerProcessEnv } from "./learner-process-env.mjs";
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2) {
@@ -13,6 +14,7 @@ for (let index = 2; index < process.argv.length; index += 2) {
 const workspace = args.get("--workspace");
 const sessionId = args.get("--session-id");
 const port = Number(args.get("--port") ?? 7300);
+const host = args.get("--host") ?? process.env.WORKSPACE_SERVER_HOST ?? "127.0.0.1";
 const mode = args.get("--mode") ?? "editor";
 const previewUrl = args.get("--preview-url") ?? "";
 const editorUrl = args.get("--editor-url") ?? "";
@@ -25,7 +27,19 @@ if (!workspace || !sessionId) {
 }
 
 const client = convexUrl ? new ConvexHttpClient(convexUrl) : null;
-const runnerSecret = process.env.RUNNER_SHARED_SECRET;
+const runnerSecret = await readRunnerSecret();
+
+async function readRunnerSecret() {
+  const environmentSecret = process.env.RUNNER_SHARED_SECRET;
+  delete process.env.RUNNER_SHARED_SECRET;
+
+  if (process.env.RUNNER_SECRET_STDIN !== "1") return environmentSecret;
+  delete process.env.RUNNER_SECRET_STDIN;
+
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -67,7 +81,7 @@ function run(command, cwd) {
     const child = spawn(command, {
       cwd,
       shell: true,
-      env: process.env,
+      env: learnerProcessEnv(process.env, { NODE_ENV: "test" }),
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -408,6 +422,15 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/health" && request.method === "GET") {
+      sendJson(response, 200, {
+        ok: true,
+        sessionId,
+        mode,
+      });
+      return;
+    }
+
     sendJson(response, 404, { error: "Not found" });
   } catch (error) {
     sendJson(response, 500, {
@@ -416,6 +439,6 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`[workspace-server] ${sessionId} listening on http://127.0.0.1:${port}/editor`);
+server.listen(port, host, () => {
+  console.log(`[workspace-server] ${sessionId} listening on http://${host}:${port}/editor`);
 });

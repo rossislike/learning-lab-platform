@@ -63,8 +63,15 @@ test("enabled learner boundary strips endpoint variables without a task role", (
 test("enabled learner boundary is non-root, capability-free, and explicit", () => {
   assert.match(runnerTask, /user\s+= "1000:1000"/)
   assert.match(runnerTask, /drop = \["ALL"\]/)
-  assert.match(runnerTask, /command\s+= var\.runner_command/)
+  assert.match(runnerTask, /command\s+= local\.runner_command/)
   assert.match(variablesSource, /variable "runner_command"/)
+  assert.match(variablesSource, /variable "runner_image_kind"/)
+  assert.match(moduleSource, /var\.runner_image_kind == "learner-session"/)
+  assert.match(moduleSource, /runner\/hosted-learner-entrypoint\.mjs/)
+  assert.match(moduleSource, /runner\/hosted-learner-healthcheck\.mjs/)
+  for (const port of [3000, 5173, 8080]) {
+    assert.match(moduleSource, new RegExp(`= ${port}`))
+  }
 })
 
 test("proxy bypass and validation image preserve the learner boundary", () => {
@@ -80,6 +87,8 @@ test("persistent environment roots enable the learner metadata boundary", () => 
   assert.match(stagingRoot, /enable_learner_metadata_boundary\s+= true/)
   assert.match(productionRoot, /enable_learner_metadata_boundary\s+= true/)
   assert.match(validationRoot, /enable_learner_metadata_boundary\s+= false/)
+  assert.match(stagingRoot, /runner_image_kind\s+= var\.runner_image_kind/)
+  assert.match(productionRoot, /runner_image_kind\s+= var\.runner_image_kind/)
 })
 
 test("live probe reports only credential field names and fails on exposure", () => {

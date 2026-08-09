@@ -26,6 +26,17 @@ variable "runner_image_uri" {
   }
 }
 
+variable "runner_image_kind" {
+  description = "Runtime contract for the promoted runner image."
+  type        = string
+  default     = "validation"
+
+  validation {
+    condition     = contains(["validation", "learner-session"], var.runner_image_kind)
+    error_message = "runner_image_kind must be validation or learner-session."
+  }
+}
+
 variable "egress_proxy_image_uri" {
   description = "Approved production egress proxy image pinned by digest."
   type        = string

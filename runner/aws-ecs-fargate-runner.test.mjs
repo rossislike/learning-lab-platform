@@ -30,6 +30,7 @@ test("start dispatches one Fargate task with the session contract", async () => 
     sessionId: "session-123",
     labSlug: "react-welcome",
     workspaceTemplatePath: "lab-definitions/react-welcome",
+    validationCommand: "npm test -- --run --reporter=json",
     ttlSeconds: 3600,
     expiresAt: Date.parse("2026-07-10T12:00:00.000Z"),
     convexUrl: "https://example.convex.cloud",
@@ -49,6 +50,13 @@ test("start dispatches one Fargate task with the session contract", async () => 
     cliInput.overrides.containerOverrides[0].environment.some(
       (entry) =>
         entry.name === "LAB_SESSION_ID" && entry.value === "session-123",
+    ),
+  )
+  assert.ok(
+    cliInput.overrides.containerOverrides[0].environment.some(
+      (entry) =>
+        entry.name === "LAB_VALIDATION_COMMAND" &&
+        entry.value === "npm test -- --run --reporter=json",
     ),
   )
   assert.ok(

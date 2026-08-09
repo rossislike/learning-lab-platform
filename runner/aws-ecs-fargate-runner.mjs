@@ -87,6 +87,7 @@ function taskInput(config, input) {
     ["LAB_SESSION_ID", input.sessionId],
     ["LAB_SLUG", input.labSlug],
     ["LAB_WORKSPACE_TEMPLATE_PATH", input.workspaceTemplatePath],
+    ["LAB_VALIDATION_COMMAND", input.validationCommand],
     ["LAB_TTL_SECONDS", String(input.ttlSeconds)],
     ["LAB_EXPIRES_AT", expiresAt],
     ["CONVEX_URL", input.convexUrl],

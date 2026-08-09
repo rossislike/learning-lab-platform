@@ -38,6 +38,7 @@ module "hosted_runner" {
   runner_cpu_architecture          = "ARM64"
   runner_ephemeral_storage_gib     = var.runner_ephemeral_storage_gib
   runner_image_uri                 = var.runner_image_uri
+  runner_image_kind                = var.runner_image_kind
   runner_memory                    = var.runner_memory
   security_alarm_topic_arn         = data.aws_sns_topic.security_alerts.arn
   ttl_cleanup_schedule             = "rate(1 minute)"

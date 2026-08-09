@@ -89,10 +89,13 @@ definition, including its empty task IAM role and link-local proxy bypass
 entries. This is the default and is explicitly selected by the disposable
 validation root.
 
-With the boundary enabled, the task definition supplies `runner_command`
-explicitly because an ECS entrypoint override does not inherit the image's
-default command. Callers can replace the validation command when they promote
-a different runner image.
+With the boundary enabled, the task definition supplies a command explicitly
+because an ECS entrypoint override does not inherit the image's default
+command. Set `runner_image_kind = "validation"` for the scenario validation
+image or `runner_image_kind = "learner-session"` for the interactive image.
+The learner-session contract also adds fixed editor, preview, and tools port
+mappings plus the ECS container health check. `runner_command` remains an
+optional escape hatch for a reviewed image-specific override.
 
 Future artifact and checkpoint access must remain exact-key, short-lived, and
 issued by a trusted control-plane component.

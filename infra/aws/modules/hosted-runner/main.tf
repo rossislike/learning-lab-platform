@@ -26,6 +26,11 @@ locals {
     preview = 5173
     tools   = 8080
   }
+  runner_command = var.runner_command != null ? var.runner_command : (
+    var.runner_image_kind == "learner-session" ?
+    ["node", "runner/hosted-learner-entrypoint.mjs"] :
+    ["node", "scripts/smoke-test-scenarios.mjs", "--scenario", "react-welcome-message"]
+  )
   interface_endpoint_services = toset([
     "ecr.api",
     "ecr.dkr",
@@ -52,7 +57,7 @@ locals {
       "sts.${var.aws_region}.amazonaws.com",
     ],
   ))
-  runner_container_definition = {
+  runner_container_definition_unfiltered = {
     name      = "learning-lab-runner"
     image     = var.runner_image_uri
     essential = true
@@ -78,6 +83,24 @@ locals {
         awslogs-stream-prefix = "ecs"
       }
     }
+    portMappings = var.runner_image_kind == "learner-session" ? [for name, port in local.session_ports : {
+      name          = name
+      containerPort = port
+      hostPort      = port
+      protocol      = "tcp"
+      appProtocol   = "http"
+    }] : null
+    healthCheck = var.runner_image_kind == "learner-session" ? {
+      command     = ["CMD", "node", "runner/hosted-learner-healthcheck.mjs"]
+      interval    = 30
+      retries     = 3
+      startPeriod = 180
+      timeout     = 5
+    } : null
+  }
+  runner_container_definition = {
+    for name, value in local.runner_container_definition_unfiltered : name => value
+    if value != null
   }
 
 }
@@ -1439,7 +1462,7 @@ resource "aws_ecs_task_definition" "runner" {
       local.runner_container_definition,
       {
         user    = "1000:1000"
-        command = var.runner_command
+        command = local.runner_command
         entryPoint = [
           "/usr/bin/env",
           "-u", "AWS_CONTAINER_AUTHORIZATION_TOKEN",

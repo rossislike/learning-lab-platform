@@ -60,10 +60,10 @@ npm run runner:aws
 ```
 
 The dispatcher reads the `AWS_ECS_*` values documented in `.env.example`, sends
-the session ID, lab slug, template path, TTL, runner mode, and Convex URL to the
-configured task container, and records the returned ECS task ARN. The task agent
-is responsible for provisioning the workspace and publishing editor, preview,
-and tools URLs through `sessions.updateRunnerMetadata` and
+the session ID, lab slug, template path, validation command, TTL, runner mode,
+and Convex URL to the configured task container, and records the returned ECS
+task ARN. The task agent is responsible for provisioning the workspace and
+publishing editor, preview, and tools URLs through `sessions.updateRunnerMetadata` and
 `sessions.markRunning`. This keeps routing and workspace storage independent of
 the runner lifecycle contract.
 
@@ -73,10 +73,59 @@ The dispatcher host must have AWS CLI v2 installed and credentials that allow
 
 Recommended task shape:
 
-- Node 20 base image with runner agent.
+- Node 20 base image with runner agent and OpenVSCode installed in the image.
 - Ephemeral workspace volume.
 - Environment variables for Convex deployment URL and session ID.
-- Vite preview port exposed through a session gateway.
+- Fixed internal ports exposed through the session gateway: OpenVSCode on
+  `3000`, Vite preview on `5173`, and tools on `8080`.
 - No Docker daemon in the learner container for the first React lab.
+
+The production learner-session image is defined by
+[`hosted-learner-session.Dockerfile`](hosted-learner-session.Dockerfile). It
+starts OpenVSCode, the scenario Vite preview, and the tools/check server inside
+one unprivileged container. Build it with an explicit OpenVSCode release version
+and SHA-256 checksum:
+
+```bash
+docker build --platform linux/arm64 \
+  -f runner/hosted-learner-session.Dockerfile \
+  --build-arg OPENVSCODE_SERVER_VERSION='<release-version>' \
+  --build-arg OPENVSCODE_SERVER_SHA256='<release-tarball-sha256>' \
+  -t "${ECR_HOST}/learning-lab-platform-staging-runner:${IMAGE_TAG}" .
+```
+
+Run the executable image smoke after supplying the same pinned release inputs:
+
+```bash
+OPENVSCODE_SERVER_VERSION='<release-version>' \
+OPENVSCODE_SERVER_SHA256='<release-tarball-sha256>' \
+npm run hosted:image:smoke
+```
+
+The smoke builds the ARM64 image, starts all three services, runs the starter
+Vitest checks through the tools API, confirms that solution templates are not
+present, and checks that learner processes do not inherit the runner secret.
+
+When the image is promoted to a boundary-enabled staging or production task
+definition, set its runtime contract to:
+
+```hcl
+runner_image_kind = "learner-session"
+```
+
+The module then selects the learner entrypoint, maps all three service ports,
+and configures the ECS container health check. Keep `validation` for the earlier
+scenario validation image. Hosted learner tasks must also receive gateway-owned
+`LAB_EDITOR_URL`, `LAB_PREVIEW_URL`, and `LAB_TOOLS_URL` values. The image
+rejects loopback publication in hosted mode.
+
+The current dispatcher still injects `RUNNER_SHARED_SECRET` into the trusted
+image supervisor. The supervisor deletes the JavaScript environment entry and
+does not copy it into the editor, preview, dependency install, tools, or
+validation environments. It passes the value once to the tools callback service
+over stdin. Linux can retain an initial PID environment in `/proc`, so this is
+defense in depth rather than a complete same-container secret boundary. The
+roadmap item for the session-bound callback protocol remains open and must
+replace the reusable secret before hosted learner traffic is enabled.
 
 For the Kubernetes extension path, build and push images to ECR from a controlled builder service, then deploy to a per-session namespace. Do not use the Docker Desktop `ctr images import` workflow in AWS.

@@ -66,6 +66,28 @@ Use the immutable digest printed by the push for deployment.
 
 The validation Dockerfile pins the multi-platform Node base image index by digest. The pinned index currently includes a `linux/arm64/v8` manifest and is compatible with the default ARM64 task definition. To update it, inspect the current image with `docker buildx imagetools inspect node:20-bookworm-slim`, confirm the ARM64 manifest is present, replace the digest in `runner/hosted-validation.Dockerfile`, rebuild for `linux/arm64`, and rerun the hosted scenario before deployment.
 
+For interactive hosted learner sessions, build
+`runner/hosted-learner-session.Dockerfile` instead. It installs OpenVSCode into
+the image and starts OpenVSCode on port `3000`, Vite preview on port `5173`,
+and the tools/check server on port `8080` without Docker-in-Docker or privileged
+mode:
+
+```sh
+docker build --platform linux/arm64 \
+  -f runner/hosted-learner-session.Dockerfile \
+  --build-arg OPENVSCODE_SERVER_VERSION='<release-version>' \
+  --build-arg OPENVSCODE_SERVER_SHA256='<release-tarball-sha256>' \
+  -t "${ECR_HOST}/learning-lab-platform-staging-runner:${IMAGE_TAG}" .
+```
+
+For staging and production, pass the promoted immutable image digest as
+`runner_image_uri` and set `runner_image_kind = "learner-session"`. The module
+then selects the learner entrypoint, maps ports `3000`, `5173`, and `8080`, and
+adds an ECS health check. Keep `runner_image_kind = "validation"` when using the
+earlier scenario validation image. Boundary-enabled task definitions
+intentionally override the image entrypoint while removing ECS metadata and
+credential environment variables.
+
 ## Deploy
 
 ```sh

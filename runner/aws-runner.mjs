@@ -76,6 +76,7 @@ async function startSessions(client, runner, convexUrl) {
         sessionId: session._id,
         labSlug: lab.slug,
         workspaceTemplatePath: lab.templatePath,
+        validationCommand: lab.validationCommand,
         ttlSeconds: session.ttlSeconds,
         expiresAt: session.expiresAt,
         convexUrl,

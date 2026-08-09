@@ -129,13 +129,25 @@ variable "runner_image_uri" {
   }
 }
 
-variable "runner_command" {
-  description = "Explicit command started after the optional metadata-sanitizing runner entrypoint."
-  type        = list(string)
-  default     = ["node", "scripts/smoke-test-scenarios.mjs", "--scenario", "react-welcome-message"]
+variable "runner_image_kind" {
+  description = "Runtime contract provided by runner_image_uri. Learner-session images receive service ports and health checks."
+  type        = string
+  default     = "validation"
 
   validation {
-    condition     = length(var.runner_command) > 0 && alltrue([for part in var.runner_command : length(trimspace(part)) > 0])
+    condition     = contains(["validation", "learner-session"], var.runner_image_kind)
+    error_message = "runner_image_kind must be validation or learner-session."
+  }
+}
+
+variable "runner_command" {
+  description = "Optional command override started after the metadata-sanitizing entrypoint. Defaults from runner_image_kind."
+  type        = list(string)
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.runner_command == null || (length(var.runner_command) > 0 && alltrue([for part in var.runner_command : length(trimspace(part)) > 0]))
     error_message = "runner_command must contain at least one non-empty argument."
   }
 }
