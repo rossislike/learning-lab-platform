@@ -20,6 +20,7 @@
     "runner:aws": "node runner/aws-runner.mjs",
     "runner:aws:once": "node runner/aws-runner.mjs --once",
     "hosted:image:smoke": "node runner/hosted-learner-image-smoke.mjs",
+    "hosted:services:image:smoke": "node runner/hosted-service-images-smoke.mjs",
     "env:isolation:check": "node scripts/validate-environment-isolation.mjs",
     "env:isolation:require-ready": "node scripts/validate-environment-isolation.mjs --require-ready",
     "infra:staging:plan": "node scripts/run-hosted-command.mjs terraform plan staging",

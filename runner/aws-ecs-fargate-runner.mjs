@@ -1,4 +1,9 @@
-import { spawn } from "node:child_process"
+import {
+  ECSClient,
+  ListTasksCommand,
+  RunTaskCommand,
+  StopTaskCommand,
+} from "@aws-sdk/client-ecs"
 
 const requiredConfigKeys = [
   "clusterArn",
@@ -37,45 +42,6 @@ function splitList(value) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
-}
-
-function runAwsCli(args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("aws", args, {
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    })
-    let stdout = ""
-    let stderr = ""
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString()
-    })
-    child.on("error", reject)
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(
-          new Error(
-            `AWS CLI exited with code ${code ?? 1}: ${stderr.trim() || stdout.trim()}`,
-          ),
-        )
-        return
-      }
-
-      try {
-        resolve(stdout.trim() ? JSON.parse(stdout) : {})
-      } catch (error) {
-        reject(
-          new Error(
-            `AWS CLI returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        )
-      }
-    })
-  })
 }
 
 function taskInput(config, input) {
@@ -130,23 +96,16 @@ function taskInput(config, input) {
 }
 
 export class AwsEcsFargateRunner {
-  constructor({ config = awsEcsConfigFromEnv(), execute = runAwsCli } = {}) {
+  constructor({ config = awsEcsConfigFromEnv(), client } = {}) {
     assertAwsEcsConfig(config)
     this.config = config
-    this.execute = execute
+    this.client = client ?? new ECSClient({ region: config.region })
   }
 
   async start(input) {
-    const response = await this.execute([
-      "ecs",
-      "run-task",
-      "--region",
-      this.config.region,
-      "--cli-input-json",
-      JSON.stringify(taskInput(this.config, input)),
-      "--output",
-      "json",
-    ])
+    const response = await this.client.send(
+      new RunTaskCommand(taskInput(this.config, input)),
+    )
     const failure = response.failures?.[0]
     if (failure) {
       throw new Error(
@@ -169,35 +128,29 @@ export class AwsEcsFargateRunner {
   }
 
   async stop(sessionId) {
-    const listed = await this.execute([
-      "ecs",
-      "list-tasks",
-      "--region",
-      this.config.region,
-      "--cluster",
-      this.config.clusterArn,
-      "--started-by",
-      sessionId,
-      "--output",
-      "json",
-    ])
-    const taskArns = listed.taskArns ?? []
+    const taskArns = []
+    let nextToken
+
+    do {
+      const listed = await this.client.send(
+        new ListTasksCommand({
+          cluster: this.config.clusterArn,
+          startedBy: sessionId,
+          ...(nextToken ? { nextToken } : {}),
+        }),
+      )
+      taskArns.push(...(listed.taskArns ?? []))
+      nextToken = listed.nextToken
+    } while (nextToken)
 
     for (const taskArn of taskArns) {
-      await this.execute([
-        "ecs",
-        "stop-task",
-        "--region",
-        this.config.region,
-        "--cluster",
-        this.config.clusterArn,
-        "--task",
-        taskArn,
-        "--reason",
-        `Learning Lab session ${sessionId} stopped`,
-        "--output",
-        "json",
-      ])
+      await this.client.send(
+        new StopTaskCommand({
+          cluster: this.config.clusterArn,
+          task: taskArn,
+          reason: `Learning Lab session ${sessionId} stopped`,
+        }),
+      )
     }
 
     return { taskArns, stoppedCount: taskArns.length }

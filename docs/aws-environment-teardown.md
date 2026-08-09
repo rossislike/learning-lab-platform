@@ -29,7 +29,8 @@ store exported state in the repository.
 Stop active learner tasks and scale managed ECS services to zero. Empty every
 version and delete marker from the environment artifact and checkpoint
 buckets. Delete all images from the environment runner and egress-proxy ECR
-repositories. The plan phase checks running and pending ECS tasks, service
+repositories, plus the trusted dispatcher and session gateway repositories.
+The plan phase checks running and pending ECS tasks, service
 counts, all S3 object versions and delete markers, and ECR image inventories.
 It refuses to create a destroy plan until every check is clear.
 

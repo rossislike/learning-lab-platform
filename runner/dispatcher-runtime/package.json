@@ -1,0 +1,13 @@
+{
+  "name": "learning-lab-dispatcher-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-ecs": "3.1084.0",
+    "convex": "1.43.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

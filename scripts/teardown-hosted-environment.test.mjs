@@ -25,13 +25,17 @@ function executor(rootPath, changes = {}) {
     if (command === "aws" && args[0] === "sts") return { status: 0, stdout: `${changes.account ?? account}\n` }
     if (command === "terraform" && args[1] === "output") return { status: 0, stdout: JSON.stringify({
       ecs_cluster_arn: { value: changes.clusterArn ?? "arn:aws:ecs:us-east-2:442359104502:cluster/test" }, artifact_bucket: { value: "artifacts" }, checkpoint_bucket: { value: "checkpoints" },
-      runner_ecr_repository_url: { value: "host/runner" }, egress_proxy_repository_url: { value: "host/proxy" },
+      runner_ecr_repository_url: { value: "host/runner" }, dispatcher_ecr_repository_url: { value: "host/dispatcher" },
+      gateway_ecr_repository_url: { value: "host/session-gateway" }, egress_proxy_repository_url: { value: "host/proxy" },
     }) }
     if (command === "aws" && args[1] === "list-tasks") return { status: 0, stdout: JSON.stringify({ taskArns: changes.tasks ?? [] }) }
     if (command === "aws" && args[1] === "list-services") return { status: 0, stdout: JSON.stringify({ serviceArns: ["service"] }) }
     if (command === "aws" && args[1] === "describe-services") return { status: 0, stdout: JSON.stringify({ services: [{ desiredCount: changes.desired ?? 0, runningCount: 0, pendingCount: 0 }] }) }
     if (command === "aws" && args[0] === "s3api") return { status: 0, stdout: JSON.stringify({ Versions: changes.versions ?? [], DeleteMarkers: [] }) }
-    if (command === "aws" && args[0] === "ecr") return { status: 0, stdout: JSON.stringify({ imageDetails: changes.images ?? [] }) }
+    if (command === "aws" && args[0] === "ecr") {
+      const repository = args[args.indexOf("--repository-name") + 1]
+      return { status: 0, stdout: JSON.stringify({ imageDetails: changes.imagesByRepository?.[repository] ?? changes.images ?? [] }) }
+    }
     if (command === "terraform" && args.includes("state")) return { status: 0, stdout: changes.state ?? "" }
     if (command === "terraform" && args.includes("plan")) {
       writeFileSync(join(rootPath, "infra/aws/environments/staging/.terraform/staging-destroy.tfplan"), "valid plan")
@@ -110,7 +114,15 @@ test("failed restore keeps ownership and override active", () => {
 })
 
 test("plan preflight blocks active workloads, retained objects, and images", () => {
-  for (const changes of [{ tasks: ["task"] }, { desired: 1 }, { versions: [{}] }, { images: [{}] }]) {
+  for (const changes of [
+    { tasks: ["task"] },
+    { desired: 1 },
+    { versions: [{}] },
+    { imagesByRepository: { runner: [{}] } },
+    { imagesByRepository: { dispatcher: [{}] } },
+    { imagesByRepository: { "session-gateway": [{}] } },
+    { imagesByRepository: { proxy: [{}] } },
+  ]) {
     const root = fixture()
     try {
       assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
@@ -169,6 +181,15 @@ test("generated teardown override is terraform fmt stable", () => {
     const result = spawnSync("terraform", ["fmt", "-check", path], { encoding: "utf8" })
     assert.equal(result.status, 0, result.stderr || result.stdout)
   } finally { rmSync(root, { recursive: true }) }
+})
+
+test("generated teardown override unlocks every protected ECR repository", () => {
+  for (const repository of ["runner", "dispatcher", "gateway", "proxy"]) {
+    assert.match(
+      teardownOverride,
+      new RegExp(`resource "aws_ecr_repository" "${repository}_protected"`),
+    )
+  }
 })
 
 test("apply rejects missing and tampered plans", () => {

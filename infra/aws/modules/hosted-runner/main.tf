@@ -19,8 +19,10 @@ locals {
   dispatcher_runner_shared_secret = var.enable_service_secret_boundary ? (
     var.deletion_protection ? aws_secretsmanager_secret.dispatcher_runner_shared_secret_protected[0] : aws_secretsmanager_secret.dispatcher_runner_shared_secret_disposable[0]
   ) : null
-  proxy_repository  = var.enable_egress_proxy ? (var.deletion_protection ? aws_ecr_repository.proxy_protected[0] : aws_ecr_repository.proxy_disposable[0]) : null
-  runner_repository = var.deletion_protection ? aws_ecr_repository.runner_protected[0] : aws_ecr_repository.runner_disposable[0]
+  proxy_repository      = var.enable_egress_proxy ? (var.deletion_protection ? aws_ecr_repository.proxy_protected[0] : aws_ecr_repository.proxy_disposable[0]) : null
+  runner_repository     = var.deletion_protection ? aws_ecr_repository.runner_protected[0] : aws_ecr_repository.runner_disposable[0]
+  dispatcher_repository = var.deletion_protection ? aws_ecr_repository.dispatcher_protected[0] : aws_ecr_repository.dispatcher_disposable[0]
+  gateway_repository    = var.deletion_protection ? aws_ecr_repository.gateway_protected[0] : aws_ecr_repository.gateway_disposable[0]
   session_ports = {
     editor  = 3000
     preview = 5173
@@ -833,6 +835,82 @@ resource "aws_ecr_repository" "runner_disposable" {
   }
 }
 
+resource "aws_ecr_repository" "dispatcher_protected" {
+  count = var.deletion_protection ? 1 : 0
+
+  name                 = "${local.name}-dispatcher"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_ecr_repository" "dispatcher_disposable" {
+  count = var.deletion_protection ? 0 : 1
+
+  name                 = "${local.name}-dispatcher"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = var.ecr_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+}
+
+resource "aws_ecr_repository" "gateway_protected" {
+  count = var.deletion_protection ? 1 : 0
+
+  name                 = "${local.name}-session-gateway"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_ecr_repository" "gateway_disposable" {
+  count = var.deletion_protection ? 0 : 1
+
+  name                 = "${local.name}-session-gateway"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = var.ecr_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = local.data_kms_key.arn
+  }
+}
+
 resource "aws_ecr_repository" "proxy_protected" {
   count = var.enable_egress_proxy && var.deletion_protection ? 1 : 0
 
@@ -891,6 +969,38 @@ resource "aws_ecr_lifecycle_policy" "proxy" {
 
 resource "aws_ecr_lifecycle_policy" "runner" {
   repository = local.runner_repository.name
+  policy = jsonencode({
+    rules = [{
+      action       = { type = "expire" }
+      description  = "Keep all tagged releases and the newest 20 untagged images"
+      rulePriority = 1
+      selection = {
+        countNumber = 20
+        countType   = "imageCountMoreThan"
+        tagStatus   = "untagged"
+      }
+    }]
+  })
+}
+
+resource "aws_ecr_lifecycle_policy" "dispatcher" {
+  repository = local.dispatcher_repository.name
+  policy = jsonencode({
+    rules = [{
+      action       = { type = "expire" }
+      description  = "Keep all tagged releases and the newest 20 untagged images"
+      rulePriority = 1
+      selection = {
+        countNumber = 20
+        countType   = "imageCountMoreThan"
+        tagStatus   = "untagged"
+      }
+    }]
+  })
+}
+
+resource "aws_ecr_lifecycle_policy" "gateway" {
+  repository = local.gateway_repository.name
   policy = jsonencode({
     rules = [{
       action       = { type = "expire" }

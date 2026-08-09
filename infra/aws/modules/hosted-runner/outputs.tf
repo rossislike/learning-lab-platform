@@ -10,6 +10,7 @@ output "runner_log_group" { value = aws_cloudwatch_log_group.runner.name }
 output "session_security_group_id" { value = aws_security_group.session_task.id }
 output "alb_security_group_id" { value = aws_security_group.alb.id }
 output "dispatcher_security_group_id" { value = aws_security_group.dispatcher.id }
+output "dispatcher_ecr_repository_url" { value = local.dispatcher_repository.repository_url }
 output "dispatcher_execution_role_arn" { value = var.enable_service_secret_boundary ? aws_iam_role.dispatcher_execution[0].arn : null }
 output "dispatcher_task_role_arn" { value = var.enable_service_secret_boundary ? aws_iam_role.dispatcher_task[0].arn : null }
 output "dispatcher_runner_shared_secret_arn" { value = var.enable_service_secret_boundary ? local.dispatcher_runner_shared_secret.arn : null }
@@ -19,6 +20,7 @@ output "egress_proxy_service_name" { value = var.enable_egress_proxy ? aws_ecs_s
 output "egress_proxy_repository_url" { value = var.enable_egress_proxy ? local.proxy_repository.repository_url : null }
 output "egress_proxy_url" { value = var.enable_egress_proxy ? "http://${aws_lb.egress_proxy[0].dns_name}:${var.egress_proxy_port}" : null }
 output "gateway_security_group_id" { value = aws_security_group.gateway.id }
+output "gateway_ecr_repository_url" { value = local.gateway_repository.repository_url }
 output "vpc_endpoint_ids" { value = merge({ s3 = aws_vpc_endpoint.s3.id }, { for name, endpoint in aws_vpc_endpoint.interface : name => endpoint.id }) }
 output "ttl_cleanup_function_name" { value = aws_lambda_function.ttl_cleanup.function_name }
 output "module_contract_version" { value = var.module_contract_version }

@@ -22,6 +22,18 @@ resource "aws_ecr_repository" "runner_protected" {
   }
 }
 
+resource "aws_ecr_repository" "dispatcher_protected" {
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+resource "aws_ecr_repository" "gateway_protected" {
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
 resource "aws_ecr_repository" "proxy_protected" {
   lifecycle {
     prevent_destroy = false
@@ -138,7 +150,12 @@ function preflight(environment, run) {
     if (!contents) return `could not inspect ${name}`
     if ((contents.Versions ?? []).length || (contents.DeleteMarkers ?? []).length) return `${name} is not empty`
   }
-  for (const name of ["runner_ecr_repository_url", "egress_proxy_repository_url"]) {
+  for (const name of [
+    "runner_ecr_repository_url",
+    "dispatcher_ecr_repository_url",
+    "gateway_ecr_repository_url",
+    "egress_proxy_repository_url",
+  ]) {
     const url = value(name)
     if (!url) continue
     const images = jsonResult(run, "aws", ["ecr", "describe-images", "--region", region, "--repository-name", url.slice(url.indexOf("/") + 1), "--output", "json"])

@@ -131,7 +131,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 ### 2. Versioned ECS Images And Delivery
 
 - [x] Build a production learner-session image that starts OpenVSCode, preview, and tools services without Docker-in-Docker or privileged mode.
-- [ ] Build separate production images for the AWS dispatcher and session gateway.
+- [x] Build separate production images for the AWS dispatcher and session gateway.
 - [ ] Publish immutable, digest-addressed scenario artifacts and manifests to the environment artifact bucket before any hosted session can reference them; record the approved digest in Convex.
 - [ ] Add CI image builds for ARM64, vulnerability scanning, software bills of materials, image signing, and immutable digest promotion.
 - [ ] Pin every ECS task definition to an approved image digest and retain every digest referenced by an active task definition.

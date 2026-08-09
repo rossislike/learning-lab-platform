@@ -67,9 +67,10 @@ publishing editor, preview, and tools URLs through `sessions.updateRunnerMetadat
 `sessions.markRunning`. This keeps routing and workspace storage independent of
 the runner lifecycle contract.
 
-The dispatcher host must have AWS CLI v2 installed and credentials that allow
-`ecs:RunTask`, `ecs:ListTasks`, `ecs:StopTask`, `ecs:TagResource`, and
-`iam:PassRole` for the configured task definition and roles.
+The dispatcher uses the AWS SDK credential provider chain and requires a task
+role that allows `ecs:RunTask`, `ecs:ListTasks`, `ecs:StopTask`,
+`ecs:TagResource`, and `iam:PassRole` for the configured task definition and
+roles.
 
 Recommended task shape:
 
@@ -127,5 +128,31 @@ over stdin. Linux can retain an initial PID environment in `/proc`, so this is
 defense in depth rather than a complete same-container secret boundary. The
 roadmap item for the session-bound callback protocol remains open and must
 replace the reusable secret before hosted learner traffic is enabled.
+
+## Hosted service images
+
+The trusted dispatcher and session gateway have separate ARM64 production image
+definitions:
+
+- `hosted-dispatcher.Dockerfile` packages only the dispatcher runtime and its
+  production dependencies. It runs as the unprivileged `node` user and talks to
+  ECS through the AWS SDK.
+- `hosted-session-gateway.Dockerfile` packages the independent gateway process,
+  exposes port `8080`, and includes a container health check. The current process
+  intentionally returns `503 gateway-deployment-pending` for every non-health
+  request. Authenticated routing and proxying remain separate roadmap work, so
+  this image cannot expose learner services early.
+
+Build and execute both image contracts with:
+
+```bash
+npm run hosted:services:image:smoke
+```
+
+The smoke builds both images for ARM64, verifies they are distinct and non-root,
+checks that the dispatcher loads its production AWS dependency, starts the
+gateway, checks its health endpoint, and confirms workspace traffic fails
+closed. Terraform provides separate immutable ECR repositories through the
+`dispatcher_ecr_repository_url` and `gateway_ecr_repository_url` outputs.
 
 For the Kubernetes extension path, build and push images to ECR from a controlled builder service, then deploy to a per-session namespace. Do not use the Docker Desktop `ctr images import` workflow in AWS.

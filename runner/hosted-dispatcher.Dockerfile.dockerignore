@@ -1,0 +1,15 @@
+**
+!convex/
+convex/**
+!convex/_generated/
+convex/_generated/**
+!convex/_generated/api.js
+!runner/
+runner/**
+!runner/dispatcher-runtime/
+runner/dispatcher-runtime/**
+!runner/dispatcher-runtime/package.json
+!runner/dispatcher-runtime/package-lock.json
+!runner/aws-runner.mjs
+!runner/aws-ecs-fargate-runner.mjs
+!runner/startup-cancellation.mjs

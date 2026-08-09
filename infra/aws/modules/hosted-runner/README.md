@@ -12,6 +12,12 @@ The network contract uses separate security groups for the public ALB,
 private gateway, private dispatcher, learner sessions, AWS interface endpoints,
 and controlled egress proxy. Session ports `3000`, `5173`, and `8080` accept
 traffic only from the gateway group. The dispatcher has no ingress rules.
+The module creates separate immutable, KMS-encrypted ECR repositories for the
+learner runner, trusted dispatcher, session gateway, and optional egress proxy.
+Their URLs are exposed as `runner_ecr_repository_url`,
+`dispatcher_ecr_repository_url`, `gateway_ecr_repository_url`, and
+`egress_proxy_repository_url`. Service task definitions are intentionally left
+to the later dispatcher and gateway deployment tasks.
 Private workloads can reach AWS APIs through interface endpoints and S3 through
 the gateway endpoint. The S3 endpoint policy limits that route to regional ECR
 image layers and the environment's owned artifact and checkpoint buckets, so
@@ -61,9 +67,12 @@ never force-delete contents. Disposable validation uses separate resource
 addresses so its stack can still be destroyed intentionally.
 
 This protection covers the stateful artifact and checkpoint buckets and the
-runner ECR repository. It does not prevent destruction of stateless compute,
+learner runner, trusted dispatcher, session gateway, and optional egress-proxy
+ECR repositories. It does not prevent destruction of stateless compute,
 networking, IAM, logging, or cleanup resources. Backend state protection is
-owned separately by the backend bootstrap stack.
+owned separately by the backend bootstrap stack. Before protected environment
+teardown, empty every repository according to the
+[hosted environment teardown runbook](../../../../docs/aws-environment-teardown.md).
 
 Changing `deletion_protection` after an environment is created changes the
 resource address and is not supported. Treat it as an immutable environment
