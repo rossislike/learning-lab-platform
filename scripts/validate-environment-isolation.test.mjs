@@ -57,7 +57,12 @@ test("accepts approved temporary AWS account sharing", () => {
   }]
   value.environments.staging.awsAccountId = value.environments.production.awsAccountId
 
-  assert.equal(validateIsolationRegistry(value).ready, true)
+  assert.equal(
+    validateIsolationRegistry(value, {
+      today: new Date("2026-07-12T00:00:00Z"),
+    }).ready,
+    true,
+  )
 })
 
 test("blocks readiness while an environment identity is missing", () => {

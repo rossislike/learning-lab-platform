@@ -133,7 +133,7 @@ Promotion follows one direction: reusable Terraform modules and application arti
 - [x] Build a production learner-session image that starts OpenVSCode, preview, and tools services without Docker-in-Docker or privileged mode.
 - [x] Build separate production images for the AWS dispatcher and session gateway.
 - [ ] Publish immutable, digest-addressed scenario artifacts and manifests to the environment artifact bucket before any hosted session can reference them; record the approved digest in Convex. The deterministic publisher, create-only S3 policy, Convex approval history, and fail-closed hosted-session gate are implemented; first environment publication remains blocked until the staging and production Convex deployments in `docs/environment-isolation.md` are provisioned.
-- [ ] Add CI image builds for ARM64, vulnerability scanning, software bills of materials, image signing, and immutable digest promotion.
+- [ ] Add CI image builds for ARM64, vulnerability scanning, software bills of materials, image signing, and immutable digest promotion. The guarded PR, staging publication, and exact-digest production promotion workflow plus least-privilege GitHub OIDC Terraform are implemented. Completion remains blocked until every external action is pinned to an authenticated commit SHA and the isolated environment roots can be applied.
 - [ ] Pin every ECS task definition to an approved image digest and retain every digest referenced by an active task definition.
 - [ ] Add staged task-definition promotion with automated rollback when deployment health checks fail.
 

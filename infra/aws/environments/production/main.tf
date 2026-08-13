@@ -45,3 +45,16 @@ module "hosted_runner" {
   ttl_max_managed_runtime_seconds  = 28800
   vpc_cidr                         = var.vpc_cidr
 }
+
+module "github_image_delivery" {
+  source = "../../modules/github-image-delivery"
+
+  environment       = "production"
+  github_repository = var.github_repository
+  ecr_repository_arns = [
+    module.hosted_runner.runner_ecr_repository_arn,
+    module.hosted_runner.dispatcher_ecr_repository_arn,
+    module.hosted_runner.gateway_ecr_repository_arn,
+    module.hosted_runner.egress_proxy_repository_arn,
+  ]
+}

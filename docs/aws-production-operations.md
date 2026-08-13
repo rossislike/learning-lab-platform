@@ -67,6 +67,8 @@ validation commands documented in
 [`infra/aws/environments/README.md`](../infra/aws/environments/README.md).
 Other direct Terraform or Convex CLI invocation is allowed only for read-only
 inspection or when a documented incident procedure explicitly requires it.
+Hosted image delivery uses the GitHub Actions workflow documented in
+[`hosted-image-delivery.md`](hosted-image-delivery.md).
 
 ## Emergency access
 
@@ -213,6 +215,8 @@ boundaries.
 
 Use the dedicated runbooks for specialized recovery:
 
+- Hosted image delivery:
+  [`hosted-image-delivery.md`](hosted-image-delivery.md)
 - Terraform backend recovery:
   [`aws-production-backend-validation.md`](aws-production-backend-validation.md)
 - Environment isolation gate:

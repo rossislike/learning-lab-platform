@@ -13,6 +13,16 @@ variable "expected_aws_account_id" {
   }
 }
 
+variable "github_repository" {
+  description = "GitHub repository allowed to assume the production image delivery role, in owner/name form."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository must use owner/name form."
+  }
+}
+
 variable "runner_image_uri" {
   description = "Approved production runner image pinned by digest."
   type        = string

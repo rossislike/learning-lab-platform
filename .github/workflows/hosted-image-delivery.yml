@@ -1,0 +1,542 @@
+name: Hosted Image Delivery
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/hosted-image-delivery.yml"
+      - "infra/aws/egress-proxy/**"
+      - "runner/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Build in staging or promote an approved staging run to production.
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      image_scope:
+        description: Image set to build in staging.
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - learner-session
+          - dispatcher
+          - gateway
+          - egress-proxy
+      openvscode_server_version:
+        description: OpenVSCode Server release used by staging learner-session builds.
+        required: false
+        type: string
+      openvscode_server_sha256:
+        description: SHA256 for the OpenVSCode Server release tarball.
+        required: false
+        type: string
+      staging_run_id:
+        description: Successful staging workflow run to promote to production.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-image-delivery-${{ inputs.environment || 'pull-request' }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  select-images:
+    name: Select hosted images
+    if: ${{ github.event_name == 'pull_request' || inputs.environment == 'staging' }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build image matrix
+        id: matrix
+        env:
+          IMAGE_SCOPE: ${{ inputs.image_scope || 'all' }}
+        run: |
+          learner='{"name":"learner-session","repository_suffix":"runner","dockerfile":"runner/hosted-learner-session.Dockerfile","context":"."}'
+          dispatcher='{"name":"dispatcher","repository_suffix":"dispatcher","dockerfile":"runner/hosted-dispatcher.Dockerfile","context":"."}'
+          gateway='{"name":"gateway","repository_suffix":"session-gateway","dockerfile":"runner/hosted-session-gateway.Dockerfile","context":"."}'
+          proxy='{"name":"egress-proxy","repository_suffix":"egress-proxy","dockerfile":"infra/aws/egress-proxy/Dockerfile","context":"infra/aws/egress-proxy"}'
+          case "${IMAGE_SCOPE}" in
+            all) matrix="{\"include\":[${learner},${dispatcher},${gateway},${proxy}]}" ;;
+            learner-session) matrix="{\"include\":[${learner}]}" ;;
+            dispatcher) matrix="{\"include\":[${dispatcher}]}" ;;
+            gateway) matrix="{\"include\":[${gateway}]}" ;;
+            egress-proxy) matrix="{\"include\":[${proxy}]}" ;;
+            *) echo "Unsupported image scope: ${IMAGE_SCOPE}" >&2; exit 2 ;;
+          esac
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+
+  pull-request-images:
+    name: PR build, scan, and SBOM ${{ matrix.name }}
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    needs: select-images
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-images.outputs.matrix) }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate learner image inputs
+        if: ${{ matrix.name == 'learner-session' }}
+        env:
+          OPENVSCODE_SERVER_VERSION: ${{ vars.OPENVSCODE_SERVER_VERSION }}
+          OPENVSCODE_SERVER_SHA256: ${{ vars.OPENVSCODE_SERVER_SHA256 }}
+        run: |
+          test -n "${OPENVSCODE_SERVER_VERSION}"
+          test "$(printf '%s' "${OPENVSCODE_SERVER_SHA256}" | wc -c | tr -d ' ')" = "64"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ARM64 image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: local/hosted-${{ matrix.name }}:pr-${{ github.event.pull_request.number }}
+          build-args: |
+            OPENVSCODE_SERVER_VERSION=${{ vars.OPENVSCODE_SERVER_VERSION }}
+            OPENVSCODE_SERVER_SHA256=${{ vars.OPENVSCODE_SERVER_SHA256 }}
+
+      - name: Scan local image
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: local/hosted-${{ matrix.name }}:pr-${{ github.event.pull_request.number }}
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          format: table
+          exit-code: "1"
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: local/hosted-${{ matrix.name }}:pr-${{ github.event.pull_request.number }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.name }}.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-image-pr-sbom-${{ matrix.name }}
+          path: sbom-${{ matrix.name }}.spdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+  validate-release:
+    name: Validate hosted release controls
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      production_account_id: ${{ steps.accounts.outputs.production_account_id }}
+      staging_source_sha: ${{ steps.source-run.outputs.staging_source_sha }}
+      staging_account_id: ${{ steps.accounts.outputs.staging_account_id }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Restrict releases to the default branch
+        env:
+          EXPECTED_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: test "${GITHUB_REF}" = "${EXPECTED_REF}"
+
+      - name: Validate dispatch inputs
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          OPENVSCODE_SERVER_VERSION: ${{ inputs.openvscode_server_version }}
+          OPENVSCODE_SERVER_SHA256: ${{ inputs.openvscode_server_sha256 }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+        run: |
+          if [ "${TARGET_ENVIRONMENT}" = "staging" ]; then
+            test -n "${OPENVSCODE_SERVER_VERSION}"
+            printf '%s' "${OPENVSCODE_SERVER_SHA256}" | grep -Eq '^[0-9a-fA-F]{64}$'
+            test -z "${STAGING_RUN_ID}"
+          else
+            printf '%s' "${STAGING_RUN_ID}" | grep -Eq '^[1-9][0-9]*$'
+          fi
+
+      - name: Require environment isolation readiness
+        run: npm run env:isolation:require-ready
+
+      - name: Resolve expected AWS accounts
+        id: accounts
+        run: |
+          staging_account_id="$(jq -er '.environments.staging.awsAccountId | select(test("^[0-9]{12}$"))' config/hosted-environments.json)"
+          production_account_id="$(jq -er '.environments.production.awsAccountId | select(test("^[0-9]{12}$"))' config/hosted-environments.json)"
+          test "${staging_account_id}" != "${production_account_id}"
+          echo "staging_account_id=${staging_account_id}" >> "${GITHUB_OUTPUT}"
+          echo "production_account_id=${production_account_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate staging source run
+        id: source-run
+        if: ${{ inputs.environment == 'production' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+          EXPECTED_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${STAGING_RUN_ID}")"
+          jq -e \
+            --arg branch "${EXPECTED_BRANCH}" \
+            '.conclusion == "success"
+              and .event == "workflow_dispatch"
+              and .head_branch == $branch
+              and (.path | startswith(".github/workflows/hosted-image-delivery.yml"))' \
+            <<< "${run}"
+          staging_source_sha="$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "${run}")"
+          echo "staging_source_sha=${staging_source_sha}" >> "${GITHUB_OUTPUT}"
+
+  staging-images:
+    name: Staging build, scan, sign ${{ matrix.name }}
+    if: ${{ inputs.environment == 'staging' }}
+    runs-on: ubuntu-latest
+    needs:
+      - select-images
+      - validate-release
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+    environment: staging
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-images.outputs.matrix) }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure staging AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_STAGING_IMAGE_DELIVERY_ROLE_ARN }}
+
+      - name: Verify staging AWS account
+        run: |
+          actual="$(aws sts get-caller-identity --query Account --output text)"
+          test "${actual}" = "${{ needs.validate-release.outputs.staging_account_id }}"
+
+      - name: Log in to staging ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image reference
+        id: image
+        env:
+          ACCOUNT_ID: ${{ needs.validate-release.outputs.staging_account_id }}
+        run: |
+          registry="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          repository="learning-lab-platform-staging-${{ matrix.repository_suffix }}"
+          tag="${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.name }}"
+          echo "repository=${registry}/${repository}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push ARM64 image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          provenance: true
+          sbom: false
+          tags: ${{ steps.image.outputs.repository }}:${{ steps.image.outputs.tag }}
+          build-args: |
+            OPENVSCODE_SERVER_VERSION=${{ inputs.openvscode_server_version }}
+            OPENVSCODE_SERVER_SHA256=${{ inputs.openvscode_server_sha256 }}
+
+      - name: Scan pushed digest
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: ${{ steps.image.outputs.repository }}@${{ steps.build.outputs.digest }}
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          exit-code: "1"
+
+      - name: Upload vulnerability report
+        if: ${{ always() && hashFiles(format('trivy-{0}.sarif', matrix.name)) != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: hosted-image-${{ matrix.name }}
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.image.outputs.repository }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.name }}.spdx.json
+          upload-artifact: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign and verify pushed digest
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.repository }}@${{ steps.build.outputs.digest }}
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/hosted-image-delivery.yml@${{ github.ref }}
+        run: |
+          cosign sign --yes "${IMAGE_URI}"
+          cosign verify \
+            --certificate-identity "${CERTIFICATE_IDENTITY}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${IMAGE_URI}"
+
+      - name: Write staging digest entry
+        run: |
+          mkdir -p promotion-manifest
+          jq -n \
+            --arg image "${{ matrix.name }}" \
+            --arg repository "${{ steps.image.outputs.repository }}" \
+            --arg digest "${{ steps.build.outputs.digest }}" \
+            --arg source_commit "${GITHUB_SHA}" \
+            --arg workflow_run_id "${GITHUB_RUN_ID}" \
+            '{
+              image: $image,
+              repository: $repository,
+              digest: $digest,
+              imageUri: "\($repository)@\($digest)",
+              sourceCommit: $source_commit,
+              workflowRunId: $workflow_run_id
+            }' > "promotion-manifest/${{ matrix.name }}.json"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-image-sbom-${{ matrix.name }}
+          path: sbom-${{ matrix.name }}.spdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload digest entry
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-image-digest-${{ matrix.name }}
+          path: promotion-manifest/${{ matrix.name }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  staging-manifest:
+    name: Publish staging digest manifest
+    if: ${{ inputs.environment == 'staging' }}
+    runs-on: ubuntu-latest
+    needs: staging-images
+    steps:
+      - name: Download digest entries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: hosted-image-digest-*
+          merge-multiple: true
+          path: promotion-manifest
+
+      - name: Build staging manifest
+        run: |
+          jq -s \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg source_commit "${GITHUB_SHA}" \
+            --arg workflow_run_id "${GITHUB_RUN_ID}" \
+            '{
+              schemaVersion: 1,
+              environment: "staging",
+              sourceCommit: $source_commit,
+              workflowRunId: $workflow_run_id,
+              generatedAt: $generated_at,
+              images: sort_by(.image)
+            }' promotion-manifest/*.json > hosted-image-promotion-manifest.json
+          jq -e '.images | length > 0 and all(.[]; (.imageUri | test("@sha256:[0-9a-f]{64}$")))' hosted-image-promotion-manifest.json
+
+      - name: Upload staging manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-image-promotion-manifest-staging
+          path: hosted-image-promotion-manifest.json
+          if-no-files-found: error
+          retention-days: 365
+
+  production-promotion:
+    name: Promote exact staging digests to production
+    if: ${{ inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    needs: validate-release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    environment: production
+    steps:
+      - name: Download approved staging manifest
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.staging_run_id }}
+          name: hosted-image-promotion-manifest-staging
+          path: staging-manifest
+
+      - name: Validate staging manifest
+        env:
+          STAGING_ACCOUNT_ID: ${{ needs.validate-release.outputs.staging_account_id }}
+          STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+          STAGING_SOURCE_SHA: ${{ needs.validate-release.outputs.staging_source_sha }}
+        run: |
+          manifest=staging-manifest/hosted-image-promotion-manifest.json
+          jq -e \
+            --arg account "${STAGING_ACCOUNT_ID}" \
+            --arg region "${AWS_REGION}" \
+            --arg run_id "${STAGING_RUN_ID}" \
+            --arg source_sha "${STAGING_SOURCE_SHA}" \
+            '.schemaVersion == 1
+              and .environment == "staging"
+              and .workflowRunId == $run_id
+              and .sourceCommit == $source_sha
+              and (.images | length > 0)
+              and ([.images[].image] | length == (unique | length))
+              and all(.images[];
+                (.image | IN("learner-session", "dispatcher", "gateway", "egress-proxy"))
+                and (.digest | test("^sha256:[0-9a-f]{64}$"))
+                and (.imageUri == (.repository + "@" + .digest))
+                and (.repository ==
+                  ($account + ".dkr.ecr." + $region + ".amazonaws.com/learning-lab-platform-staging-" +
+                    (if .image == "learner-session" then "runner"
+                     elif .image == "gateway" then "session-gateway"
+                     else .image end))))' \
+            "${manifest}"
+
+      - name: Configure staging promotion reader credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_STAGING_IMAGE_PROMOTION_READ_ROLE_ARN }}
+
+      - name: Verify staging AWS account
+        run: |
+          actual="$(aws sts get-caller-identity --query Account --output text)"
+          test "${actual}" = "${{ needs.validate-release.outputs.staging_account_id }}"
+
+      - name: Log in to staging ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Configure production delivery credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_PRODUCTION_IMAGE_DELIVERY_ROLE_ARN }}
+
+      - name: Verify production AWS account
+        run: |
+          actual="$(aws sts get-caller-identity --query Account --output text)"
+          test "${actual}" = "${{ needs.validate-release.outputs.production_account_id }}"
+
+      - name: Log in to production ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Copy, verify, and sign exact digests
+        env:
+          PRODUCTION_ACCOUNT_ID: ${{ needs.validate-release.outputs.production_account_id }}
+          CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/hosted-image-delivery.yml@${{ github.ref }}
+        run: |
+          mkdir -p production-manifest
+          jq -c '.images[]' staging-manifest/hosted-image-promotion-manifest.json | while IFS= read -r entry; do
+            image="$(jq -r '.image' <<< "${entry}")"
+            digest="$(jq -r '.digest' <<< "${entry}")"
+            source_uri="$(jq -r '.imageUri' <<< "${entry}")"
+            case "${image}" in
+              learner-session) suffix=runner ;;
+              dispatcher) suffix=dispatcher ;;
+              gateway) suffix=session-gateway ;;
+              egress-proxy) suffix=egress-proxy ;;
+              *) echo "Unsupported image in staging manifest: ${image}" >&2; exit 2 ;;
+            esac
+            destination_repository="${PRODUCTION_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/learning-lab-platform-production-${suffix}"
+            destination_tag="staging-${{ inputs.staging_run_id }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${image}"
+            destination_tagged="${destination_repository}:${destination_tag}"
+            destination_uri="${destination_repository}@${digest}"
+
+            docker buildx imagetools create --tag "${destination_tagged}" "${source_uri}"
+            actual="sha256:$(docker buildx imagetools inspect --raw "${destination_tagged}" | sha256sum | cut -d ' ' -f 1)"
+            test "${actual}" = "${digest}"
+            cosign sign --yes "${destination_uri}"
+            cosign verify \
+              --certificate-identity "${CERTIFICATE_IDENTITY}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${destination_uri}"
+
+            jq -n \
+              --arg image "${image}" \
+              --arg repository "${destination_repository}" \
+              --arg digest "${digest}" \
+              --arg source_image_uri "${source_uri}" \
+              '{
+                image: $image,
+                repository: $repository,
+                digest: $digest,
+                imageUri: "\($repository)@\($digest)",
+                stagingImageUri: $source_image_uri
+              }' > "production-manifest/${image}.json"
+          done
+
+      - name: Build production manifest
+        run: |
+          jq -s \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg source_run_id "${{ inputs.staging_run_id }}" \
+            '{
+              schemaVersion: 1,
+              environment: "production",
+              sourceStagingRunId: $source_run_id,
+              generatedAt: $generated_at,
+              images: sort_by(.image)
+            }' production-manifest/*.json > hosted-image-promotion-manifest.json
+          jq -e 'all(.images[]; .digest == (.stagingImageUri | capture("@(?<digest>sha256:[0-9a-f]{64})$").digest))' hosted-image-promotion-manifest.json
+
+      - name: Upload production manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-image-promotion-manifest-production
+          path: hosted-image-promotion-manifest.json
+          if-no-files-found: error
+          retention-days: 365

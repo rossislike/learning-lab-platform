@@ -29,3 +29,5 @@ output "public_url" { value = module.hosted_runner.public_url }
 output "alb_access_log_bucket" { value = module.hosted_runner.alb_access_log_bucket }
 output "public_waf_arn" { value = module.hosted_runner.public_waf_arn }
 output "waf_log_group" { value = module.hosted_runner.waf_log_group }
+output "image_delivery_role_arn" { value = module.github_image_delivery.delivery_role_arn }
+output "image_promotion_reader_role_arn" { value = module.github_image_delivery.promotion_reader_role_arn }

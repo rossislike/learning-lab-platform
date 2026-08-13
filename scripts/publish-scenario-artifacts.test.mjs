@@ -4,7 +4,7 @@ import test from "node:test"
 
 import { runScenarioPublisher } from "./publish-scenario-artifacts.mjs"
 
-const account = "442359104502"
+const account = "111111111111"
 const registry = {
   schemaVersion: 1,
   environments: {
@@ -15,26 +15,24 @@ const registry = {
     },
     staging: {
       awsAccountId: account,
-      clerkApplicationId: null,
+      clerkApplicationId: "app_staging",
       convexDeployment: "prod:staging-labs",
     },
     production: {
-      awsAccountId: account,
-      clerkApplicationId: null,
+      awsAccountId: "222222222222",
+      clerkApplicationId: "app_production",
       convexDeployment: "prod:production-labs",
     },
   },
   temporaryException: {
-    allowedIdentitySharing: [
-      { field: "awsAccountId", environments: ["staging", "production"] },
-    ],
-    approved: true,
-    approver: "test",
+    allowedIdentitySharing: [],
+    approved: false,
+    approver: null,
     deadline: "2026-08-12",
-    migrationStatus: "in-progress",
+    migrationStatus: "blocked",
     owner: "test",
     productionLearnerTrafficBlocked: true,
-    reason: "test fixture",
+    reason: "No exception is needed for distinct test identities.",
   },
 }
 
