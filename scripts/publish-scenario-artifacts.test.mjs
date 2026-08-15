@@ -4,9 +4,18 @@ import test from "node:test"
 
 import { runScenarioPublisher } from "./publish-scenario-artifacts.mjs"
 
-const account = "111111111111"
+const account = "442359104502"
 const registry = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  awsAccountTopology: {
+    mode: "shared",
+    sharedAccountId: account,
+    environments: ["staging", "production"],
+    isolationBoundaries: ["terraformState", "resourceNames", "network", "iam", "kms", "ecr", "objectStorage", "secrets"],
+    owner: "test",
+    reason: "Test environments share one AWS account.",
+  },
+  productionLearnerTrafficBlocked: false,
   environments: {
     development: {
       awsAccountId: null,
@@ -19,20 +28,10 @@ const registry = {
       convexDeployment: "prod:staging-labs",
     },
     production: {
-      awsAccountId: "222222222222",
+      awsAccountId: account,
       clerkApplicationId: "app_production",
       convexDeployment: "prod:production-labs",
     },
-  },
-  temporaryException: {
-    allowedIdentitySharing: [],
-    approved: false,
-    approver: null,
-    deadline: "2026-08-12",
-    migrationStatus: "blocked",
-    owner: "test",
-    productionLearnerTrafficBlocked: true,
-    reason: "No exception is needed for distinct test identities.",
   },
 }
 

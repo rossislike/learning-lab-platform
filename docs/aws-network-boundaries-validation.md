@@ -65,4 +65,4 @@ the lookup failed as required and the negative-test assertion exited with code
 
 Final Terraform plans for both staging and production reported no changes.
 Production proxy capacity is deployed but production learner traffic remains
-blocked by the separate environment-isolation release gate.
+blocked by the hosted environment-isolation release gate.

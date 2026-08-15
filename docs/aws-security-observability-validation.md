@@ -8,7 +8,7 @@ The `infra/aws/account-security` Terraform root owns account-wide controls. It d
 
 The staging and production roots own their environment WAF, WAF logs, ALB access log bucket, ALB logging configuration, and environment alarms. The shared account root owns the encrypted SNS destination used by those alarms.
 
-The current deployment temporarily places staging and production in one AWS account. When the environments move into separate accounts, `infra/aws/account-security` must be instantiated once in each account, with each environment using the local account topic.
+Staging and production permanently share one AWS account. Apply `infra/aws/account-security` once in that account. Both environment roots resolve the shared alert topic and GitHub Actions OIDC provider while retaining environment-specific IAM roles and resources.
 
 ## Account controls
 

@@ -19,8 +19,8 @@ longer serving users. Export the final Terraform state and copy any artifacts,
 checkpoints, logs, or images that retention policy requires.
 
 ```sh
-terraform -chdir=infra/aws/environments/staging state pull > /secure/path/staging-final.tfstate
-npm run infra:teardown -- audit staging --account=442359104502
+AWS_PROFILE=default terraform -chdir=infra/aws/environments/staging state pull > /secure/path/staging-final.tfstate
+AWS_PROFILE=default npm run infra:teardown -- audit staging --account=442359104502
 ```
 
 Use `production` in place of `staging` for the production environment. Never
@@ -47,7 +47,7 @@ override, and uses a targeted apply to disable deletion protection on both
 environment load balancers and temporarily update the artifact bucket policy.
 
 ```sh
-npm run infra:teardown -- prepare staging \
+AWS_PROFILE=default npm run infra:teardown -- prepare staging \
   --account=442359104502 \
   --confirm='prepare teardown staging in 442359104502'
 ```
@@ -68,7 +68,7 @@ To stop after a successful prepare, restore normal protections and remove all
 temporary teardown files:
 
 ```sh
-npm run infra:teardown -- abort staging \
+AWS_PROFILE=default npm run infra:teardown -- abort staging \
   --account=442359104502 \
   --confirm='abort teardown staging in 442359104502'
 ```
@@ -76,7 +76,7 @@ npm run infra:teardown -- abort staging \
 ## 4. Save and inspect the destroy plan
 
 ```sh
-npm run infra:teardown -- plan staging \
+AWS_PROFILE=default npm run infra:teardown -- plan staging \
   --account=442359104502 \
   --confirm='plan teardown staging in 442359104502'
 ```
@@ -100,7 +100,7 @@ destruction. Any new plan replaces the prior plan and integrity metadata.
 ## 5. Apply the saved plan
 
 ```sh
-npm run infra:teardown -- apply staging \
+AWS_PROFILE=default npm run infra:teardown -- apply staging \
   --account=442359104502 \
   --confirm='destroy staging in 442359104502'
 ```
@@ -114,7 +114,7 @@ Cleanup refuses to remove the override while the selected state still contains
 managed resources.
 
 ```sh
-npm run infra:teardown -- cleanup staging --account=442359104502
+AWS_PROFILE=default npm run infra:teardown -- cleanup staging --account=442359104502
 ```
 
 Confirm that `infra/aws/modules/hosted-runner/teardown_override.tf` and

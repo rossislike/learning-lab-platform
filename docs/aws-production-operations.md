@@ -42,21 +42,17 @@ operator.
 
 ## Normal operator access
 
-Human AWS access uses IAM Identity Center temporary sessions only. Do not
-create long-lived human access keys for routine operations. The current
-production account configuration is documented in
-[`aws-service-credential-boundary.md`](aws-service-credential-boundary.md):
+The current operator workflow uses the AWS CLI `default` profile for the shared
+account. Do not create separate staging and production AWS profiles. The
+credential details and preferred migration to short-lived IAM Identity Center
+sessions are documented in
+[`aws-service-credential-boundary.md`](aws-service-credential-boundary.md).
 
-- `prodAdmin` is for routine production application operations.
-- `awsAdmin` is for IAM, recovery, break-glass, and other privileged account
-  operations.
-
-Use the least privileged profile that can complete the work. Before any
-production Terraform plan, apply, secret rotation, image promotion, or manual
-recovery, verify the active AWS identity and account:
+Before any hosted Terraform plan, apply, secret rotation, image promotion, or
+manual recovery, verify the active AWS identity and account:
 
 ```sh
-aws sts get-caller-identity
+AWS_PROFILE=default aws sts get-caller-identity
 ```
 
 For hosted environment Terraform and Convex changes, use the guarded npm
@@ -201,9 +197,9 @@ credential handling, environment isolation, deletion protection, state
 backend settings, or learner data retention require explicit security review.
 
 Do not enable production learner traffic until `npm run env:isolation:require-ready`
-passes, staging and production use separate AWS accounts, Clerk applications,
-and Convex deployments, and all production readiness gates in the roadmap are
-complete.
+passes, the configured shared-account AWS boundaries are intact, staging and
+production use separate Clerk applications and Convex deployments, and all
+production readiness gates in the roadmap are complete.
 
 ## Rollback and recovery
 

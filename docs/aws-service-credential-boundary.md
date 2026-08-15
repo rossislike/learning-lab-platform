@@ -74,27 +74,39 @@ Never retrieve or print the AWS value for validation.
 
 ## Human operator access
 
-Do not store human AWS access keys in Secrets Manager. Human operators should
-use IAM Identity Center or another federated provider to obtain temporary AWS
-credentials. Account `442359104502` uses these one-hour Identity Center
+Do not store human AWS access keys in Secrets Manager. The active operator
+workflow for account `442359104502` currently uses the AWS CLI `default`
+profile as IAM user `devAdmin`. This identity was verified on 2026-08-15 with
+`aws sts get-caller-identity`.
+
+Before every hosted operation, verify the profile and account:
+
+```sh
+AWS_PROFILE=default aws sts get-caller-identity
+```
+
+Do not create additional environment-specific AWS profiles or credentials.
+Staging and production use this same account identity and rely on Terraform
+state and resource boundaries for isolation.
+
+IAM Identity Center remains the preferred long-term human access mechanism
+because it issues short-lived credentials. The account also has these one-hour
 assignments:
 
 - `prodAdmin` has `PowerUserAccess` for routine application operations.
 - `awsAdmin` has `AdministratorAccess` for IAM, recovery, and other privileged
   account operations.
 
-Both assignments were verified on 2026-07-18 by assuming the generated AWS SSO
-role and calling account APIs with temporary credentials. Local AWS CLI users
-can start the configured sessions with:
+Both assignments were verified on 2026-07-18. They can be started with:
 
 ```sh
 aws sso login --profile learning-lab-prod
 aws sso login --profile learning-lab-admin
 ```
 
-The former `devAdmin` access keys are inactive and retained at the repository
-owner's direction. Do not reactivate, delete, rotate, or otherwise modify them
-without a new explicit instruction from the owner.
+The `default` profile now has active `devAdmin` credentials. Keep them outside
+the repository, do not print them, and rotate or replace them with federation
+through a separately reviewed credential change.
 
 ## Deployment evidence
 

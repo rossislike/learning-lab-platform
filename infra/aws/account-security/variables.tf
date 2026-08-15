@@ -23,3 +23,14 @@ variable "security_alert_email" {
     error_message = "security_alert_email must be a valid, nonempty email address."
   }
 }
+
+variable "github_oidc_thumbprints" {
+  description = "TLS certificate thumbprints for token.actions.githubusercontent.com."
+  type        = list(string)
+  default     = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+
+  validation {
+    condition     = length(var.github_oidc_thumbprints) > 0 && alltrue([for value in var.github_oidc_thumbprints : can(regex("^[0-9a-f]{40}$", value))])
+    error_message = "github_oidc_thumbprints must contain lowercase SHA1 thumbprints."
+  }
+}

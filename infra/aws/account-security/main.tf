@@ -4,6 +4,7 @@ data "aws_guardduty_detector" "current" {}
 
 locals {
   name                = "learning-lab-platform"
+  github_oidc_host    = "token.actions.githubusercontent.com"
   trail_name          = "${local.name}-management-events"
   trail_arn           = "arn:${data.aws_partition.current.partition}:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/${local.trail_name}"
   cloudtrail_bucket   = "llp-${substr(sha1(local.name), 0, 10)}-account-${data.aws_caller_identity.current.account_id}-${var.aws_region}-trail"
@@ -14,6 +15,12 @@ locals {
     Project     = local.name
     Root        = "account-security"
   }
+}
+
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url             = "https://${local.github_oidc_host}"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = var.github_oidc_thumbprints
 }
 
 check "expected_account" {

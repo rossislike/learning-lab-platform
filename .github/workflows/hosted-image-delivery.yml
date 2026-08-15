@@ -191,7 +191,9 @@ jobs:
         run: |
           staging_account_id="$(jq -er '.environments.staging.awsAccountId | select(test("^[0-9]{12}$"))' config/hosted-environments.json)"
           production_account_id="$(jq -er '.environments.production.awsAccountId | select(test("^[0-9]{12}$"))' config/hosted-environments.json)"
-          test "${staging_account_id}" != "${production_account_id}"
+          shared_account_id="$(jq -er '.awsAccountTopology | select(.mode == "shared") | .sharedAccountId | select(test("^[0-9]{12}$"))' config/hosted-environments.json)"
+          test "${staging_account_id}" = "${shared_account_id}"
+          test "${production_account_id}" = "${shared_account_id}"
           echo "staging_account_id=${staging_account_id}" >> "${GITHUB_OUTPUT}"
           echo "production_account_id=${production_account_id}" >> "${GITHUB_OUTPUT}"
 
@@ -440,21 +442,7 @@ jobs:
                      else .image end))))' \
             "${manifest}"
 
-      - name: Configure staging promotion reader credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_STAGING_IMAGE_PROMOTION_READ_ROLE_ARN }}
-
-      - name: Verify staging AWS account
-        run: |
-          actual="$(aws sts get-caller-identity --query Account --output text)"
-          test "${actual}" = "${{ needs.validate-release.outputs.staging_account_id }}"
-
-      - name: Log in to staging ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Configure production delivery credentials
+      - name: Configure production promotion credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -465,7 +453,7 @@ jobs:
           actual="$(aws sts get-caller-identity --query Account --output text)"
           test "${actual}" = "${{ needs.validate-release.outputs.production_account_id }}"
 
-      - name: Log in to production ECR
+      - name: Log in to shared ECR registry
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx

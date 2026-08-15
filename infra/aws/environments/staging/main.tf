@@ -13,6 +13,10 @@ data "aws_sns_topic" "security_alerts" {
   name = "learning-lab-platform-security-alerts"
 }
 
+data "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 module "hosted_runner" {
   source = "../../modules/hosted-runner"
 
@@ -49,9 +53,9 @@ module "hosted_runner" {
 module "github_image_delivery" {
   source = "../../modules/github-image-delivery"
 
-  create_production_promotion_reader = true
-  environment                        = "staging"
-  github_repository                  = var.github_repository
+  environment              = "staging"
+  github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github_actions.arn
+  github_repository        = var.github_repository
   ecr_repository_arns = [
     module.hosted_runner.runner_ecr_repository_arn,
     module.hosted_runner.dispatcher_ecr_repository_arn,

@@ -5,9 +5,11 @@ scanned and signed images to staging, and copies approved staging digests to
 production without rebuilding them. It does not update ECS task definitions.
 
 The roadmap item remains incomplete until external action references are pinned
-to authenticated full commit SHAs and the OIDC roles are applied in isolated
-staging and production accounts. The environment isolation gate currently
-prevents that apply. Do not bypass the gate or mark the item complete early.
+to authenticated full commit SHAs and the account-level OIDC provider plus
+environment-specific roles are applied. Missing Clerk and Convex identities
+block image releases and production learner traffic, but they do not block the
+AWS infrastructure apply. Do not bypass the release gate or mark the item
+complete early.
 
 ## Pull request checks
 
@@ -25,20 +27,22 @@ Configure these repository variables for the learner image build:
 
 ## AWS authentication
 
-Each isolated environment root calls
-`infra/aws/modules/github-image-delivery`. The module creates a GitHub OIDC
-provider and an environment-bound role with access only to that environment's
-four ECR repositories. Staging also creates a read-only role that a production
-environment job can use to pull approved staging digests.
+The `infra/aws/account-security` root creates the single GitHub Actions OIDC
+provider for the shared account. Each environment root resolves that provider
+and calls `infra/aws/modules/github-image-delivery` to create an
+environment-bound role with access only to that environment's four ECR
+repositories. The production role also has read-only access to the four exact
+staging repositories so one production session can copy approved digests
+within the shared ECR registry. It cannot modify staging repositories.
 
-After the isolation gate passes, apply the staging and production roots through
-the guarded commands and configure these environment secrets from Terraform
-outputs:
+Apply the account-security root first, then apply the staging and production
+roots through the guarded commands. AWS infrastructure validation requires the
+registered shared account but intentionally does not require Clerk or Convex
+identities. Configure these environment secrets from Terraform outputs:
 
 | GitHub environment | Secret | Terraform output |
 | --- | --- | --- |
 | `staging` | `AWS_STAGING_IMAGE_DELIVERY_ROLE_ARN` | staging `image_delivery_role_arn` |
-| `production` | `AWS_STAGING_IMAGE_PROMOTION_READ_ROLE_ARN` | staging `image_promotion_reader_role_arn` |
 | `production` | `AWS_PRODUCTION_IMAGE_DELIVERY_ROLE_ARN` | production `image_delivery_role_arn` |
 
 Both root variable files must set `github_repository` in `owner/name` form.
@@ -54,8 +58,8 @@ protection rule for routine releases.
 
 The workflow checks the default branch and runs
 `npm run env:isolation:require-ready` before requesting AWS credentials. After
-role assumption, it verifies the caller account against
-`config/hosted-environments.json`.
+role assumption, it verifies both environments and the caller against the
+shared account declared in `config/hosted-environments.json`.
 
 ## Staging publication
 
@@ -74,10 +78,12 @@ scope, OpenVSCode Server release, and matching SHA256. Each selected image is:
 Dispatch the workflow for `production` from the default branch and provide the
 successful staging workflow run ID. The workflow verifies that the source run
 used this workflow, succeeded on the default branch, and produced a valid
-staging manifest. It logs into staging with the read-only role, logs into
-production with the delivery role, copies each source manifest, and hashes the
-raw destination manifest to prove that its digest is unchanged. It then signs
-and identity-verifies each production digest before publishing
+staging manifest. It assumes the production role, logs into the shared ECR
+registry once, copies each source manifest, and hashes the raw destination
+manifest to prove that its digest is unchanged. The role can read only the
+staging repositories and can write only
+the production repositories. The workflow then signs and identity-verifies
+each production digest before publishing
 `hosted-image-promotion-manifest-production`.
 
 Downstream deployment must use the manifest's exact `imageUri` values. It must

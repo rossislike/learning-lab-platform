@@ -3,9 +3,19 @@ import { fileURLToPath } from "node:url"
 
 const defaultRegistryUrl = new URL("../config/hosted-environments.json", import.meta.url)
 const requiredEnvironments = ["development", "staging", "production"]
+const hostedEnvironments = ["staging", "production"]
 const identityFields = ["awsAccountId", "clerkApplicationId", "convexDeployment"]
-const migrationStatuses = new Set(["blocked", "planned", "in-progress", "complete"])
-const environmentNames = new Set(requiredEnvironments)
+const sharedAwsAccountId = "442359104502"
+const requiredIsolationBoundaries = new Set([
+  "terraformState",
+  "resourceNames",
+  "network",
+  "iam",
+  "kms",
+  "ecr",
+  "objectStorage",
+  "secrets",
+])
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -23,18 +33,17 @@ function validIdentity(field, value) {
   return /^(dev|prod):[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(value)
 }
 
-function isRealDate(value) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const date = new Date(`${value}T00:00:00.000Z`)
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+function sameMembers(values, expected) {
+  return Array.isArray(values) && values.length === expected.size &&
+    new Set(values).size === values.length && values.every((value) => expected.has(value))
 }
 
-export function validateIsolationRegistry(registry, { today = new Date() } = {}) {
+export function validateIsolationRegistry(registry) {
   const errors = []
   const blockers = []
 
   if (!isRecord(registry)) return { blockers, errors: ["registry must be an object"], ready: false }
-  if (registry.schemaVersion !== 1) errors.push("schemaVersion must be 1")
+  if (registry.schemaVersion !== 2) errors.push("schemaVersion must be 2")
   if (!isRecord(registry.environments)) errors.push("environments must be an object")
 
   for (const environment of requiredEnvironments) {
@@ -51,15 +60,23 @@ export function validateIsolationRegistry(registry, { today = new Date() } = {})
     }
   }
 
-  const exception = registry.temporaryException
-  const sharingRules = exception?.approved === true && Array.isArray(exception.allowedIdentitySharing)
-    ? exception.allowedIdentitySharing
-    : []
-  const sharingRuleKeys = new Set(sharingRules.map((rule) =>
-    isRecord(rule) && Array.isArray(rule.environments)
-      ? `${rule.field}:${[...rule.environments].sort().join(",")}`
-      : "invalid",
-  ))
+  const topology = registry.awsAccountTopology
+  if (!isRecord(topology)) {
+    errors.push("awsAccountTopology must be an object")
+  } else {
+    if (topology.mode !== "shared") errors.push("awsAccountTopology.mode must be shared")
+    if (!sameMembers(topology.environments, new Set(hostedEnvironments))) {
+      errors.push("awsAccountTopology.environments must contain exactly staging and production")
+    }
+    if (!sameMembers(topology.isolationBoundaries, requiredIsolationBoundaries)) {
+      errors.push("awsAccountTopology.isolationBoundaries must contain every required shared-account boundary")
+    }
+    if (!isNonemptyString(topology.owner)) errors.push("awsAccountTopology.owner must be a nonempty string")
+    if (!isNonemptyString(topology.reason)) errors.push("awsAccountTopology.reason must be a nonempty string")
+    if (topology.sharedAccountId !== sharedAwsAccountId) {
+      errors.push(`awsAccountTopology.sharedAccountId must be ${sharedAwsAccountId}`)
+    }
+  }
 
   for (const field of identityFields) {
     const configured = new Map()
@@ -69,7 +86,10 @@ export function validateIsolationRegistry(registry, { today = new Date() } = {})
       if (typeof value === "string" && value.length > 0) {
         if (configured.has(value)) {
           const environments = [configured.get(value), environment].sort()
-          if (!sharingRuleKeys.has(`${field}:${environments.join(",")}`)) {
+          const allowedSharedAwsAccount = field === "awsAccountId" &&
+            topology?.mode === "shared" && value === sharedAwsAccountId &&
+            environments.join(",") === "production,staging"
+          if (!allowedSharedAwsAccount) {
             errors.push(`${environment}.${field} duplicates ${configured.get(value)}.${field}`)
           }
         } else configured.set(value, environment)
@@ -77,49 +97,25 @@ export function validateIsolationRegistry(registry, { today = new Date() } = {})
     }
   }
 
-  if (!isRecord(exception)) {
-    errors.push("temporaryException must be an object")
-  } else {
-    if (typeof exception.approved !== "boolean") errors.push("temporaryException.approved must be boolean")
-    if (!Array.isArray(exception.allowedIdentitySharing) || exception.allowedIdentitySharing.some((rule) =>
-      !isRecord(rule) || !identityFields.includes(rule.field) || !Array.isArray(rule.environments) ||
-      rule.environments.length !== 2 || new Set(rule.environments).size !== 2 ||
-      rule.environments.some((environment) => !environmentNames.has(environment)) ||
-      !rule.environments.includes("staging") || !rule.environments.includes("production"))) {
-      errors.push("temporaryException.allowedIdentitySharing must contain rules with a known field and exactly the staging and production environments")
-    }
-    if (sharingRuleKeys.size !== sharingRules.length) {
-      errors.push("temporaryException.allowedIdentitySharing must not contain duplicate rules")
-    }
-    if (exception.approved === false && exception.allowedIdentitySharing?.length > 0) {
-      errors.push("temporaryException.allowedIdentitySharing must be empty when unapproved")
-    }
-    if (exception.productionLearnerTrafficBlocked !== true) errors.push("temporaryException.productionLearnerTrafficBlocked must be true")
-    if (!isNonemptyString(exception.owner)) errors.push("temporaryException.owner must be a nonempty string")
-    if (!isNonemptyString(exception.reason)) errors.push("temporaryException.reason must be a nonempty string")
-    if (!migrationStatuses.has(exception.migrationStatus)) {
-      errors.push("temporaryException.migrationStatus must be blocked, planned, in-progress, or complete")
-    }
-    if (exception.approved === true && !isNonemptyString(exception.approver)) {
-      errors.push("temporaryException.approver must be a nonempty string when approved")
-    } else if (exception.approved === false && exception.approver !== null) {
-      errors.push("temporaryException.approver must be null when unapproved")
-    }
-    if (!isRealDate(exception.deadline)) {
-      errors.push("temporaryException.deadline must be a real YYYY-MM-DD date")
-    } else {
-      const deadline = new Date(`${exception.deadline}T23:59:59.999Z`)
-      if (exception.approved === true && sharingRules.length > 0 && today.getTime() > deadline.getTime()) {
-        errors.push("temporary environment-isolation exception has expired")
-      }
-    }
+  const stagingAccountId = registry.environments?.staging?.awsAccountId
+  const productionAccountId = registry.environments?.production?.awsAccountId
+  if (
+    stagingAccountId !== topology?.sharedAccountId || productionAccountId !== topology?.sharedAccountId
+  ) {
+    errors.push("staging and production AWS accounts must match awsAccountTopology.sharedAccountId")
+  }
+
+  if (typeof registry.productionLearnerTrafficBlocked !== "boolean") {
+    errors.push("productionLearnerTrafficBlocked must be boolean")
+  } else if (blockers.length > 0 && registry.productionLearnerTrafficBlocked !== true) {
+    errors.push("productionLearnerTrafficBlocked must remain true while hosted identities are incomplete")
   }
 
   return { blockers, errors, ready: errors.length === 0 && blockers.length === 0 }
 }
 
-export function validateAwsInfrastructureRegistry(registry, environment, options) {
-  const validation = validateIsolationRegistry(registry, options)
+export function validateAwsInfrastructureRegistry(registry, environment) {
+  const validation = validateIsolationRegistry(registry)
   const blockers = validation.blockers.filter((blocker) => blocker.includes(".awsAccountId "))
   return {
     blockers,
@@ -149,7 +145,7 @@ export async function runCli(args = process.argv.slice(2)) {
   for (const error of result.errors) console.error(`error: ${error}`)
   for (const blocker of result.blockers) console.log(`blocked: ${blocker}`)
   if (result.errors.length > 0 || (args.includes("--require-ready") && !result.ready)) return 1
-  console.log(result.ready ? "Hosted environment identities are isolated." : "Environment registry is valid but not hosted-ready.")
+  console.log(result.ready ? "Hosted environment identities satisfy the configured isolation topology." : "Environment registry is valid but not hosted-ready.")
   return 0
 }
 

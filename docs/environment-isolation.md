@@ -1,96 +1,90 @@
 # Hosted environment isolation
 
-Production must not share an AWS account, Clerk application, or Convex
-deployment with staging. The machine-readable registry at
+Staging and production intentionally run in one AWS account. They must use
+separate Terraform state, resource names, networks, IAM roles, KMS keys, ECR
+repositories, S3 buckets, Secrets Manager secrets, Clerk applications, and
+Convex deployments. The machine-readable registry at
 [`config/hosted-environments.json`](../config/hosted-environments.json) is the
-repository inventory used by the hosted deployment guards. The external AWS,
-Clerk, and Convex control planes remain authoritative for resources that
-actually exist.
+inventory used by deployment guards. The external control planes remain
+authoritative for resources that actually exist.
 
 ## Current status
 
 | Boundary | Development | Staging | Production | Status |
 | --- | --- | --- | --- | --- |
-| AWS account | Local or operator-selected | `442359104502` | `442359104502` | Temporary exception |
+| AWS account | Local or operator-selected | `442359104502` | `442359104502` | Configured shared account |
+| Terraform state | Local | `learning-lab-platform/staging/terraform.tfstate` | `learning-lab-platform/production/terraform.tfstate` | Isolated |
+| AWS resources | Local | `staging` scoped | `production` scoped | Isolated |
 | Clerk application | Current development application | Not provisioned | Not provisioned | Blocked |
 | Convex deployment | Current local development deployment | Not provisioned | Not provisioned | Blocked |
 
-The approved AWS exception authorizes staging and production foundation
-deployment in the shared account. Production learner traffic remains
-procedurally blocked while any production-readiness blocker remains. The
-existing Clerk application and Convex deployment are development-only and must
-not be promoted by changing their labels or environment variables.
+AWS account sharing is the permanent topology, not an exception. Production
+learner traffic remains procedurally blocked while any required hosted identity
+is missing. The existing Clerk application and Convex deployment are
+development-only and must not be promoted by changing labels or environment
+variables.
 
-## Temporary exception
+## Shared-account boundaries
 
-The repository owner approved temporary AWS account sharing for staging and
-production. The exception permits only the `awsAccountId` identity to be shared.
-It does not permit shared Clerk applications or Convex deployments and does not
-allow production learner traffic.
+The following boundaries are mandatory for both hosted environments:
 
-- Deadline: 2026-08-12
-- Earlier cutoff: before any production learner traffic
-- Owner: platform owner
-- Approver: repository owner
-- Migration status: in progress
-- Production learner traffic: procedurally blocked
+1. Use the `default` AWS CLI profile and verify account `442359104502` before
+   every plan, apply, publication, or promotion.
+2. Initialize each Terraform root with its own backend file and state key.
+   Never migrate or copy state between staging and production.
+3. Keep environment-specific VPCs, subnets, security groups, ECS resources,
+   IAM roles, KMS keys, ECR repositories, S3 buckets, secrets, and logs.
+4. Keep staging and production Clerk applications and Convex deployments
+   distinct. AWS account sharing does not authorize sharing application
+   identities, credentials, data, or deployment configuration.
+5. Qualify changes in staging first, then promote reviewed source and immutable
+   artifacts to production. Do not copy staging secrets or learner data.
 
-If the deadline passes, the registry validation fails until the missing
-resources are provisioned. Extending the deadline requires a reviewed commit
-that records the reason, approver, replacement deadline, and migration status.
+The account-level Terraform root owns resources that AWS permits only once per
+account, including the GitHub Actions OIDC provider and shared security alert
+pipeline. Apply it before either environment root.
 
-## Provisioning and migration sequence
+## Remaining provisioning sequence
 
-1. Create or designate a staging AWS account outside the production account.
-2. Bootstrap the staging Terraform backend in that account and record its
-   twelve-digit account ID in the registry and staging Terraform examples.
-3. Create dedicated staging and production Clerk applications. Configure each
+1. Create dedicated staging and production Clerk applications. Configure each
    with only its environment's origins, redirect URLs, webhook destinations,
    and Convex JWT template. Record the non-secret application IDs.
-4. Create dedicated staging and production Convex deployments. Configure each
+2. Create dedicated staging and production Convex deployments. Configure each
    to trust only its matching Clerk issuer and record the deployment names.
-5. Store each environment's secret values only in its deployment system and
+3. Store each environment's secret values only in its deployment system and
    AWS Secrets Manager. Do not commit publishable keys, secret keys, deployment
-   URLs, deploy keys, or webhook secrets to this registry.
-6. Use the guarded Terraform commands while the AWS exception is active. Run
-   `npm run env:isolation:require-ready` before deploying hosted Convex
-   functions or enabling production learner traffic.
-7. Deploy and qualify staging first. Promote the same reviewed source and
-   immutable artifacts to production without copying staging data or secrets.
+   URLs, deploy keys, or webhook secrets to the registry.
+4. Run `npm run env:isolation:require-ready` before hosted Convex deployment,
+   image publication, or production learner traffic.
+5. Deploy and qualify staging first. Promote the same reviewed source and
+   immutable artifacts to production.
 
 ## Automated checks
 
-`npm run env:isolation:check` validates the registry structure and reports
-current blockers without failing before the deadline. Use the guarded commands
-for hosted changes:
+`npm run env:isolation:check` validates the registry and reports current
+blockers. Use the guarded commands for hosted changes:
 
 ```sh
-npm run infra:staging:plan -- -- -var-file=staging.tfvars
-npm run infra:staging:apply -- -- -var-file=staging.tfvars
-npm run infra:production:plan -- -- -var-file=production.tfvars
-npm run infra:production:apply -- -- -var-file=production.tfvars
+AWS_PROFILE=default npm run infra:staging:plan -- -- -var-file=staging.tfvars
+AWS_PROFILE=default npm run infra:staging:apply -- -- -var-file=staging.tfvars
+AWS_PROFILE=default npm run infra:production:plan -- -- -var-file=production.tfvars
+AWS_PROFILE=default npm run infra:production:apply -- -- -var-file=production.tfvars
 CONVEX_DEPLOYMENT=<registered-name> npm run convex:staging:deploy
 CONVEX_DEPLOYMENT=<registered-name> npm run convex:production:deploy
 ```
 
-The guards fail for missing, malformed, or unauthorized shared identities.
-Terraform permits only the approved staging and production AWS account pair
-before its deadline. It also checks the active AWS account through the AWS CLI,
-passes the registered account to Terraform, and has an in-configuration
-precondition so direct plan or apply fails when the AWS identity is incomplete
-or inconsistent. The Convex guard checks
-the selected `CONVEX_DEPLOYMENT` name. It cannot prove that the deploy key or
-remote deployment belongs to that name, so operators must still verify Convex
-credentials in the dashboard. Clerk has no deployment command here; its actual
-application settings must likewise be verified in the Clerk dashboard.
+The guards require both hosted AWS identities to match the configured shared
+account and continue rejecting shared Clerk or Convex identities. Terraform
+checks the active AWS account, receives the registered account as an input, and
+has an in-configuration precondition so a direct plan or apply fails when the
+account topology is inconsistent. The Convex guard checks the selected
+`CONVEX_DEPLOYMENT` name. Operators must still verify the actual remote Convex
+and Clerk settings in their dashboards.
 
 Direct Terraform and Convex CLI invocations can bypass repository wrapper
 scripts. CI and operator procedures must use the guarded commands. Local Vite,
 Convex development, and local runner commands remain unchanged.
 
-The registry's `productionLearnerTrafficBlocked` field records the required
-operator procedure. It is not an AWS traffic kill switch. During the approved
-AWS account-sharing exception, staging uses a distinct
-state key in the production state bucket and distinct environment-prefixed
-resources. Moving staging to its own account and backend remains mandatory by
-the exception deadline.
+`productionLearnerTrafficBlocked` is an operator release gate, not an AWS
+traffic kill switch. It must remain `true` while any hosted identity is
+missing.

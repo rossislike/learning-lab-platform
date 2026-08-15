@@ -4,18 +4,18 @@ Staging and production hosted-runner foundations were deployed in `us-east-2`
 on 2026-07-12. Staging was created and qualified before production was planned
 or applied.
 
-## Temporary account exception
+## Shared-account topology
 
-At the repository owner's direction, both environments currently use AWS
+Both environments use AWS
 account `442359104502` through the default AWS CLI profile. They retain separate
 Terraform state keys, VPC CIDRs, resource names, KMS keys, ECR repositories,
 S3 buckets, ECS clusters, task definitions, IAM roles, and log groups.
 
-This is the approved temporary exception recorded in
-[`config/hosted-environments.json`](../config/hosted-environments.json). It
-expires on 2026-08-12. Production learner traffic remains blocked while Clerk
-applications and Convex deployments are not isolated. This is a procedural
-release gate, not an AWS traffic kill switch.
+This permanent topology is recorded in
+[`config/hosted-environments.json`](../config/hosted-environments.json).
+Production learner traffic remains blocked while Clerk applications and Convex
+deployments are not isolated. This is a procedural release gate, not an AWS
+traffic kill switch.
 
 ## Immutable artifact promotion
 

@@ -28,19 +28,23 @@ variable "ecr_repository_arns" {
   }
 }
 
-variable "create_production_promotion_reader" {
-  description = "Create a read-only role for production promotion jobs to pull staging digests."
-  type        = bool
-  default     = false
-}
-
-variable "github_oidc_thumbprints" {
-  description = "TLS certificate thumbprints for token.actions.githubusercontent.com."
+variable "promotion_source_ecr_repository_arns" {
+  description = "Staging ECR repositories the production delivery role may read during exact-digest promotion."
   type        = list(string)
-  default     = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  default     = []
 
   validation {
-    condition     = length(var.github_oidc_thumbprints) > 0 && alltrue([for value in var.github_oidc_thumbprints : can(regex("^[0-9a-f]{40}$", value))])
-    error_message = "github_oidc_thumbprints must contain lowercase SHA1 thumbprints."
+    condition     = alltrue([for arn in var.promotion_source_ecr_repository_arns : can(regex(":ecr:[^:]+:[0-9]{12}:repository/", arn))])
+    error_message = "promotion_source_ecr_repository_arns must contain ECR repository ARNs."
+  }
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Account-level GitHub Actions OIDC provider ARN."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$", var.github_oidc_provider_arn))
+    error_message = "github_oidc_provider_arn must identify the GitHub Actions OIDC provider."
   }
 }

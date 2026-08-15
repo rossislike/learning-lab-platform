@@ -7,10 +7,20 @@ locals {
     Project       = "learning-lab-platform"
     Root          = "production"
   }
+  staging_ecr_repository_arns = [
+    for suffix in ["runner", "dispatcher", "session-gateway", "egress-proxy"] :
+    "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.expected_aws_account_id}:repository/learning-lab-platform-staging-${suffix}"
+  ]
 }
+
+data "aws_partition" "current" {}
 
 data "aws_sns_topic" "security_alerts" {
   name = "learning-lab-platform-security-alerts"
+}
+
+data "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 module "hosted_runner" {
@@ -49,8 +59,10 @@ module "hosted_runner" {
 module "github_image_delivery" {
   source = "../../modules/github-image-delivery"
 
-  environment       = "production"
-  github_repository = var.github_repository
+  environment                          = "production"
+  github_oidc_provider_arn             = data.aws_iam_openid_connect_provider.github_actions.arn
+  github_repository                    = var.github_repository
+  promotion_source_ecr_repository_arns = local.staging_ecr_repository_arns
   ecr_repository_arns = [
     module.hosted_runner.runner_ecr_repository_arn,
     module.hosted_runner.dispatcher_ecr_repository_arn,

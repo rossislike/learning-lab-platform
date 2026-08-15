@@ -163,12 +163,13 @@ cp infra/aws/environments/production/production.tfvars.example \
   infra/aws/environments/production/production.tfvars
 ```
 
-Replace the staging placeholders when its separate account is available.
-The production example is prefilled with the existing backend identifiers.
+The staging and production examples use the same account-level backend bucket
+with distinct state keys. The production example is prefilled with the
+existing backend identifiers.
 Initialize production with its backend configuration:
 
 ```sh
-terraform -chdir=infra/aws/environments/production init \
+AWS_PROFILE=default terraform -chdir=infra/aws/environments/production init \
   -reconfigure \
   -backend-config=production.s3.tfbackend
 ```
