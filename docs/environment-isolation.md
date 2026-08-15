@@ -15,14 +15,15 @@ authoritative for resources that actually exist.
 | AWS account | Local or operator-selected | `442359104502` | `442359104502` | Configured shared account |
 | Terraform state | Local | `learning-lab-platform/staging/terraform.tfstate` | `learning-lab-platform/production/terraform.tfstate` | Isolated |
 | AWS resources | Local | `staging` scoped | `production` scoped | Isolated |
-| Clerk application | Current development application | Not provisioned | Not provisioned | Blocked |
-| Convex deployment | Current local development deployment | Not provisioned | Not provisioned | Blocked |
+| Clerk application | Current development application | Registered as `app_3HxfK5v1psg7C6v2buk86Y5ctro` | Not provisioned | Production provisioning blocked |
+| Convex deployment | Current local selection `dev:trustworthy-robin-688` | Permanent non-default prod-type deployment `prod:upbeat-crab-254` | Default prod-type deployment `prod:aware-fish-663` | Provisioned and registered; auth configuration and code deployment pending |
 
 AWS account sharing is the permanent topology, not an exception. Production
-learner traffic remains procedurally blocked while any required hosted identity
-is missing. The existing Clerk application and Convex deployment are
-development-only and must not be promoted by changing labels or environment
-variables.
+learner traffic remains procedurally blocked because the production Clerk
+application is missing and hosted auth configuration and Convex code deployment
+are incomplete. The development Clerk application and
+`dev:trustworthy-robin-688` selection remain development-only and must not be
+promoted by changing labels or environment variables.
 
 ## Shared-account boundaries
 
@@ -44,20 +45,24 @@ The account-level Terraform root owns resources that AWS permits only once per
 account, including the GitHub Actions OIDC provider and shared security alert
 pipeline. Apply it before either environment root.
 
-## Remaining provisioning sequence
+## Remaining configuration and deployment sequence
 
-1. Create dedicated staging and production Clerk applications. Configure each
-   with only its environment's origins, redirect URLs, webhook destinations,
-   and Convex JWT template. Record the non-secret application IDs.
-2. Create dedicated staging and production Convex deployments. Configure each
-   to trust only its matching Clerk issuer and record the deployment names.
+1. Create the dedicated production Clerk application and record its non-secret
+   application ID. The staging Clerk application and both hosted Convex
+   deployments are already provisioned and registered; do not recreate them.
+2. Configure each hosted Clerk application with only its environment's origins,
+   redirect URLs, webhook destinations, and Convex JWT template. Configure
+   `prod:upbeat-crab-254` and `prod:aware-fish-663` to trust only their matching
+   staging and production Clerk issuers, respectively.
 3. Store each environment's secret values only in its deployment system and
    AWS Secrets Manager. Do not commit publishable keys, secret keys, deployment
    URLs, deploy keys, or webhook secrets to the registry.
 4. Run `npm run env:isolation:require-ready` before hosted Convex deployment,
-   image publication, or production learner traffic.
-5. Deploy and qualify staging first. Promote the same reviewed source and
-   immutable artifacts to production.
+   image publication, or production learner traffic. This guard remains blocked
+   until the production Clerk application ID is registered.
+5. Deploy the reviewed Convex schema and functions to staging and qualify the
+   matching Clerk issuer configuration. Then promote the same reviewed source
+   and immutable artifacts to production and qualify its issuer configuration.
 
 ## Automated checks
 
@@ -86,5 +91,7 @@ scripts. CI and operator procedures must use the guarded commands. Local Vite,
 Convex development, and local runner commands remain unchanged.
 
 `productionLearnerTrafficBlocked` is an operator release gate, not an AWS
-traffic kill switch. It must remain `true` while any hosted identity is
-missing.
+traffic kill switch. It must remain `true` while any hosted identity is missing
+and through the pending auth configuration, code deployment, and production
+release gates. Identity readiness is necessary but not sufficient to enable
+production learner traffic.
