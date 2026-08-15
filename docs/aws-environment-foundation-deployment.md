@@ -13,9 +13,11 @@ S3 buckets, ECS clusters, task definitions, IAM roles, and log groups.
 
 This permanent topology is recorded in
 [`config/hosted-environments.json`](../config/hosted-environments.json).
-Production learner traffic remains blocked while Clerk applications and Convex
-deployments are not isolated. This is a procedural release gate, not an AWS
-traffic kill switch.
+The production Clerk application and Convex deployment are distinct from their
+staging counterparts and registered. Production learner traffic remains blocked
+pending Clerk dashboard production-domain verification, hosted auth
+configuration, Convex code deployment, and the remaining production release
+gates. This is a procedural release gate, not an AWS traffic kill switch.
 
 ## Immutable artifact promotion
 

@@ -57,7 +57,12 @@
     },
     "production": {
       "awsAccountId": "442359104502",
-      "clerk": null,
+      "clerk": {
+        "applicationId": "app_3HxpakMJmYEYqRjofDF3wrByUqx",
+        "instanceId": "ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq",
+        "instanceType": "production",
+        "issuerDomain": "https://clerk.learning-lab-platform.rumothy.com"
+      },
       "convexDeployment": "prod:aware-fish-663"
     }
   }

@@ -80,6 +80,20 @@ test("accepts declared AWS and pinned development-staging Clerk sharing", () => 
   })
 })
 
+test("pins the real production Clerk identity and blocked traffic gate", () => {
+  const registered = JSON.parse(
+    readFileSync("config/hosted-environments.json", "utf8"),
+  )
+
+  assert.deepEqual(registered.environments.production.clerk, {
+    applicationId: "app_3HxpakMJmYEYqRjofDF3wrByUqx",
+    instanceId: "ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq",
+    instanceType: "production",
+    issuerDomain: "https://clerk.learning-lab-platform.rumothy.com",
+  })
+  assert.equal(registered.productionLearnerTrafficBlocked, true)
+})
+
 test("Terraform isolation guards require the registered schema version", () => {
   const registeredSchemaVersion = JSON.parse(
     readFileSync("config/hosted-environments.json", "utf8"),

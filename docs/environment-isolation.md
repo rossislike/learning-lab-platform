@@ -14,14 +14,10 @@ instance `ins_3GKhzB4WHOIij3p0UthvLWPmVCG` in Clerk application
 `app_3GKhzAioaTZbOK6QwVEL8qxIHS3`. Its issuer is
 `https://amazed-adder-35.clerk.accounts.dev`, derived from the verified
 development publishable key and matching Clerk's development issuer format.
-This exact identity is the only sharing exception.
-
-The same Clerk application has an activated production instance. That instance
-is intentionally not selected or registered for production in this repository.
-Production Clerk remains isolated and wholly unconfigured in the environment
-registry. The separately created staging-only application
-`app_3HxfK5v1psg7C6v2buk86Y5ctro` is also intentionally not selected. Preserve
-it as-is: this change does not authorize deleting it or modifying it remotely.
+This exact identity is the only sharing exception. Production uses the distinct
+application `app_3HxpakMJmYEYqRjofDF3wrByUqx`, production instance
+`ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq`, and issuer
+`https://clerk.learning-lab-platform.rumothy.com`.
 
 ## Current status
 
@@ -30,14 +26,14 @@ it as-is: this change does not authorize deleting it or modifying it remotely.
 | AWS account | Local or operator-selected | `442359104502` | `442359104502` | Configured shared account |
 | Terraform state | Local | `learning-lab-platform/staging/terraform.tfstate` | `learning-lab-platform/production/terraform.tfstate` | Isolated |
 | AWS resources | Local | `staging` scoped | `production` scoped | Isolated |
-| Clerk identity | `app_3GKhzAioaTZbOK6QwVEL8qxIHS3` / `ins_3GKhzB4WHOIij3p0UthvLWPmVCG` | Same verified development identity and issuer | Unconfigured; activated production instance not registered | Development and staging intentionally shared; production registration blocked |
+| Clerk identity | `app_3GKhzAioaTZbOK6QwVEL8qxIHS3` / `ins_3GKhzB4WHOIij3p0UthvLWPmVCG` | Same verified development identity and issuer | `app_3HxpakMJmYEYqRjofDF3wrByUqx` / `ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq` | Development and staging intentionally shared; production isolated |
 | Convex deployment | Current local selection `dev:trustworthy-robin-688` | Permanent non-default prod-type deployment `prod:upbeat-crab-254` | Default prod-type deployment `prod:aware-fish-663` | Provisioned and registered; auth configuration and code deployment pending |
 
 AWS account sharing is the permanent topology, not an exception. Production
-learner traffic remains procedurally blocked because a production Clerk identity
-has not been registered and hosted auth configuration and Convex code deployment
-are incomplete. Development and staging must use only the declared Clerk
-development instance and issuer, and `dev:trustworthy-robin-688` remains a
+learner traffic remains procedurally blocked because Clerk dashboard
+production-domain verification, hosted auth configuration, and Convex code
+deployment are incomplete. Development and staging must use only the declared
+Clerk development instance and issuer, and `dev:trustworthy-robin-688` remains a
 development-only Convex selection. None may be promoted to production by
 changing labels or environment variables.
 
@@ -69,13 +65,12 @@ pipeline. Apply it before either environment root.
 
 ## Remaining configuration and deployment sequence
 
-1. Create or designate a dedicated, isolated production Clerk application and
-   record its complete non-secret identity only after that production topology
-   is approved. Do not register the activated production instance from
-   `app_3GKhzAioaTZbOK6QwVEL8qxIHS3` as a shortcut. The shared
-   development-staging Clerk development instance and both hosted Convex
-   deployments are already provisioned and registered; do not recreate them.
-   Preserve `app_3HxfK5v1psg7C6v2buk86Y5ctro` without remote changes.
+1. In Clerk, rerun production-domain verification. All five exact CNAME records
+   are present, Route 53 reports `INSYNC`, and the exact answers have been
+   verified against an authoritative AWS nameserver, `1.1.1.1`, and `8.8.8.8`.
+   This completes authoritative and public DNS verification, but not Clerk
+   dashboard production-domain verification. Do not continue if Clerk still
+   reports any record as unverified.
 2. Configure the shared Clerk development instance with the required local and
    staging origins, redirect URLs, staging webhook destinations, and Convex JWT
    template. Configure the production Clerk application independently.
@@ -88,8 +83,9 @@ pipeline. Apply it before either environment root.
    only for the guarded command and do not place them in shell history, `.env`,
    `.env.local`, command arguments, logs, or repository files.
 4. Run `npm run env:isolation:require-ready` before hosted Convex deployment,
-   image publication, or production learner traffic. This guard remains blocked
-   until the complete production Clerk identity is registered.
+   image publication, or production learner traffic. Identity readiness does
+   not replace Clerk dashboard production-domain verification or the remote
+   Convex issuer preflight.
 5. Deploy the reviewed Convex schema and functions to staging and qualify the
    matching Clerk issuer configuration. Then promote the same reviewed source
    and immutable artifacts to production and qualify its issuer configuration.

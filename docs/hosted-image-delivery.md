@@ -6,10 +6,12 @@ production without rebuilding them. It does not update ECS task definitions.
 
 The roadmap item remains incomplete until external action references are pinned
 to authenticated full commit SHAs and the account-level OIDC provider plus
-environment-specific roles are applied. Missing Clerk and Convex identities
-block image releases and production learner traffic, but they do not block the
-AWS infrastructure apply. Do not bypass the release gate or mark the item
-complete early.
+environment-specific roles are applied. The Clerk identities and Convex
+deployments are registered, so identity readiness no longer blocks image
+releases. Production learner traffic remains blocked pending Clerk dashboard
+production-domain verification, hosted auth configuration, Convex code
+deployment, and the remaining production release gates. Do not bypass the
+release gate or mark the item complete early.
 
 ## Pull request checks
 
