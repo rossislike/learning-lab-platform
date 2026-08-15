@@ -27,13 +27,15 @@ application `app_3HxpakMJmYEYqRjofDF3wrByUqx`, production instance
 | Terraform state | Local | `learning-lab-platform/staging/terraform.tfstate` | `learning-lab-platform/production/terraform.tfstate` | Isolated |
 | AWS resources | Local | `staging` scoped | `production` scoped | Isolated |
 | Clerk identity | `app_3GKhzAioaTZbOK6QwVEL8qxIHS3` / `ins_3GKhzB4WHOIij3p0UthvLWPmVCG` | Same verified development identity and issuer | `app_3HxpakMJmYEYqRjofDF3wrByUqx` / `ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq` | Development and staging intentionally shared; production isolated |
-| Convex deployment | Current local selection `dev:trustworthy-robin-688` | Permanent non-default prod-type deployment `prod:upbeat-crab-254` | Default prod-type deployment `prod:aware-fish-663` | Provisioned and registered; auth configuration and code deployment pending |
+| Convex deployment | Current local selection `dev:trustworthy-robin-688` | Permanent non-default prod-type deployment `prod:upbeat-crab-254` | Default prod-type deployment `prod:aware-fish-663` | Provisioned and registered; matching Clerk issuers configured; code deployment pending |
 
-AWS account sharing is the permanent topology, not an exception. Production
-learner traffic remains procedurally blocked because Clerk dashboard
-production-domain verification, hosted auth configuration, and Convex code
-deployment are incomplete. Development and staging must use only the declared
-Clerk development instance and issuer, and `dev:trustworthy-robin-688` remains a
+AWS account sharing is the permanent topology, not an exception. Clerk
+production-domain verification, both `convex` JWT templates, and both matching
+Convex issuer values were remotely verified on 2026-08-15. Production learner
+traffic remains procedurally blocked because hosted origins, redirects, keys,
+webhooks, Convex code deployment, and the remaining release gates are
+incomplete. Development and staging must use only the declared Clerk
+development instance and issuer, and `dev:trustworthy-robin-688` remains a
 development-only Convex selection. None may be promoted to production by
 changing labels or environment variables.
 
@@ -41,6 +43,38 @@ The shared Clerk development instance has a more relaxed security posture and
 a 100-user limit. Staging must remain internal and low-volume while it uses this
 instance. Revisit this exception and create a dedicated Clerk staging
 application before staging becomes an external or production-like workload.
+
+## Verified hosted authentication contract
+
+Authenticated remote reads on 2026-08-15 verified that both the shared
+development-staging Clerk instance and the isolated production Clerk instance
+have a JWT template named `convex` with this exact claim body:
+
+```json
+{
+  "aud": "convex",
+  "name": "{{user.first_name}}",
+  "email": "{{user.primary_email_address}}",
+  "picture": "{{user.image_url}}"
+}
+```
+
+Both templates use `RS256`, a 60-second token lifetime, a 5-second allowed
+clock skew, and Clerk-managed signing keys with custom signing keys disabled.
+The Clerk production-domain check also showed all five required DNS records as
+verified.
+
+Authenticated remote Convex reads on the same date verified these exact
+deployment environment values:
+
+| Environment | Convex deployment | Environment value |
+| --- | --- | --- |
+| Staging | `prod:upbeat-crab-254` | `CLERK_JWT_ISSUER_DOMAIN=https://amazed-adder-35.clerk.accounts.dev` |
+| Production | `prod:aware-fish-663` | `CLERK_JWT_ISSUER_DOMAIN=https://clerk.learning-lab-platform.rumothy.com` |
+
+These remote settings establish the token contract and issuer mapping. They do
+not prove that the pending frontend settings, deployed Convex code, or complete
+sign-in flow work end to end.
 
 ## Shared-account boundaries
 
@@ -65,30 +99,25 @@ pipeline. Apply it before either environment root.
 
 ## Remaining configuration and deployment sequence
 
-1. In Clerk, rerun production-domain verification. All five exact CNAME records
-   are present, Route 53 reports `INSYNC`, and the exact answers have been
-   verified against an authoritative AWS nameserver, `1.1.1.1`, and `8.8.8.8`.
-   This completes authoritative and public DNS verification, but not Clerk
-   dashboard production-domain verification. Do not continue if Clerk still
-   reports any record as unverified.
-2. Configure the shared Clerk development instance with the required local and
-   staging origins, redirect URLs, staging webhook destinations, and Convex JWT
-   template. Configure the production Clerk application independently.
-   Configure `prod:upbeat-crab-254` and `prod:aware-fish-663` to trust only their
-   matching staging and production Clerk issuers, respectively.
-3. Store each environment's secret values only in its deployment system and
+1. Configure the shared Clerk development instance with the required local and
+   staging origins, redirect URLs, and staging webhook destinations. Configure
+   the production Clerk application independently with its production origins,
+   redirects, keys, account-management URLs, and webhook destinations. The
+   production domain, both exact `convex` JWT templates, and both matching
+   Convex issuer values were remotely verified on 2026-08-15 as recorded above.
+2. Store each environment's secret values only in its deployment system and
    AWS Secrets Manager. Do not commit publishable keys, secret keys, deployment
    URLs, deploy keys, or webhook secrets to the registry. Store distinct
    deployment-scoped Convex deploy keys for staging and production. Inject them
    only for the guarded command and do not place them in shell history, `.env`,
    `.env.local`, command arguments, logs, or repository files.
-4. Run `npm run env:isolation:require-ready` before hosted Convex deployment,
+3. Run `npm run env:isolation:require-ready` before hosted Convex deployment,
    image publication, or production learner traffic. Identity readiness does
-   not replace Clerk dashboard production-domain verification or the remote
-   Convex issuer preflight.
-5. Deploy the reviewed Convex schema and functions to staging and qualify the
-   matching Clerk issuer configuration. Then promote the same reviewed source
-   and immutable artifacts to production and qualify its issuer configuration.
+   not replace remote Clerk, Convex issuer, or application-origin verification.
+4. Deploy the reviewed Convex schema and functions to staging and qualify Clerk
+   sign-in plus Convex token validation end to end. Then promote the same
+   reviewed source and immutable artifacts to production and repeat that
+   qualification before any production learner traffic is enabled.
 
 ## Automated checks
 

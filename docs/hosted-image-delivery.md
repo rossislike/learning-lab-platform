@@ -8,10 +8,11 @@ The roadmap item remains incomplete until external action references are pinned
 to authenticated full commit SHAs and the account-level OIDC provider plus
 environment-specific roles are applied. The Clerk identities and Convex
 deployments are registered, so identity readiness no longer blocks image
-releases. Production learner traffic remains blocked pending Clerk dashboard
-production-domain verification, hosted auth configuration, Convex code
-deployment, and the remaining production release gates. Do not bypass the
-release gate or mark the item complete early.
+releases. Clerk production-domain verification, both Convex JWT templates, and
+both matching Convex issuer values were remotely verified on 2026-08-15.
+Production learner traffic remains blocked pending the remaining hosted auth
+configuration, Convex code deployment, and production release gates. Do not
+bypass the release gate or mark the item complete early.
 
 ## Pull request checks
 

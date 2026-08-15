@@ -19,6 +19,11 @@ Clerk is the identity provider for hosted user accounts. Convex validates Clerk 
    }
    ```
 
+   Use `RS256`, a 60-second token lifetime, a 5-second allowed clock skew, and
+   Clerk-managed signing keys with custom signing keys disabled. The hosted
+   shared development-staging and isolated production templates were remotely
+   verified with this exact configuration on 2026-08-15.
+
 3. Copy the Clerk publishable key into `.env.local`:
 
    ```text

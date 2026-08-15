@@ -15,9 +15,10 @@ This permanent topology is recorded in
 [`config/hosted-environments.json`](../config/hosted-environments.json).
 The production Clerk application and Convex deployment are distinct from their
 staging counterparts and registered. Production learner traffic remains blocked
-pending Clerk dashboard production-domain verification, hosted auth
-configuration, Convex code deployment, and the remaining production release
-gates. This is a procedural release gate, not an AWS traffic kill switch.
+pending the remaining hosted auth configuration, Convex code deployment, and
+production release gates. Clerk production-domain verification, both Convex JWT
+templates, and both matching Convex issuer values were remotely verified on
+2026-08-15. This is a procedural release gate, not an AWS traffic kill switch.
 
 ## Immutable artifact promotion
 
