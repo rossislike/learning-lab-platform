@@ -29,7 +29,7 @@
     },
     "staging": {
       "awsAccountId": "442359104502",
-      "clerkApplicationId": null,
+      "clerkApplicationId": "app_3HxfK5v1psg7C6v2buk86Y5ctro",
       "convexDeployment": null
     },
     "production": {
