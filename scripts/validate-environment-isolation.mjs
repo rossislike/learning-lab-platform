@@ -4,8 +4,16 @@ import { fileURLToPath } from "node:url"
 const defaultRegistryUrl = new URL("../config/hosted-environments.json", import.meta.url)
 const requiredEnvironments = ["development", "staging", "production"]
 const hostedEnvironments = ["staging", "production"]
-const identityFields = ["awsAccountId", "clerkApplicationId", "convexDeployment"]
+const identityFields = ["awsAccountId", "convexDeployment"]
+const clerkIdentityFields = ["applicationId", "instanceId", "instanceType", "issuerDomain"]
 const sharedAwsAccountId = "442359104502"
+const sharedClerkEnvironments = new Set(["development", "staging"])
+const sharedClerkIdentity = Object.freeze({
+  applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+  instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+  instanceType: "development",
+  issuerDomain: "https://amazed-adder-35.clerk.accounts.dev",
+})
 const requiredIsolationBoundaries = new Set([
   "terraformState",
   "resourceNames",
@@ -29,8 +37,17 @@ function validIdentity(field, value) {
   if (value === null) return true
   if (!isNonemptyString(value)) return false
   if (field === "awsAccountId") return /^[0-9]{12}$/.test(value)
-  if (field === "clerkApplicationId") return /^app_[A-Za-z0-9]+$/.test(value)
   return /^(dev|prod):[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(value)
+}
+
+function validIssuerDomain(value) {
+  if (!isNonemptyString(value)) return false
+  try {
+    const issuer = new URL(value)
+    return issuer.protocol === "https:" && issuer.origin === value
+  } catch {
+    return false
+  }
 }
 
 function sameMembers(values, expected) {
@@ -38,12 +55,47 @@ function sameMembers(values, expected) {
     new Set(values).size === values.length && values.every((value) => expected.has(value))
 }
 
+function isPinnedSharedClerkTopology(topology) {
+  return isRecord(topology) && topology.mode === "sharedDevelopmentStaging" &&
+    sameMembers(topology.environments, sharedClerkEnvironments) &&
+    clerkIdentityFields.every((field) => topology[field] === sharedClerkIdentity[field])
+}
+
+function validateClerkIdentity(identity, environment, errors) {
+  if (!isRecord(identity)) {
+    errors.push(`${environment}.clerk must be an object or null`)
+    return
+  }
+
+  for (const field of clerkIdentityFields) {
+    if (!(field in identity)) errors.push(`${environment}.clerk.${field} is required`)
+  }
+  if (!isNonemptyString(identity.applicationId) || !/^app_[A-Za-z0-9]+$/.test(identity.applicationId)) {
+    errors.push(`${environment}.clerk.applicationId must be a valid Clerk application ID`)
+  }
+  if (!isNonemptyString(identity.instanceId) || !/^ins_[A-Za-z0-9]+$/.test(identity.instanceId)) {
+    errors.push(`${environment}.clerk.instanceId must be a valid Clerk instance ID`)
+  }
+  const expectedInstanceType = environment === "production" ? "production" : "development"
+  if (identity.instanceType !== expectedInstanceType) {
+    errors.push(`${environment}.clerk.instanceType must be ${expectedInstanceType}`)
+  }
+  if (!validIssuerDomain(identity.issuerDomain)) {
+    errors.push(`${environment}.clerk.issuerDomain must be an HTTPS origin without a path`)
+  } else if (
+    identity.instanceType === "development" &&
+    !new URL(identity.issuerDomain).hostname.endsWith(".clerk.accounts.dev")
+  ) {
+    errors.push(`${environment}.clerk.issuerDomain must use Clerk's development issuer format`)
+  }
+}
+
 export function validateIsolationRegistry(registry) {
   const errors = []
   const blockers = []
 
   if (!isRecord(registry)) return { blockers, errors: ["registry must be an object"], ready: false }
-  if (registry.schemaVersion !== 2) errors.push("schemaVersion must be 2")
+  if (registry.schemaVersion !== 3) errors.push("schemaVersion must be 3")
   if (!isRecord(registry.environments)) errors.push("environments must be an object")
 
   for (const environment of requiredEnvironments) {
@@ -57,6 +109,13 @@ export function validateIsolationRegistry(registry) {
       else if (!validIdentity(field, config[field])) {
         errors.push(`${environment}.${field} has an invalid type or format`)
       }
+    }
+    if (!("clerk" in config)) {
+      errors.push(`${environment}.clerk is required`)
+    } else if (config.clerk === null) {
+      blockers.push(`${environment}.clerk is not configured`)
+    } else {
+      validateClerkIdentity(config.clerk, environment, errors)
     }
   }
 
@@ -78,6 +137,39 @@ export function validateIsolationRegistry(registry) {
     }
   }
 
+  const clerkTopology = registry.clerkApplicationTopology
+  if (!isRecord(clerkTopology)) {
+    errors.push("clerkApplicationTopology must be an object")
+  } else {
+    if (clerkTopology.mode !== "sharedDevelopmentStaging") {
+      errors.push("clerkApplicationTopology.mode must be sharedDevelopmentStaging")
+    }
+    if (!sameMembers(clerkTopology.environments, sharedClerkEnvironments)) {
+      errors.push("clerkApplicationTopology.environments must contain exactly development and staging")
+    }
+    for (const field of clerkIdentityFields) {
+      if (clerkTopology[field] !== sharedClerkIdentity[field]) {
+        errors.push(`clerkApplicationTopology.${field} must be ${sharedClerkIdentity[field]}`)
+      }
+    }
+    if (!isNonemptyString(clerkTopology.owner)) {
+      errors.push("clerkApplicationTopology.owner must be a nonempty string")
+    }
+    if (!isNonemptyString(clerkTopology.reason)) {
+      errors.push("clerkApplicationTopology.reason must be a nonempty string")
+    }
+    for (const environment of sharedClerkEnvironments) {
+      const clerk = registry.environments?.[environment]?.clerk
+      if (isRecord(clerk)) {
+        for (const field of clerkIdentityFields) {
+          if (clerk[field] !== clerkTopology[field]) {
+            errors.push(`${environment}.clerk.${field} must match clerkApplicationTopology.${field}`)
+          }
+        }
+      }
+    }
+  }
+
   for (const field of identityFields) {
     const configured = new Map()
     for (const environment of requiredEnvironments) {
@@ -91,6 +183,24 @@ export function validateIsolationRegistry(registry) {
             environments.join(",") === "production,staging"
           if (!allowedSharedAwsAccount) {
             errors.push(`${environment}.${field} duplicates ${configured.get(value)}.${field}`)
+          }
+        } else configured.set(value, environment)
+      }
+    }
+  }
+
+  for (const field of clerkIdentityFields) {
+    const configured = new Map()
+    for (const environment of requiredEnvironments) {
+      const value = registry.environments?.[environment]?.clerk?.[field]
+      if (typeof value === "string" && value.length > 0) {
+        if (configured.has(value)) {
+          const environments = [configured.get(value), environment].sort()
+          const allowedSharedClerkIdentity = isPinnedSharedClerkTopology(clerkTopology) &&
+            value === sharedClerkIdentity[field] &&
+            environments.join(",") === "development,staging"
+          if (!allowedSharedClerkIdentity) {
+            errors.push(`${environment}.clerk.${field} duplicates ${configured.get(value)}.clerk.${field}`)
           }
         } else configured.set(value, environment)
       }

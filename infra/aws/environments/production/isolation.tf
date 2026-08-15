@@ -14,7 +14,7 @@ locals {
     "secrets",
   ])
   isolation_registry_ready = (
-    local.isolation_registry.schemaVersion == 2 &&
+    local.isolation_registry.schemaVersion == 3 &&
     toset(local.account_topology.environments) == toset(["staging", "production"]) &&
     toset(local.account_topology.isolationBoundaries) == local.isolation_boundaries &&
     local.account_topology.mode == "shared" &&

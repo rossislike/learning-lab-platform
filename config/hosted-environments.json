@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "awsAccountTopology": {
     "mode": "shared",
     "sharedAccountId": "442359104502",
@@ -20,21 +20,44 @@
     "owner": "platform owner",
     "reason": "Staging and production intentionally share one AWS account while retaining environment-scoped infrastructure and credentials."
   },
+  "clerkApplicationTopology": {
+    "mode": "sharedDevelopmentStaging",
+    "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+    "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+    "instanceType": "development",
+    "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev",
+    "environments": [
+      "development",
+      "staging"
+    ],
+    "owner": "platform owner",
+    "reason": "Development and staging intentionally share one Clerk development instance; production remains isolated."
+  },
   "productionLearnerTrafficBlocked": true,
   "environments": {
     "development": {
       "awsAccountId": null,
-      "clerkApplicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+      "clerk": {
+        "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+        "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+        "instanceType": "development",
+        "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
+      },
       "convexDeployment": null
     },
     "staging": {
       "awsAccountId": "442359104502",
-      "clerkApplicationId": "app_3HxfK5v1psg7C6v2buk86Y5ctro",
+      "clerk": {
+        "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+        "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+        "instanceType": "development",
+        "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
+      },
       "convexDeployment": "prod:upbeat-crab-254"
     },
     "production": {
       "awsAccountId": "442359104502",
-      "clerkApplicationId": null,
+      "clerk": null,
       "convexDeployment": "prod:aware-fish-663"
     }
   }

@@ -1,11 +1,26 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import { validateIsolationRegistry } from "./validate-environment-isolation.mjs"
 import { runHostedCommand } from "./run-hosted-command.mjs"
 
 const sharedAccountId = "442359104502"
+const sharedClerkIdentity = {
+  applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+  instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+  instanceType: "development",
+  issuerDomain: "https://amazed-adder-35.clerk.accounts.dev",
+}
+const productionClerkIdentity = {
+  applicationId: "app_production",
+  instanceId: "ins_production",
+  instanceType: "production",
+  issuerDomain: "https://clerk.production.example.com",
+}
+const stagingDeployKey = "prod:staging-deployment|staging-secret"
+const productionDeployKey = "prod:production-deployment|production-secret-marker"
 const isolationBoundaries = [
   "terraformState",
   "resourceNames",
@@ -19,7 +34,7 @@ const isolationBoundaries = [
 
 function registry(overrides = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     awsAccountTopology: {
       mode: "shared",
       sharedAccountId,
@@ -28,21 +43,28 @@ function registry(overrides = {}) {
       owner: "platform owner",
       reason: "Hosted environments share one account with environment-scoped resources.",
     },
+    clerkApplicationTopology: {
+      mode: "sharedDevelopmentStaging",
+      ...sharedClerkIdentity,
+      environments: ["development", "staging"],
+      owner: "platform owner",
+      reason: "Development and staging share the verified development identity.",
+    },
     productionLearnerTrafficBlocked: false,
     environments: {
       development: {
         awsAccountId: null,
-        clerkApplicationId: "app_development",
+        clerk: { ...sharedClerkIdentity },
         convexDeployment: "dev:development-deployment",
       },
       staging: {
         awsAccountId: sharedAccountId,
-        clerkApplicationId: "app_staging",
+        clerk: { ...sharedClerkIdentity },
         convexDeployment: "prod:staging-deployment",
       },
       production: {
         awsAccountId: sharedAccountId,
-        clerkApplicationId: "app_production",
+        clerk: { ...productionClerkIdentity },
         convexDeployment: "prod:production-deployment",
       },
       ...overrides,
@@ -50,12 +72,30 @@ function registry(overrides = {}) {
   }
 }
 
-test("accepts shared AWS account with distinct hosted application identities", () => {
+test("accepts declared AWS and pinned development-staging Clerk sharing", () => {
   assert.deepEqual(validateIsolationRegistry(registry()), {
     blockers: [],
     errors: [],
     ready: true,
   })
+})
+
+test("Terraform isolation guards require the registered schema version", () => {
+  const registeredSchemaVersion = JSON.parse(
+    readFileSync("config/hosted-environments.json", "utf8"),
+  ).schemaVersion
+
+  for (const environment of ["staging", "production"]) {
+    const isolation = readFileSync(
+      `infra/aws/environments/${environment}/isolation.tf`,
+      "utf8",
+    )
+    assert.match(
+      isolation,
+      new RegExp(`local\\.isolation_registry\\.schemaVersion == ${registeredSchemaVersion}\\b`),
+      `${environment} Terraform guard must require registry schemaVersion ${registeredSchemaVersion}`,
+    )
+  }
 })
 
 test("rejects any topology other than the permanent shared account", () => {
@@ -69,15 +109,37 @@ test("rejects any topology other than the permanent shared account", () => {
   assert.match(errors, /sharedAccountId must be 442359104502/)
 })
 
-test("blocks readiness while an environment identity is missing", () => {
+test("reports one blocker for wholly missing production Clerk configuration", () => {
   const value = registry()
-  value.environments.staging.clerkApplicationId = null
+  value.environments.production.clerk = null
+  value.productionLearnerTrafficBlocked = true
+
+  assert.deepEqual(validateIsolationRegistry(value), {
+    blockers: ["production.clerk is not configured"],
+    errors: [],
+    ready: false,
+  })
+})
+
+test("does not report ready when development Clerk configuration is missing", () => {
+  const value = registry()
+  value.environments.development.clerk = null
   value.productionLearnerTrafficBlocked = true
 
   const result = validateIsolationRegistry(value)
   assert.equal(result.ready, false)
-  assert.deepEqual(result.errors, [])
-  assert.deepEqual(result.blockers, ["staging.clerkApplicationId is not configured"])
+  assert.deepEqual(result.blockers, ["development.clerk is not configured"])
+})
+
+test("requires every production Clerk field once configuration starts", () => {
+  const value = registry()
+  value.environments.production.clerk = { applicationId: "app_production" }
+
+  const result = validateIsolationRegistry(value)
+  assert.deepEqual(result.blockers, [])
+  assert.match(result.errors.join("\n"), /production.clerk.instanceId is required/)
+  assert.match(result.errors.join("\n"), /production.clerk.instanceType is required/)
+  assert.match(result.errors.join("\n"), /production.clerk.issuerDomain is required/)
 })
 
 test("requires production traffic to stay blocked while identities are missing", () => {
@@ -90,14 +152,64 @@ test("requires production traffic to stay blocked while identities are missing",
   )
 })
 
-test("rejects shared Clerk and Convex identities", () => {
+test("rejects registration of the shared application's production instance", () => {
   const value = registry()
-  value.environments.staging.clerkApplicationId = "app_production"
-  value.environments.production.convexDeployment = "prod:staging-deployment"
+  value.environments.production.clerk = {
+    ...productionClerkIdentity,
+    applicationId: sharedClerkIdentity.applicationId,
+  }
+
+  assert.match(
+    validateIsolationRegistry(value).errors.join("\n"),
+    /production.clerk.applicationId duplicates development.clerk.applicationId/,
+  )
+})
+
+test("rejects production instance and issuer selection for staging", () => {
+  const value = registry()
+  value.environments.staging.clerk = { ...productionClerkIdentity }
 
   const errors = validateIsolationRegistry(value).errors.join("\n")
-  assert.match(errors, /production.clerkApplicationId duplicates staging.clerkApplicationId/)
-  assert.match(errors, /production.convexDeployment duplicates staging.convexDeployment/)
+  assert.match(errors, /staging.clerk.instanceType must be development/)
+  assert.match(errors, /staging.clerk.applicationId must match clerkApplicationTopology.applicationId/)
+  assert.match(errors, /staging.clerk.instanceId must match clerkApplicationTopology.instanceId/)
+  assert.match(errors, /staging.clerk.issuerDomain must match clerkApplicationTopology.issuerDomain/)
+})
+
+test("pins the Clerk sharing exception to the verified identity", () => {
+  const value = registry()
+  value.clerkApplicationTopology.applicationId = "app_substitute"
+  value.clerkApplicationTopology.instanceId = "ins_substitute"
+  value.clerkApplicationTopology.issuerDomain = "https://substitute.clerk.accounts.dev"
+
+  const errors = validateIsolationRegistry(value).errors.join("\n")
+  assert.match(errors, /applicationId must be app_3GKhzAioaTZbOK6QwVEL8qxIHS3/)
+  assert.match(errors, /instanceId must be ins_3GKhzB4WHOIij3p0UthvLWPmVCG/)
+  assert.match(errors, /issuerDomain must be https:\/\/amazed-adder-35\.clerk\.accounts\.dev/)
+})
+
+test("requires the declared Clerk share to match development and staging only", () => {
+  const value = registry()
+  value.clerkApplicationTopology.environments = ["staging", "production"]
+
+  assert.match(
+    validateIsolationRegistry(value).errors.join("\n"),
+    /environments must contain exactly development and staging/,
+  )
+})
+
+test("requires Clerk sharing governance metadata", () => {
+  const value = registry()
+  value.clerkApplicationTopology.mode = "shared"
+  value.clerkApplicationTopology.instanceType = "production"
+  value.clerkApplicationTopology.owner = ""
+  value.clerkApplicationTopology.reason = null
+
+  const errors = validateIsolationRegistry(value).errors.join("\n")
+  assert.match(errors, /mode must be sharedDevelopmentStaging/)
+  assert.match(errors, /instanceType must be development/)
+  assert.match(errors, /owner must be a nonempty string/)
+  assert.match(errors, /reason must be a nonempty string/)
 })
 
 test("rejects shared mode when environment account IDs do not match", () => {
@@ -206,4 +318,162 @@ test("hosted Terraform command rejects a different active account", async () => 
   })
   assert.equal(status, 1)
   assert.equal(executed, false)
+})
+
+test("hosted Convex command verifies issuer and preserves safe deploy flags", async () => {
+  let issuerInvocation
+  let deployInvocation
+  const status = await runHostedCommand(
+    ["convex", "deploy", "staging", "--", "--dry-run", "--message=verified"],
+    {
+      environment: { CONVEX_DEPLOY_KEY: stagingDeployKey },
+      loadRegistry: async () => registry(),
+      executeCapture: (command, args, options) => {
+        issuerInvocation = { command, args, options }
+        return { status: 0, stdout: `${sharedClerkIdentity.issuerDomain}\n` }
+      },
+      execute: (command, args, options) => {
+        deployInvocation = { command, args, options }
+        return 0
+      },
+    },
+  )
+
+  assert.equal(status, 0)
+  assert.deepEqual(issuerInvocation.args, [
+    "convex",
+    "env",
+    "get",
+    "CLERK_JWT_ISSUER_DOMAIN",
+  ])
+  assert.deepEqual(deployInvocation.args, ["convex", "deploy", "--dry-run", "--message=verified"])
+  for (const environment of [issuerInvocation.options.env, deployInvocation.options.env]) {
+    assert.equal(environment.CONVEX_DEPLOY_KEY, stagingDeployKey)
+    assert.equal(environment.CONVEX_DEPLOYMENT, "")
+    assert.equal(environment.CONVEX_DEPLOYMENT_TOKEN, "")
+    assert.equal(environment.CONVEX_SELF_HOSTED_URL, "")
+    assert.equal(environment.CONVEX_SELF_HOSTED_ADMIN_KEY, "")
+  }
+})
+
+test("hosted Convex command rejects target-changing forwarded flags", async () => {
+  for (const forwarded of [
+    ["--env-file", "other.env"],
+    ["--env-file=other.env"],
+    ["--preview-create=branch"],
+    ["--preview-name=branch"],
+    ["--preview-run=setup"],
+    ["--url=https://other.example.com"],
+    ["--admin-key=secret"],
+    ["--deployment=other"],
+  ]) {
+    let loaded = false
+    const status = await runHostedCommand(["convex", "deploy", "staging", "--", ...forwarded], {
+      loadRegistry: async () => { loaded = true; return registry() },
+    })
+    assert.equal(status, 2, forwarded.join(" "))
+    assert.equal(loaded, false, forwarded.join(" "))
+  }
+})
+
+test("hosted Convex command cannot fall back to default production without a deploy key", async () => {
+  let executed = false
+  const messages = []
+  const status = await runHostedCommand(["convex", "deploy", "staging"], {
+    environment: {},
+    loadRegistry: async () => registry(),
+    reportError: (message) => messages.push(message),
+    executeCapture: () => { executed = true; return { status: 0, stdout: "" } },
+    execute: () => { executed = true; return 0 },
+  })
+  assert.equal(status, 1)
+  assert.equal(executed, false)
+  assert.match(messages.join("\n"), /CONVEX_DEPLOY_KEY must be scoped/)
+})
+
+test("hosted Convex command rejects malformed and incorrectly scoped deploy keys", async () => {
+  for (const deployKey of [
+    "prod:staging-deployment",
+    "prod:staging-deployment|",
+    "prod:staging-deployment|secret|extra",
+    "prod:other-deployment|secret",
+    "preview:team:project|secret",
+  ]) {
+    let executed = false
+    const messages = []
+    const status = await runHostedCommand(["convex", "deploy", "staging"], {
+      environment: { CONVEX_DEPLOY_KEY: deployKey },
+      loadRegistry: async () => registry(),
+      reportError: (message) => messages.push(message),
+      executeCapture: () => { executed = true; return { status: 0, stdout: "" } },
+      execute: () => { executed = true; return 0 },
+    })
+    assert.equal(status, 1)
+    assert.equal(executed, false)
+    assert.equal(messages.join("\n").includes(deployKey), false)
+  }
+})
+
+test("hosted Convex command rejects a production key for staging without emitting it", async () => {
+  let executed = false
+  const messages = []
+  const status = await runHostedCommand(["convex", "deploy", "staging"], {
+    environment: { CONVEX_DEPLOY_KEY: productionDeployKey },
+    loadRegistry: async () => registry(),
+    reportError: (message) => messages.push(message),
+    executeCapture: () => { executed = true; return { status: 0, stdout: "" } },
+    execute: () => { executed = true; return 0 },
+  })
+  const output = messages.join("\n")
+  assert.equal(status, 1)
+  assert.equal(executed, false)
+  assert.equal(output.includes(productionDeployKey), false)
+  assert.equal(output.includes("production-secret-marker"), false)
+})
+
+test("hosted Convex command rejects conflicting target inputs", async () => {
+  for (const [key, value] of [
+    ["CONVEX_DEPLOYMENT", "prod:staging-deployment"],
+    ["CONVEX_DEPLOYMENT_TOKEN", "prod:staging-deployment|secret"],
+    ["CONVEX_SELF_HOSTED_URL", "https://other.example.com"],
+    ["CONVEX_SELF_HOSTED_ADMIN_KEY", "secret"],
+  ]) {
+    let executed = false
+    const status = await runHostedCommand(["convex", "deploy", "staging"], {
+      environment: { CONVEX_DEPLOY_KEY: stagingDeployKey, [key]: value },
+      loadRegistry: async () => registry(),
+      executeCapture: () => { executed = true; return { status: 0, stdout: "" } },
+      execute: () => { executed = true; return 0 },
+    })
+    assert.equal(status, 1, key)
+    assert.equal(executed, false, key)
+  }
+})
+
+test("hosted Convex command blocks when deployed issuer does not match", async () => {
+  let deployed = false
+  const status = await runHostedCommand(["convex", "deploy", "staging"], {
+    environment: { CONVEX_DEPLOY_KEY: stagingDeployKey },
+    loadRegistry: async () => registry(),
+    executeCapture: () => ({ status: 0, stdout: "https://other.clerk.accounts.dev\n" }),
+    execute: () => { deployed = true; return 0 },
+  })
+  assert.equal(status, 1)
+  assert.equal(deployed, false)
+})
+
+test("hosted Convex command blocks when issuer cannot be read", async () => {
+  let deployed = false
+  const messages = []
+  const status = await runHostedCommand(["convex", "deploy", "staging"], {
+    environment: { CONVEX_DEPLOY_KEY: stagingDeployKey },
+    loadRegistry: async () => registry(),
+    reportError: (message) => messages.push(message),
+    executeCapture: () => ({ status: 1, stdout: "", stderr: stagingDeployKey }),
+    execute: () => { deployed = true; return 0 },
+  })
+  assert.equal(status, 1)
+  assert.equal(deployed, false)
+  assert.equal(messages.join("\n").includes(stagingDeployKey), false)
+  assert.equal(messages.join("\n").includes("staging-secret"), false)
 })

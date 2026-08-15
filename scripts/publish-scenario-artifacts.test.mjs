@@ -6,7 +6,7 @@ import { runScenarioPublisher } from "./publish-scenario-artifacts.mjs"
 
 const account = "442359104502"
 const registry = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   awsAccountTopology: {
     mode: "shared",
     sharedAccountId: account,
@@ -15,21 +15,46 @@ const registry = {
     owner: "test",
     reason: "Test environments share one AWS account.",
   },
+  clerkApplicationTopology: {
+    mode: "sharedDevelopmentStaging",
+    applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+    instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+    instanceType: "development",
+    issuerDomain: "https://amazed-adder-35.clerk.accounts.dev",
+    environments: ["development", "staging"],
+    owner: "platform owner",
+    reason: "Development and staging share a non-production identity.",
+  },
   productionLearnerTrafficBlocked: false,
   environments: {
     development: {
       awsAccountId: null,
-      clerkApplicationId: "app_development",
+      clerk: {
+        applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+        instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+        instanceType: "development",
+        issuerDomain: "https://amazed-adder-35.clerk.accounts.dev",
+      },
       convexDeployment: null,
     },
     staging: {
       awsAccountId: account,
-      clerkApplicationId: "app_staging",
+      clerk: {
+        applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
+        instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
+        instanceType: "development",
+        issuerDomain: "https://amazed-adder-35.clerk.accounts.dev",
+      },
       convexDeployment: "prod:staging-labs",
     },
     production: {
       awsAccountId: account,
-      clerkApplicationId: "app_production",
+      clerk: {
+        applicationId: "app_production",
+        instanceId: "ins_production",
+        instanceType: "production",
+        issuerDomain: "https://clerk.production.example.com",
+      },
       convexDeployment: "prod:production-labs",
     },
   },
