@@ -112,6 +112,12 @@ The local runner remains the default local development path throughout this migr
 
 Promotion follows one direction: reusable Terraform modules and application artifacts, staging deployment and qualification, then production deployment. Production enablement is blocked unless every security, quota, cost, recovery, and regression gate below passes.
 
+Current deployment status as of 2026-08-16: the staging and production AWS
+environment roots were intentionally destroyed after validation. Their remote
+Terraform states are empty. The shared Terraform backend and account-security
+stack remain deployed, and the Clerk DNS records and external Clerk and Convex
+resources were not part of the AWS environment teardown.
+
 ### 1. Environment Foundation
 
 - [x] Implement the Terraform bootstrap stack for a private, versioned, KMS-encrypted state bucket and native S3 lock files outside the runner stack.

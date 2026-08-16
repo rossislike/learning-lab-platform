@@ -359,7 +359,7 @@ resource "aws_lb" "public" {
 
     content {
       bucket  = aws_s3_bucket.alb_access_logs[0].id
-      enabled = true
+      enabled = var.enable_alb_access_logging
       prefix  = "alb"
     }
   }

@@ -3,6 +3,8 @@
 This runbook removes a staging or production hosted-runner environment while
 keeping its Terraform backend available for recovery. Teardown is destructive
 and must run in a maintenance window with no concurrent Terraform operations.
+The account-security stack, Clerk DNS records, and external Clerk and Convex
+resources are outside both environment roots and must remain in place.
 
 Terraform does not permit `prevent_destroy` to depend on a variable. The
 teardown command therefore creates a temporary, ignored override inside the
@@ -33,9 +35,9 @@ artifact and checkpoint version or delete marker that must be removed, but do
 not attempt to delete protected scenario objects before the prepare phase.
 Delete all images from the environment runner and egress-proxy ECR repositories,
 plus the trusted dispatcher and session gateway repositories. The plan phase
-checks running and pending ECS tasks, service counts, all S3 object versions and
-delete markers, and ECR image inventories. It refuses to create a destroy plan
-until every check is clear.
+checks running and pending ECS tasks, service counts, all artifact, checkpoint,
+and ALB access-log object versions and delete markers, and ECR image inventories.
+It refuses to create a destroy plan until every check is clear.
 
 Do not delete Route 53 records, certificates, load balancers, KMS keys, or
 other Terraform-managed resources manually.
@@ -44,22 +46,30 @@ other Terraform-managed resources manually.
 
 The prepare phase verifies the active AWS account, creates the temporary
 override, and uses a targeted apply to disable deletion protection on both
-environment load balancers and temporarily update the artifact bucket policy.
+environment load balancers, disable public ALB access-log delivery, and
+temporarily update the artifact bucket policy. It verifies the ALB attribute
+after the apply and records when delivery was disabled in the ownership
+manifest.
 
 ```sh
-AWS_PROFILE=default npm run infra:teardown -- prepare staging \
+AWS_PROFILE=default TF_VAR_github_repository=rossislike/learning-lab-platform \
+  npm run infra:teardown -- prepare staging \
   --account=442359104502 \
   --confirm='prepare teardown staging in 442359104502'
 ```
 
-After prepare succeeds, empty every version and delete marker from the artifact
-and checkpoint buckets. Scenario object deletion is allowed only while the
-owned teardown override remains active. Continue directly to plan, or use abort
-to restore the deletion deny and normal resource protections.
+After prepare succeeds, preserve any required ALB logs and wait at least 10
+minutes for pending access-log deliveries. Then empty every version and delete
+marker from the artifact, checkpoint, and ALB access-log buckets. The guarded
+plan enforces the 10-minute drain interval and checks the ALB attribute again
+before inspecting the bucket. Scenario object deletion is allowed only while
+the owned teardown override remains active. Continue directly to plan, or use
+abort to restore the deletion deny, ALB logging, and normal resource
+protections.
 
 If prepare fails, the command removes the override and reapplies the normal
-configuration to restore load balancer deletion protection and the scenario
-artifact deletion deny. It removes the
+configuration to restore load balancer deletion protection, ALB logging, and
+the scenario artifact deletion deny. It removes the
 ownership manifest only after that restoration succeeds. If restoration also
 fails, ownership and the override remain in place so a later abort can retry
 safely. Do not edit state or bypass the account guard.
@@ -68,7 +78,8 @@ To stop after a successful prepare, restore normal protections and remove all
 temporary teardown files:
 
 ```sh
-AWS_PROFILE=default npm run infra:teardown -- abort staging \
+AWS_PROFILE=default TF_VAR_github_repository=rossislike/learning-lab-platform \
+  npm run infra:teardown -- abort staging \
   --account=442359104502 \
   --confirm='abort teardown staging in 442359104502'
 ```
@@ -76,7 +87,8 @@ AWS_PROFILE=default npm run infra:teardown -- abort staging \
 ## 4. Save and inspect the destroy plan
 
 ```sh
-AWS_PROFILE=default npm run infra:teardown -- plan staging \
+AWS_PROFILE=default TF_VAR_github_repository=rossislike/learning-lab-platform \
+  npm run infra:teardown -- plan staging \
   --account=442359104502 \
   --confirm='plan teardown staging in 442359104502'
 ```
@@ -97,16 +109,28 @@ account. Apply also repeats the complete workload and retained-data preflight
 immediately before using the saved plan, closing the gap between planning and
 destruction. Any new plan replaces the prior plan and integrity metadata.
 
+If an apply destroys only part of the environment, leave the ownership
+manifest and override in place. Empty any retained resource that caused the
+failure, then run the same guarded plan command again and inspect the new saved
+plan. The owner inventory lets preflight skip only monitored resources that are
+no longer in Terraform state. It still validates every monitored resource that
+remains. Do not use direct Terraform commands to bypass this recovery path.
+Abort refuses a partial destroy because restoring the normal configuration
+could recreate resources.
+
 ## 5. Apply the saved plan
 
 ```sh
-AWS_PROFILE=default npm run infra:teardown -- apply staging \
+AWS_PROFILE=default TF_VAR_github_repository=rossislike/learning-lab-platform \
+  npm run infra:teardown -- apply staging \
   --account=442359104502 \
   --confirm='destroy staging in 442359104502'
 ```
 
-The data KMS key enters its configured 30-day deletion window. Keep the final
-state export and operational evidence according to retention policy.
+The data and service-secrets KMS keys enter their configured 30-day deletion
+windows. The dispatcher secret enters its configured 30-day recovery window.
+Keep the final state export and operational evidence according to retention
+policy.
 
 ## 6. Remove the temporary override
 
@@ -121,15 +145,14 @@ Confirm that `infra/aws/modules/hosted-runner/teardown_override.tf` and
 `infra/aws/modules/hosted-runner/.teardown-owner.json` no longer exist before
 any other Terraform work. Cleanup also removes the saved plan and its digest
 metadata. If state still contains resources, cleanup refuses and directs the
-operator to abort if the teardown will not continue.
+operator to continue through guarded plan and apply. Abort is available only
+before destruction starts.
 
-## 7. Remove the backend last
+## 7. Retain the backend
 
 The backend is a separate stack with its own `prevent_destroy` safeguards. Keep
-it until every environment using it is gone, final state exports have been
-tested, and the retention period has expired. Backend removal requires its own
-reviewed change to remove `prevent_destroy`, empty every state-object version
-and lock file, destroy the bootstrap stack, and retain evidence of the final
-state and KMS deletion schedule.
+it available for the retained final state exports and future reprovisioning.
+Any future backend removal requires its own approved and reviewed change. It is
+not part of environment teardown.
 
 Never remove the backend as part of the hosted environment destroy plan.

@@ -2,6 +2,11 @@
 
 Validated on 2026-07-18 in AWS account `442359104502`, region `us-east-2`.
 
+Deployment status update, 2026-08-16: the staging and production environment
+security resources described below were intentionally destroyed after
+validation. This document retains historical evidence. The shared
+account-security stack and Terraform backend remain deployed.
+
 ## Ownership boundaries
 
 The `infra/aws/account-security` Terraform root owns account-wide controls. It does not take ownership of the pre-existing `rumo-claims-trail`, which remains dedicated to its separate S3 data-event use case. It also does not manage the lifecycle of the existing GuardDuty detector. Deployment checks require that detector, Runtime Monitoring, and ECS Fargate agent management to remain enabled.
@@ -46,7 +51,7 @@ Staging was deployed and tested before production promotion.
 - The production ALB had the four-rule WAF associated.
 - The production WAF, rejected connection, and TTL cleanup alarms all reported `OK` and used the encrypted shared SNS topic as their alarm action.
 
-The current public listeners intentionally return the fixed `503` gateway placeholder and do not expose sign-in, authenticated, upload, or application API routes. Those flows could not be qualified in this deployment. Before the hosted application replaces the placeholder response, staging must exercise sign-in, an authenticated session, uploads, and representative API calls through WAF. Production promotion must remain blocked if any legitimate flow is rejected.
+The public listeners used for this validation intentionally returned the fixed `503` gateway placeholder and did not expose sign-in, authenticated, upload, or application API routes. Those flows could not be qualified in this deployment. Before a future hosted application replaces the placeholder response, staging must exercise sign-in, an authenticated session, uploads, and representative API calls through WAF. Production promotion must remain blocked if any legitimate flow is rejected.
 
 ## Drift and verification
 

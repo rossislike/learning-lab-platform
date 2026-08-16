@@ -4,6 +4,12 @@ Staging and production hosted-runner foundations were deployed in `us-east-2`
 on 2026-07-12. Staging was created and qualified before production was planned
 or applied.
 
+Deployment status update, 2026-08-16: both AWS environment roots were
+intentionally destroyed after validation. Their remote Terraform states are
+empty. This document preserves historical deployment evidence. The shared
+Terraform backend and account-security stack remain deployed. Clerk DNS records
+and external Clerk and Convex resources were not part of the teardown.
+
 ## Shared-account topology
 
 Both environments use AWS
@@ -37,7 +43,7 @@ starter failure, solution application, and passing solution check for the
 `react-welcome-message` scenario. The TTL safety net stopped the already
 successful task after its supplied expiry time.
 
-## Deployed boundaries
+## Historically deployed boundaries
 
 | Resource | Staging | Production |
 | --- | --- | --- |
@@ -48,10 +54,11 @@ successful task after its supplied expiry time.
 | Data KMS key | `52f444c0-558b-4389-b021-ce96405648aa` | `a23fb9d3-3599-41ae-b5af-8dcc24cf33a9` |
 | Task definition | `learning-lab-platform-staging-runner:1` | `learning-lab-platform-production-runner:1` |
 
-Each VPC spans `us-east-2a` and `us-east-2b`, with private session subnets and
-one NAT gateway per availability zone. Both ECS clusters are active with
-Container Insights enabled. ECR uses immutable tags and KMS encryption. The S3
-artifact and checkpoint buckets use their environment KMS key, S3 Bucket Keys,
+Each VPC spanned `us-east-2a` and `us-east-2b`, with private session subnets and
+one NAT gateway per availability zone. At validation time, both ECS clusters
+were active with Container Insights enabled. ECR used immutable tags and KMS
+encryption. The S3
+artifact and checkpoint buckets used their environment KMS key, S3 Bucket Keys,
 public-access blocking, TLS-only bucket policies, and protected Terraform
 resource addresses. Their policies also reject explicit non-KMS encryption and
 explicit KMS keys other than the environment key. Requests without encryption

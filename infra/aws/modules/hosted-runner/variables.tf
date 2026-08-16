@@ -175,6 +175,12 @@ variable "enable_security_observability" {
   }
 }
 
+variable "enable_alb_access_logging" {
+  description = "Enable public ALB access-log delivery. The guarded teardown override temporarily disables delivery before logs are drained."
+  type        = bool
+  default     = true
+}
+
 variable "alb_access_log_retention_days" {
   description = "Retention period for public ALB access logs."
   type        = number

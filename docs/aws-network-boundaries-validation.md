@@ -4,6 +4,11 @@ The hosted-runner network boundaries were deployed to staging and production
 in AWS account `442359104502`, region `us-east-2`, on 2026-07-12. Staging was
 qualified before the same immutable proxy image was promoted to production.
 
+Deployment status update, 2026-08-16: the staging and production environment
+roots described below were intentionally destroyed after validation. This
+document retains historical qualification evidence. The shared Terraform
+backend and account-security stack remain deployed.
+
 ## Boundary matrix
 
 | Source | Allowed destination | Port |
@@ -63,6 +68,6 @@ through the unreviewed destination `example.com`. Squid denied the CONNECT, so
 the lookup failed as required and the negative-test assertion exited with code
 `0`.
 
-Final Terraform plans for both staging and production reported no changes.
-Production proxy capacity is deployed but production learner traffic remains
-blocked by the hosted environment-isolation release gate.
+Final Terraform plans for both staging and production reported no changes at
+validation time. Production proxy capacity was deployed, but production learner
+traffic remained blocked by the hosted environment-isolation release gate.
