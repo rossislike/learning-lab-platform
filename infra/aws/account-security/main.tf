@@ -593,7 +593,11 @@ resource "aws_cloudwatch_log_metric_filter" "security" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "security" {
-  for_each = local.cloudtrail_alarm_filters
+  for_each = var.enable_learning_lab_alarms ? local.cloudtrail_alarm_filters : {}
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   alarm_name          = "${local.name}-${each.key}"
   alarm_description   = each.value.description

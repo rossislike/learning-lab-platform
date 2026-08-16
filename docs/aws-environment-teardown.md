@@ -2,7 +2,8 @@
 
 This runbook removes a staging or production hosted-runner environment while
 keeping its Terraform backend available for recovery. Teardown is destructive
-and must run in a maintenance window with no concurrent Terraform operations.
+and must run in a maintenance window with no raw or concurrent Terraform
+operations.
 The account-security stack, Clerk DNS records, and external Clerk and Convex
 resources are outside both environment roots and must remain in place.
 
@@ -13,6 +14,26 @@ artifact deletion deny so retained object versions can be emptied. An ignored
 ownership manifest atomically binds that shared override to one environment and
 AWS account. Every later phase verifies that ownership and refuses
 cross-environment or cross-account use.
+
+Every supported hosted Terraform and teardown command also validates the three
+canonical S3 backend identities and the `default` Terraform workspaces. It then
+holds one conditional S3 operation lock while it reads or changes state. This
+coordinates the repository wrappers across Terraform roots and machines. Raw
+Terraform commands do not honor that operation lock and are not an atomic
+alternative to these workflows.
+
+Run `npm install` before using the guarded wrappers. The synchronous wrappers
+delegate lock requests to `scripts/s3-operation-lock-helper.mjs`, which uses
+the installed `@aws-sdk/client-s3` service model for conditional S3 writes and
+deletes. AWS CLI 2.14.5, the current operational runtime, does not expose the
+required `PutObject IfNoneMatch` or `DeleteObject IfMatch` inputs, so the lock
+must not be rewritten as `aws s3api` commands using those flags.
+
+If lock acquisition reports another active operation, stop and identify that
+operator or process. A terminated process can leave the lock object behind.
+Remove a stale lock only through an approved recovery after confirming that no
+hosted plan, apply, teardown, or shared-alarm operation is running in any
+checkout.
 
 ## 1. Approve and preserve
 
@@ -132,7 +153,7 @@ windows. The dispatcher secret enters its configured 30-day recovery window.
 Keep the final state export and operational evidence according to retention
 policy.
 
-## 6. Remove the temporary override
+## 6. Clean up the environment and shared alarms
 
 Cleanup refuses to remove the override while the selected state still contains
 managed resources.
@@ -147,6 +168,32 @@ any other Terraform work. Cleanup also removes the saved plan and its digest
 metadata. If state still contains resources, cleanup refuses and directs the
 operator to continue through guarded plan and apply. Abort is available only
 before destruction starts.
+
+If the other hosted environment still has managed resources, cleanup retains
+the shared alarms. When both canonical environment states are empty, cleanup
+automatically removes the exact 12 Terraform-owned
+`learning-lab-platform-*` CloudWatch alarms from the retained account-security
+root. It changes the tracked alarm lifecycle setting to `false`, applies only
+an inspected alarm plan, and verifies both Terraform state and CloudWatch in
+the effective account-security region. The account CloudTrail, metric filters,
+SNS topic, GuardDuty routing, GitHub OIDC provider, and Terraform backend remain.
+
+If alarm removal fails, cleanup preserves the environment teardown ownership
+files so the same cleanup command can retry. Use the standalone recovery
+command only when both states are empty and teardown ownership metadata is no
+longer available:
+
+```sh
+AWS_PROFILE=default npm run infra:teardown:shared-alarms -- \
+  --account=442359104502 \
+  --confirm='destroy shared learning-lab alarms in 442359104502'
+```
+
+The alarm workflow refuses alternate workspaces or backend identities, an
+active hosted operation, nonempty environment state, unexpected alarm instance
+keys or names, and a replaced saved plan. The inspected plan is uniquely named
+and bound to apply by SHA-256. Alarm deletion protection is disabled only by a
+temporary ignored Terraform override during this guarded operation.
 
 ## 7. Retain the backend
 

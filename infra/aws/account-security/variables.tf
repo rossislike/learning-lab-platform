@@ -24,6 +24,12 @@ variable "security_alert_email" {
   }
 }
 
+variable "enable_learning_lab_alarms" {
+  description = "Create the project CloudWatch security alarms while hosted infrastructure is deployed. This is controlled by the tracked alarm lifecycle auto variable file."
+  type        = bool
+  default     = false
+}
+
 variable "github_oidc_thumbprints" {
   description = "TLS certificate thumbprints for token.actions.githubusercontent.com."
   type        = list(string)

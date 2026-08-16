@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "accountId": "442359104502",
+  "bucket": "learning-lab-platform-production-tfstate-442359104502-us-east-2",
+  "region": "us-east-2",
+  "kmsKeyId": "arn:aws:kms:us-east-2:442359104502:key/473fd4c0-6d38-4dc6-8a29-013b895a9eb2",
+  "operationLockKey": "learning-lab-platform/operations/hosted-infrastructure.lock",
+  "roots": {
+    "accountSecurity": {
+      "directory": "infra/aws/account-security",
+      "key": "learning-lab-platform/account-security/terraform.tfstate"
+    },
+    "staging": {
+      "directory": "infra/aws/environments/staging",
+      "key": "learning-lab-platform/staging/terraform.tfstate"
+    },
+    "production": {
+      "directory": "infra/aws/environments/production",
+      "key": "learning-lab-platform/production/terraform.tfstate"
+    }
+  }
+}

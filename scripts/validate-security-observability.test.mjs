@@ -5,10 +5,11 @@ import test from "node:test"
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8")
 
 test("account security root owns management audit and alert routing", async () => {
-  const [source, variables, outputs] = await Promise.all([
+  const [source, variables, outputs, alarmLifecycle] = await Promise.all([
     read("infra/aws/account-security/main.tf"),
     read("infra/aws/account-security/variables.tf"),
     read("infra/aws/account-security/outputs.tf"),
+    read("infra/aws/account-security/zz-learning-lab-alarms.auto.tfvars.json"),
   ])
 
   assert.match(source, /resource "aws_cloudtrail" "management"/)
@@ -45,6 +46,10 @@ test("account security root owns management audit and alert routing", async () =
   assert.match(source, /cloudwatch-alerting-changes/)
   assert.match(source, /notification-routing-changes/)
   assert.match(source, /edge-security-logging-changes/)
+  assert.match(source, /for_each\s*=\s*var\.enable_learning_lab_alarms\s*\?\s*local\.cloudtrail_alarm_filters\s*:\s*\{\}/)
+  assert.match(source, /resource "aws_cloudwatch_metric_alarm" "security"[\s\S]*?lifecycle \{\s*prevent_destroy = true\s*\}/)
+  assert.match(variables, /variable "enable_learning_lab_alarms"[\s\S]*default\s+= false/)
+  assert.deepEqual(JSON.parse(alarmLifecycle), { enable_learning_lab_alarms: false })
   for (const eventName of [
     "AddPermission",
     "DeleteAlarms",

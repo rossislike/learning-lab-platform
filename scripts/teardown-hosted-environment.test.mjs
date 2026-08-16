@@ -96,7 +96,8 @@ function executor(rootPath, changes = {}) {
     }
     if (command === "terraform" && args.includes("state")) {
       const defaultState = resourceDefinitions.map(([, address]) => address).join("\n") + "\n"
-      return { status: 0, stdout: changes.state ?? defaultState }
+      const environment = args[0].split("/").at(-1)
+      return { status: 0, stdout: changes.stateByEnvironment?.[environment] ?? changes.state ?? defaultState }
     }
     if (command === "terraform" && args.includes("plan")) {
       const environment = args[0].split("/").at(-1)
@@ -116,13 +117,24 @@ function executor(rootPath, changes = {}) {
 function run(rootPath, args, changes) {
   const options = changes ?? {}
   const fake = executor(rootPath, options)
+  const sharedAlarmReconciliations = []
   return {
     status: runTeardown(args, {
       rootPath,
       execute: fake.execute,
       now: () => options.now ?? defaultNow,
       albLogDrainMs: options.albLogDrainMs ?? 0,
+      loadBackendRegistry: () => ({ accountId: account }),
+      validateBackends: () => ({ ok: true }),
+      acquireOperationLock: () => ({ ok: true }),
+      verifyOperationLock: () => true,
+      releaseOperationLock: () => true,
+      reconcileSharedAlarms: (reconcileOptions) => {
+        sharedAlarmReconciliations.push(reconcileOptions)
+        return options.sharedAlarmStatus ?? 0
+      },
     }),
+    sharedAlarmReconciliations,
     ...fake,
   }
 }
@@ -141,8 +153,37 @@ test("successful prepare, plan, apply, and cleanup transition", () => {
     assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
     assert.equal(run(root, ["plan", "staging", `--account=${account}`, `--confirm=plan teardown staging in ${account}`]).status, 0)
     assert.equal(run(root, ["apply", "staging", `--account=${account}`, `--confirm=destroy staging in ${account}`]).status, 0)
-    assert.equal(run(root, ["cleanup", "staging", `--account=${account}`], { state: "" }).status, 0)
+    const cleanup = run(root, ["cleanup", "staging", `--account=${account}`], { state: "" })
+    assert.equal(cleanup.status, 0)
+    assert.equal(cleanup.sharedAlarmReconciliations.length, 1)
+    assert.equal(cleanup.sharedAlarmReconciliations[0].enabled, false)
     assert.equal(existsSync(join(root, "infra/aws/modules/hosted-runner/.teardown-owner.json")), false)
+  } finally { rmSync(root, { recursive: true }) }
+})
+
+test("cleanup retains shared alarms while the other environment remains deployed", () => {
+  const root = fixture()
+  try {
+    assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
+    const cleanup = run(root, ["cleanup", "staging", `--account=${account}`], {
+      stateByEnvironment: { staging: "", production: "resource.one\n" },
+    })
+    assert.equal(cleanup.status, 0)
+    assert.equal(cleanup.sharedAlarmReconciliations.length, 0)
+  } finally { rmSync(root, { recursive: true }) }
+})
+
+test("cleanup preserves teardown ownership when final shared alarm removal fails", () => {
+  const root = fixture()
+  try {
+    assert.equal(run(root, ["prepare", "staging", `--account=${account}`, `--confirm=prepare teardown staging in ${account}`]).status, 0)
+    const cleanup = run(root, ["cleanup", "staging", `--account=${account}`], {
+      state: "",
+      sharedAlarmStatus: 1,
+    })
+    assert.equal(cleanup.status, 1)
+    assert.equal(existsSync(join(root, "infra/aws/modules/hosted-runner/.teardown-owner.json")), true)
+    assert.equal(existsSync(join(root, "infra/aws/modules/hosted-runner/teardown_override.tf")), true)
   } finally { rmSync(root, { recursive: true }) }
 })
 

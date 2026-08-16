@@ -18,6 +18,28 @@ The AWS account IDs are part of the broader hosted environment isolation gate.
 See [`docs/environment-isolation.md`](../../../docs/environment-isolation.md)
 and use the guarded commands below for hosted plan and apply operations.
 
+The guarded wrappers validate the canonical account-security, staging, and
+production S3 backend identities and require the `default` workspace for each
+root. They hold one conditional S3 operation lock across each supported
+operation. Hosted plan records alarm enablement as durable infrastructure
+intent. Hosted apply reconciles all 12 shared project alarms before applying
+the selected environment. Do not use raw environment Terraform commands because
+they do not participate in the cross-root operation lock.
+
+Run `npm install` before using these wrappers. Their synchronous lock helper
+uses `@aws-sdk/client-s3`; the current operational AWS CLI service model does
+not provide the conditional S3 put and delete inputs required for this lock.
+
+If a hosted apply fails after alarm reconciliation, the lifecycle setting and
+alarms remain enabled because the environment may be partially deployed. Use
+the guarded teardown and final cleanup after both environment states are empty
+to disable them again.
+
+Initialize the account-security, staging, and production roots with their own
+canonical backend files before running either hosted environment wrapper. The
+cross-root checks intentionally fail if even an inactive root is uninitialized,
+points at another state key, or has a non-default workspace.
+
 ## Staging
 
 ```sh
@@ -69,8 +91,9 @@ must never migrate state between staging and production backends.
 
 The wrappers discard ambient AWS credential overrides, force
 `AWS_PROFILE=default`, verify the registry and active AWS account, and pass the
-same profile environment to Terraform. Terraform also reads
-the registry during plan and apply, which protects against an accidental direct
-command while identities are incomplete or the expected account differs. The
-registry is a repository guard and inventory, not proof that external Clerk or
-Convex configuration is correct.
+same profile environment to Terraform. Each environment has a Terraform
+precondition on the tracked shared-alarm lifecycle setting, and direct alarm
+deletion remains blocked by `prevent_destroy`. These fail closed when a wrapper
+is bypassed, but they do not make independent raw Terraform processes atomic.
+The registry is a repository guard and inventory, not proof that external Clerk
+or Convex configuration is correct.

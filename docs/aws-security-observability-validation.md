@@ -5,7 +5,9 @@ Validated on 2026-07-18 in AWS account `442359104502`, region `us-east-2`.
 Deployment status update, 2026-08-16: the staging and production environment
 security resources described below were intentionally destroyed after
 validation. This document retains historical evidence. The shared
-account-security stack and Terraform backend remain deployed.
+account-security stack and Terraform backend remain deployed. Its 12
+`learning-lab-platform-*` CloudWatch alarms were removed on 2026-08-16 after
+both hosted environment states became empty; the shared metric filters remain.
 
 ## Ownership boundaries
 

@@ -4,6 +4,15 @@ import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 
+import {
+  acquireHostedOperationLock,
+  loadAwsTerraformBackendRegistry,
+  releaseHostedOperationLock,
+  validateCanonicalTerraformRoots,
+  verifyHostedOperationLock,
+} from "./aws-terraform-operations.mjs"
+import { reconcileSharedAlarms } from "./shared-alarm-lifecycle.mjs"
+
 const environments = new Set(["staging", "production"])
 const actions = new Set(["audit", "prepare", "plan", "apply", "abort", "cleanup"])
 const knownFlags = new Set(["account", "confirm"])
@@ -329,23 +338,11 @@ function removeTeardownFiles(paths, fs) {
   fs.rmSync(paths.planMeta, { force: true })
 }
 
-export function runTeardown(args = process.argv.slice(2), deps = {}) {
-  const [action, environment, ...rawFlags] = args
-  const flags = parseFlags(rawFlags)
-  if (!actions.has(action) || !environments.has(environment) || !flags) { usage(); return 2 }
-  const run = deps.execute ?? execute
-  const fs = deps.fs ?? { existsSync, readFileSync, renameSync, rmSync, writeFileSync }
-  const now = deps.now ?? Date.now
-  const drainMs = deps.albLogDrainMs ?? defaultAlbLogDrainMs
-  const root = deps.rootPath ?? process.cwd()
-  const account = flags.get("account")
-  if (!checkAccount(account, run)) { console.error("blocked: active AWS account does not match a valid --account"); return 1 }
-  const environmentDir = join(root, `infra/aws/environments/${environment}`)
-  const paths = {
-    override: join(root, relativeOverride), manifest: join(root, relativeManifest),
-    plan: join(environmentDir, `.terraform/${environment}-destroy.tfplan`),
-    planMeta: join(environmentDir, `.terraform/${environment}-destroy.tfplan.json`),
-  }
+function runTeardownAction(context) {
+  const {
+    action, environment, flags, account, run, fs, now, drainMs, root, paths,
+    backendRegistry, operationLock, verifyOperationLock, reconcileAlarms, deps,
+  } = context
   const owner = readOwner(paths.manifest, fs)
   if (action === "audit") {
     const state = run("terraform", [`-chdir=infra/aws/environments/${environment}`, "state", "list"], { capture: true })
@@ -428,6 +425,23 @@ export function runTeardown(args = process.argv.slice(2), deps = {}) {
     const state = run("terraform", [`-chdir=infra/aws/environments/${environment}`, "state", "list"], { capture: true })
     if (state.status !== 0) return state.status ?? 1
     if (state.stdout.trim()) { console.error("blocked: Terraform still manages environment resources; continue guarded teardown or abort before destruction starts"); return 1 }
+    const otherEnvironment = environment === "staging" ? "production" : "staging"
+    const otherState = run("terraform", [`-chdir=infra/aws/environments/${otherEnvironment}`, "state", "list"], { capture: true })
+    if (otherState.status !== 0) return otherState.status ?? 1
+    if (!otherState.stdout.trim()) {
+      const alarmStatus = reconcileAlarms({
+        account,
+        enabled: false,
+        execute: run,
+        rootPath: root,
+        fs: deps.fs,
+        backendRegistry,
+        verifyOperationLock: () => verifyOperationLock(operationLock),
+        planId: deps.sharedAlarmPlanId,
+        beforeApply: deps.beforeSharedAlarmApply,
+      })
+      if (alarmStatus !== 0) return alarmStatus
+    }
     removeTeardownFiles(paths, fs)
     return 0
   }
@@ -460,6 +474,74 @@ export function runTeardown(args = process.argv.slice(2), deps = {}) {
     return run("terraform", [`-chdir=infra/aws/environments/${environment}`, "apply", `.terraform/${environment}-destroy.tfplan`]).status ?? 1
   }
   return 2
+}
+
+export function runTeardown(args = process.argv.slice(2), deps = {}) {
+  const [action, environment, ...rawFlags] = args
+  const flags = parseFlags(rawFlags)
+  if (!actions.has(action) || !environments.has(environment) || !flags) { usage(); return 2 }
+  const run = deps.execute ?? execute
+  const fs = deps.fs ?? { existsSync, readFileSync, renameSync, rmSync, writeFileSync }
+  const now = deps.now ?? Date.now
+  const drainMs = deps.albLogDrainMs ?? defaultAlbLogDrainMs
+  const root = deps.rootPath ?? process.cwd()
+  const account = flags.get("account")
+  if (!checkAccount(account, run)) { console.error("blocked: active AWS account does not match a valid --account"); return 1 }
+  const environmentDir = join(root, `infra/aws/environments/${environment}`)
+  const paths = {
+    override: join(root, relativeOverride), manifest: join(root, relativeManifest),
+    plan: join(environmentDir, `.terraform/${environment}-destroy.tfplan`),
+    planMeta: join(environmentDir, `.terraform/${environment}-destroy.tfplan.json`),
+  }
+  let backendRegistry
+  try {
+    backendRegistry = (deps.loadBackendRegistry ?? loadAwsTerraformBackendRegistry)(root, deps.fs)
+  } catch (error) {
+    console.error(`blocked: ${error.message}`)
+    return 1
+  }
+  const validateBackends = deps.validateBackends ?? validateCanonicalTerraformRoots
+  const validated = validateBackends(["accountSecurity", "staging", "production"], {
+    rootPath: root,
+    fs: deps.fs,
+    execute: run,
+    account,
+    registry: backendRegistry,
+  })
+  if (!validated.ok) { console.error(`blocked: ${validated.error}`); return 1 }
+  const acquire = deps.acquireOperationLock ?? acquireHostedOperationLock
+  const release = deps.releaseOperationLock ?? releaseHostedOperationLock
+  const verify = deps.verifyOperationLock ?? verifyHostedOperationLock
+  const lockOptions = { environment: deps.environment ?? process.env }
+  const lock = acquire({ ...lockOptions, registry: backendRegistry, owner: deps.lockOwner })
+  if (!lock.ok) { console.error(`blocked: ${lock.error}`); return 1 }
+
+  let status = 1
+  try {
+    status = runTeardownAction({
+      action,
+      environment,
+      flags,
+      account,
+      run,
+      fs,
+      now,
+      drainMs,
+      root,
+      paths,
+      backendRegistry,
+      operationLock: lock,
+      verifyOperationLock: (currentLock) => verify(currentLock, lockOptions),
+      reconcileAlarms: deps.reconcileSharedAlarms ?? reconcileSharedAlarms,
+      deps,
+    })
+  } finally {
+    if (!release(lock, lockOptions)) {
+      console.error("blocked: shared hosted operation lock could not be released safely")
+      status = 1
+    }
+  }
+  return status
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = runTeardown()

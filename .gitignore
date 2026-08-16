@@ -21,6 +21,7 @@ infra/aws/environments/production/production.s3.tfbackend
 infra/aws/environments/production/production.tfvars
 infra/aws/account-security/account-security.s3.tfbackend
 infra/aws/account-security/terraform.tfvars
+infra/aws/account-security/learning_lab_alarms_teardown_override.tf
 infra/aws/modules/hosted-runner/teardown_override.tf
 infra/aws/modules/hosted-runner/.teardown-owner.json
 znotes.txt

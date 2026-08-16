@@ -7,6 +7,22 @@ import { validateIsolationRegistry } from "./validate-environment-isolation.mjs"
 import { runHostedCommand } from "./run-hosted-command.mjs"
 
 const sharedAccountId = "442359104502"
+const backendRegistry = { accountId: sharedAccountId }
+
+function hostedTerraformDependencies(overrides = {}) {
+  return {
+    loadBackendRegistry: () => backendRegistry,
+    validateBackends: () => ({ ok: true }),
+    acquireOperationLock: () => ({ ok: true }),
+    verifyOperationLock: () => true,
+    releaseOperationLock: () => true,
+    teardownActive: false,
+    readSharedAlarmLifecycle: () => false,
+    writeSharedAlarmLifecycle: () => {},
+    reconcileSharedAlarms: () => 0,
+    ...overrides,
+  }
+}
 const sharedClerkIdentity = {
   applicationId: "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
   instanceId: "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
@@ -294,7 +310,7 @@ test("hosted command blocks before execution when registry is incomplete", async
 test("hosted Terraform command checks shared AWS identity and forwards arguments", async () => {
   let invocation
   let identityEnvironment
-  const status = await runHostedCommand(["terraform", "plan", "production", "--", "-var-file=production.tfvars"], {
+  const status = await runHostedCommand(["terraform", "plan", "production", "--", "-var-file=production.tfvars"], hostedTerraformDependencies({
     environment: {
       AWS_ACCESS_KEY_ID: "ambient-key",
       AWS_PROFILE: "amplify-user",
@@ -306,7 +322,7 @@ test("hosted Terraform command checks shared AWS identity and forwards arguments
       return sharedAccountId
     },
     execute: (command, args, options) => { invocation = { command, args, options }; return 0 },
-  })
+  }))
   assert.equal(status, 0)
   assert.equal(invocation.command, "terraform")
   assert.deepEqual(invocation.args, [
@@ -321,6 +337,36 @@ test("hosted Terraform command checks shared AWS identity and forwards arguments
     assert.equal(environment.AWS_ACCESS_KEY_ID, undefined)
     assert.equal(environment.AWS_WEB_IDENTITY_TOKEN_FILE, undefined)
   }
+})
+
+test("hosted Terraform apply enables shared alarms before applying the environment", async () => {
+  const order = []
+  const status = await runHostedCommand(["terraform", "apply", "staging"], hostedTerraformDependencies({
+    loadRegistry: async () => registry(),
+    awsAccountId: sharedAccountId,
+    reconcileSharedAlarms: ({ enabled }) => { order.push(`alarms:${enabled}`); return 0 },
+    execute: (command, args) => { order.push(`${command}:${args[1]}`); return 0 },
+  }))
+  assert.equal(status, 0)
+  assert.deepEqual(order, ["alarms:true", "terraform:apply"])
+})
+
+test("hosted Terraform plan durably enables alarms and restores the prior setting on failure", async () => {
+  const writes = []
+  const status = await runHostedCommand(["terraform", "plan", "staging"], hostedTerraformDependencies({
+    loadRegistry: async () => registry(),
+    awsAccountId: sharedAccountId,
+    writeSharedAlarmLifecycle: (enabled) => writes.push(enabled),
+    execute: () => 1,
+  }))
+  assert.equal(status, 1)
+  assert.deepEqual(writes, [true, false])
+})
+
+test("hosted Terraform commands reject destroy arguments", async () => {
+  assert.equal(await runHostedCommand(["terraform", "plan", "staging", "--", "-destroy"]), 2)
+  assert.equal(await runHostedCommand(["terraform", "plan", "staging", "--", "-out=/tmp/staging.plan"]), 2)
+  assert.equal(await runHostedCommand(["terraform", "apply", "staging", "--", "saved.tfplan"]), 2)
 })
 
 test("hosted Terraform command rejects a different active account", async () => {

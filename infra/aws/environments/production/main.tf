@@ -1,4 +1,5 @@
 locals {
+  alarm_lifecycle = jsondecode(file("${path.root}/../../account-security/zz-learning-lab-alarms.auto.tfvars.json"))
   common_tags = {
     Environment   = "production"
     ManagedBy     = "terraform"
@@ -11,6 +12,20 @@ locals {
     for suffix in ["runner", "dispatcher", "session-gateway", "egress-proxy"] :
     "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${var.expected_aws_account_id}:repository/learning-lab-platform-staging-${suffix}"
   ]
+}
+
+resource "terraform_data" "alarm_lifecycle_guard" {
+  input = try(local.alarm_lifecycle.enable_learning_lab_alarms, false)
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(keys(local.alarm_lifecycle)) == 1 &&
+        try(local.alarm_lifecycle.enable_learning_lab_alarms == true, false)
+      )
+      error_message = "Hosted infrastructure requires the guarded workflow to enable the shared learning-lab alarms first."
+    }
+  }
 }
 
 data "aws_partition" "current" {}

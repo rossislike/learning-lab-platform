@@ -116,7 +116,9 @@ Current deployment status as of 2026-08-16: the staging and production AWS
 environment roots were intentionally destroyed after validation. Their remote
 Terraform states are empty. The shared Terraform backend and account-security
 stack remain deployed, and the Clerk DNS records and external Clerk and Convex
-resources were not part of the AWS environment teardown.
+resources were not part of the AWS environment teardown. The shared
+`learning-lab-platform-*` CloudWatch alarms were removed after both environment
+states became empty; the retained account-security metric filters remain.
 
 ### 1. Environment Foundation
 
