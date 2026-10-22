@@ -26,7 +26,7 @@ export async function resolveScenarioSessionSnapshot<LabId, ApprovalId>({
   loadLab,
   loadApproval,
 }: {
-  runner: "local" | "aws-ecs-fargate";
+  runner: "local" | "kubernetes";
   labId: LabId;
   configuredEnvironment: () => HostedEnvironment;
   validateApproval: (approval: HostedApproval<LabId, ApprovalId>) => void;

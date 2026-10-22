@@ -15,27 +15,11 @@
     "scenarios:import": "node scripts/import-scenarios.mjs",
     "scenarios:check": "node scripts/import-scenarios.mjs --check",
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
-    "scenarios:publish": "node scripts/publish-scenario-artifacts.mjs",
     "runner:local": "node runner/local-runner.mjs",
     "runner:local:once": "node runner/local-runner.mjs --once",
-    "runner:aws": "node runner/aws-runner.mjs",
-    "runner:aws:once": "node runner/aws-runner.mjs --once",
-    "hosted:image:smoke": "node runner/hosted-learner-image-smoke.mjs",
-    "hosted:services:image:smoke": "node runner/hosted-service-images-smoke.mjs",
-    "env:isolation:check": "node scripts/validate-environment-isolation.mjs",
-    "env:isolation:require-ready": "node scripts/validate-environment-isolation.mjs --require-ready",
-    "infra:staging:plan": "node scripts/run-hosted-command.mjs terraform plan staging",
-    "infra:staging:apply": "node scripts/run-hosted-command.mjs terraform apply staging",
-    "infra:production:plan": "node scripts/run-hosted-command.mjs terraform plan production",
-    "infra:production:apply": "node scripts/run-hosted-command.mjs terraform apply production",
-    "infra:teardown": "node scripts/teardown-hosted-environment.mjs",
-    "infra:teardown:shared-alarms": "node scripts/teardown-shared-alarms.mjs",
-    "convex:staging:deploy": "node scripts/run-hosted-command.mjs convex deploy staging",
-    "convex:production:deploy": "node scripts/run-hosted-command.mjs convex deploy production",
-    "test:runner": "npm run infra:lambda:build && node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs infra/aws/modules/hosted-runner/lambda/*.test.mjs",
-    "infra:lambda:build": "node infra/aws/modules/hosted-runner/lambda/build.mjs",
+    "test:runner": "node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs",
     "infra:fmt": "terraform fmt -check -recursive infra/aws",
-    "infra:validate": "npm run infra:lambda:build && terraform -chdir=infra/aws/terraform validate && terraform -chdir=infra/aws/account-security validate && terraform -chdir=infra/aws/environments/staging validate && terraform -chdir=infra/aws/environments/production validate"
+    "infra:validate": "terraform -chdir=infra/aws/account-security validate && terraform -chdir=infra/aws/bootstrap/terraform-backend validate"
   },
   "dependencies": {
     "@clerk/react": "^6.12.2",
@@ -48,8 +32,6 @@
     "vite": "^7.2.4"
   },
   "devDependencies": {
-    "@aws-sdk/client-ecs": "^3.1084.0",
-    "@aws-sdk/client-s3": "^3.1111.0",
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",

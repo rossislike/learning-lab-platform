@@ -1,4 +1,4 @@
-export const HOSTED_ENVIRONMENTS = ["staging", "production"] as const;
+export const HOSTED_ENVIRONMENTS = ["dev"] as const;
 export type HostedEnvironment = (typeof HOSTED_ENVIRONMENTS)[number];
 
 export type ScenarioRuntimeContract = {
@@ -21,10 +21,8 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function configuredHostedEnvironment(
   value = process.env.HOSTED_ENVIRONMENT
 ): HostedEnvironment {
-  if (value !== "staging" && value !== "production") {
-    throw new Error(
-      "HOSTED_ENVIRONMENT must be staging or production for hosted sessions"
-    );
+  if (value !== "dev") {
+    throw new Error("HOSTED_ENVIRONMENT must be dev for hosted sessions");
   }
   return value;
 }

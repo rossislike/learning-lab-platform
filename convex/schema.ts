@@ -76,7 +76,7 @@ export default defineSchema({
   scenarioArtifactApprovals: defineTable({
     labId: v.id("labs"),
     slug: v.string(),
-    environment: v.union(v.literal("staging"), v.literal("production")),
+    environment: v.literal("dev"),
     artifactSha256: v.string(),
     artifactKey: v.string(),
     artifactSizeBytes: v.number(),
@@ -109,7 +109,7 @@ export default defineSchema({
       v.literal("errored"),
       v.literal("expired")
     ),
-    runner: v.union(v.literal("local"), v.literal("aws-ecs-fargate")),
+    runner: v.union(v.literal("local"), v.literal("kubernetes")),
     workspaceUrl: v.optional(v.string()),
     previewUrl: v.optional(v.string()),
     terminalUrl: v.optional(v.string()),
@@ -123,7 +123,7 @@ export default defineSchema({
     hostedScenario: v.optional(
       v.object({
         approvalId: v.id("scenarioArtifactApprovals"),
-        environment: v.union(v.literal("staging"), v.literal("production")),
+        environment: v.literal("dev"),
         slug: v.string(),
         artifactSha256: v.string(),
         artifactKey: v.string(),
@@ -199,7 +199,7 @@ export default defineSchema({
     .index("by_lab_and_learner", ["labId", "learnerLabel"]),
 
   runnerHeartbeats: defineTable({
-    runner: v.union(v.literal("local"), v.literal("aws-ecs-fargate")),
+    runner: v.union(v.literal("local"), v.literal("kubernetes")),
     runnerId: v.string(),
     pollMs: v.number(),
     pid: v.optional(v.number()),

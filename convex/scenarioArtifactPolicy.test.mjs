@@ -13,7 +13,7 @@ const approval = {
   artifactKey: `scenarios/react-welcome-message/artifacts/sha256/${digest}.tar`,
   artifactSha256: digest,
   artifactSizeBytes: 4096,
-  environment: "staging",
+  environment: "dev",
   manifestKey: `scenarios/react-welcome-message/manifests/sha256/${manifestDigest}.json`,
   manifestSha256: manifestDigest,
   slug: "react-welcome-message",
@@ -46,8 +46,9 @@ test("artifact approval requires keys derived from exact digests", () => {
 })
 
 test("hosted environment fails closed when deployment configuration is absent", () => {
-  assert.equal(configuredHostedEnvironment("production"), "production")
-  assert.throws(() => configuredHostedEnvironment(undefined), /must be staging or production/)
+  assert.equal(configuredHostedEnvironment("dev"), "dev")
+  assert.throws(() => configuredHostedEnvironment(undefined), /must be dev/)
+  assert.throws(() => configuredHostedEnvironment("staging"), /must be dev/)
 })
 
 test("artifact approval planning retains history and is idempotent", () => {

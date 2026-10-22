@@ -7,10 +7,7 @@ import {
   planScenarioArtifactApproval,
 } from "./scenarioArtifactPolicy";
 
-const environmentValidator = v.union(
-  v.literal("staging"),
-  v.literal("production")
-);
+const environmentValidator = v.literal("dev");
 const runtimeValidator = v.object({
   expectedBehavior: v.string(),
   expectedPorts: v.array(

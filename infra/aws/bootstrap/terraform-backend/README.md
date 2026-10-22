@@ -1,6 +1,6 @@
 # Terraform backend bootstrap
 
-This stack creates the remote backend outside the hosted runner stack:
+This stack creates the remote Terraform backend used by the other roots:
 
 - a private, versioned S3 bucket for state and native `.tflock` files;
 - a customer-managed KMS key with rotation enabled;
@@ -63,8 +63,9 @@ that both the state object and a `.tflock` object can be written while a plan is
 running, and that the bucket owns both objects. Remove the local backup only
 after these checks and a separately stored recovery copy are complete.
 
-Copy the runner backend example from `infra/aws/terraform`, fill it with the
-`runner_backend_config` output, and initialize the runner stack with
+The `dev` environment root (`infra/aws/environments/dev`, Phase 5) uses this
+backend with the state key recorded in `config/aws-terraform-backends.json`.
+Fill its `dev.s3.tfbackend` from the `runner_backend_config` output, and use
 `-migrate-state` only when an existing local state must be moved.
 
 ## Lock and encryption behavior

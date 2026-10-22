@@ -1,6 +1,6 @@
 # ADR 0001: Hosted Execution Model
 
-- Status: Accepted
+- Status: Superseded by [ADR 0005](0005-kubernetes-execution-model.md) on 2026-10-22
 - Date: 2026-07-09
 - Decision owners: Learning Lab Platform maintainers
 

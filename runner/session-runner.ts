@@ -1,4 +1,4 @@
-export type RunnerMode = "local" | "aws-ecs-fargate";
+export type RunnerMode = "local" | "kubernetes";
 
 export type StartSessionInput = {
   sessionId: string;

@@ -1,225 +1,117 @@
 # Learning Lab Platform Roadmap
 
-This roadmap tracks the local MVP and the path toward a hosted Killercoda-like learning platform.
+Killercoda-style learning platform: terminal-first scenarios with step-by-step
+instructions, plus OpenVSCode and a live preview for React scenarios. Runs on
+Kubernetes — `kind` locally, EKS in `dev`.
 
-## Current State
+Design: [`docs/2026-10-22/redesign-plan.md`](docs/2026-10-22/redesign-plan.md).
+Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 
-- [x] Build a local Convex-backed control plane for labs, sessions, session events, runner state, validation results, and cleanup metadata.
-- [x] Build a React/Vite dashboard for seeding scenarios, requesting sessions, refreshing state, running checks, stopping sessions, and inspecting events.
-- [x] Use explicit `ConvexHttpClient` polling so dashboard state reliably reflects the current Convex deployment.
-- [x] Implement local Docker/OpenVSCode session startup.
-- [x] Open OpenVSCode at the exercise root folder.
-- [x] Start a per-session Vite preview process.
-- [x] Start a per-session tools/check server.
-- [x] Keep validation learner-triggered instead of running checks automatically on startup.
-- [x] Support session lifecycle states: `requested`, `starting`, `running`, `checking`, `passed`, `failed`, `stopped`, `errored`, and `expired`.
-- [x] Add stop and cleanup support for local containers, preview processes, and tools servers.
-- [x] Add TTL expiry cleanup support.
-- [x] Embed editor and preview on the same workspace page.
-- [x] Split the app into Dashboard and Editor/Preview tabs.
-- [x] Collapse the left navigation on the Editor/Preview tab.
-- [x] Add a resizable editor/preview split and persist the layout in `localStorage`.
-- [x] Add a scenario catalog grouped by React domains.
-- [x] Seed the `Update Welcome Message` easy scenario.
-- [x] Seed the `Optimize Product Dashboard` rendering optimization scenario.
-- [x] Keep sessions tied to `labId` so existing sessions remain valid.
-- [x] Show a dashboard notice when local sessions are queued but the local runner is not running.
-- [x] Preserve useful validation failure details, including expected and actual heading text for the welcome scenario.
+## Status board
 
-## Near-Term Stabilization
+| Phase | Goal | Status |
+|---|---|---|
+| 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
+| 1 | Scenario manifest v2 + content | 🔜 **Next** |
+| 2 | Session workspace image + agent | ⏳ Not started (can run in parallel with 1) |
+| 3 | Dispatcher + gateway on kind | ⏳ Not started |
+| 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start against mocks after 1) |
+| 5 | `dev` environment on EKS | ⏳ Not started (after 3) |
+| 6 | CI, TTL reaper, alarms | ⏳ Not started |
 
-- [x] Add an explicit Clerk sign-out control for authenticated users.
-- [x] Represent runner cleanup as `stopping` and only mark a session `stopped` after its resources are removed.
-- [x] Update README wording and screenshots to match the current multi-scenario flow, including `Seed scenarios`.
-- [x] Add the scenario title/domain to session rows and session detail.
-- [x] Improve current-session selection so the Workspace tab always opens the intended selected session.
-- [x] Add a first-class runner health block that shows whether the local runner is actively polling.
-- [x] Add clearer queued, running, passed, failed, stopped, and expired empty states.
-- [x] Add stale-session detection for editor/preview/tools URLs that no longer respond.
-- [x] Add a one-click cleanup affordance for stopped/expired local sessions.
-- [x] Add a "Remove Session from list" button in the Recent Sessions table, with a dedicated actions column.
-- [x] Make validation results easier for learners to read without exposing raw test-runner language first.
+Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-## Scenario Authoring
+**You are here:** Phase 0 is complete. Start Phase 1 with the reference
+scenario `scenarios/git/first-commit`, then the JSON schema, then the importer.
 
-- [x] Define and document the stable scenario manifest contract.
-- [x] Standardize starter README, checklist, tests, expected commands, and difficulty metadata across scenarios.
-- [x] Add an authoring/import script for new scenarios.
-- [x] Add at least two more easy React scenarios to prove the scenario model scales.
-- [x] Add a scenario smoke-test command that copies a template, installs dependencies, runs the initial failing check, applies a known solution, and confirms the passing check.
-- [x] Add lint/build/test expectations for scenario templates.
-- [x] Decide whether scenarios need solutions committed alongside starters for author verification.
+---
 
-## Workspace UX
+## Phase 0 — Decide and clear the deck ✅
 
-- [x] Add a task/instructions panel inside the Workspace tab.
-- [x] Show checklist progress next to the editor/preview.
-- [x] Add a visible save/check guidance state for OpenVSCode edits.
-- [x] Keep standalone OpenVSCode, preview, and tools links available from the workspace.
-- [x] Add pass-state next steps after a learner completes a scenario.
-- [x] Add fail-state remediation that points to the relevant file and expected behavior.
-- [x] Improve responsive layout for smaller screens.
+- [x] ADR 0005: Kubernetes execution model (kind local, EKS Auto Mode dev); supersedes ADR 0001.
+- [x] ADR 0006: Scenario manifest v2 and step model.
+- [x] ADR 0007: Two environments, `local` and `dev`.
+- [x] Remove ECS/Fargate runners, hosted images, dispatcher runtime, and their tests.
+- [x] Remove `infra/aws/environments/{staging,production}`, `modules/hosted-runner`, `egress-proxy`, and the disposable `terraform` validation root. Keep `bootstrap/` and `account-security/`.
+- [x] Remove hosted-AWS validation/teardown/isolation scripts, docs, and the image-delivery workflow.
+- [x] Convex: `runner` is `local | kubernetes`; artifact-approval `environment` is `dev` only; `HOSTED_ENVIRONMENT` fails closed on anything else.
+- [x] `config/hosted-environments.json` and `config/aws-terraform-backends.json` describe `local` and `dev` only; production Clerk/Convex recorded as parked.
+- [x] `package.json` scripts and `.env.example` trimmed to what still exists.
+- [x] Rewrite this roadmap; trim the README and `infra/aws/README.md`.
 
-## Runner Reliability
+## Phase 1 — Scenario manifest v2 and content 🔜
 
-- [x] Add a runner heartbeat in Convex.
-- [x] Display runner heartbeat and last poll time in the dashboard.
-- [x] Detect and report dead editor, preview, or tools processes.
-- [x] Make local runner startup idempotent across process restarts.
-- [x] Reconcile Convex session state with actual local Docker/process state on each poll.
-- [x] Improve logs for Docker image pull failures, port allocation, dependency install failures, and validation command failures.
-- [x] Add a supervised local development mode that starts Convex, dashboard, and runner together.
+Exit: seven v2 scenarios import cleanly and pass the smoke test.
 
-## Session And Progress Model
+- [ ] Author `scenarios/git/first-commit` by hand as the reference scenario (intro, 3 steps, finish, verify scripts, solution).
+- [ ] Write `scenarios/manifest.schema.json` (JSON Schema for v2) from the reference.
+- [ ] Rewrite `scripts/import-scenarios.mjs`: validate against the schema, upsert `scenarios` + `steps` in Convex, bundle to a digest-named tarball.
+- [ ] Convex: add `steps` to scenarios, `currentStep` + `sessionSteps`, `completedSteps` on progress records. Rename `labs` → `scenarios` (or alias) and drop v1-only fields.
+- [ ] Convert the four React labs to v2 (2–4 steps each; vitest becomes the final verify). Delete `lab-definitions/`.
+- [ ] Author `linux/filesystem-basics` and `node/cli-tool`.
+- [ ] Add one zero-step `playground` per area.
+- [ ] Rewrite `scripts/smoke-test-scenarios.mjs` for v2: run `setup.sh`, apply `solution/`, run every verify in a throwaway `session-workspace` container.
 
-- [x] Add session filtering by scenario, status, and learner label.
-- [x] Add per-scenario session history.
-- [x] Add completed-at timestamps.
-- [x] Decide how long completed local workspaces should remain inspectable.
-- [x] Add attempt summaries per scenario.
-- [x] Add durable progress records separate from disposable sessions.
+## Phase 2 — Session workspace image and agent ⏳
 
-## Product Readiness
+Exit: `docker run` of the image with a mounted scenario serves a working terminal to a 30-line xterm.js page and verifies a step.
 
-- [x] Define learner, operator, and author personas.
-- [x] Decide whether the first product surface is single-learner, instructor-led, or self-serve.
-- [x] Add authentication before any hosted/public deployment.
-- [x] Add authorization boundaries around sessions and workspace URLs.
-- [x] Add a basic course/module structure above scenarios.
-- [x] Add observability for session startup time, validation time, failure rates, and resource cleanup.
-- [x] Add cost controls before running hosted workloads.
+- [ ] `images/session-workspace/Dockerfile`: Ubuntu, Node 22, git, OpenVSCode, non-root `learner`, `tini`. Multi-arch (arm64 + amd64).
+- [ ] `runner/session-agent/`: HTTP + WS on `:7000` — `/healthz`, `/ready`, `WS /pty?id=`, `POST /steps/setup`, `POST /steps/:i/verify`, `/editor/*` and `/preview/*` proxies.
+- [ ] Salvage process supervision and the readiness callback from the old `hosted-learner-entrypoint.mjs` (git history, up to and including commit `11916e0`).
+- [ ] Session-bound callback token: dispatcher mints per session, agent presents it to Convex; Convex stores only its hash + expiry.
+- [ ] Agent integration test driven by a script against the running container.
 
-## AWS Migration
+## Phase 3 — Dispatcher and gateway on Kubernetes ⏳
 
-- [x] Preserve the local runner interface while adding an AWS runner implementation.
-- [x] Decide the hosted execution model: ECS/Fargate first unless requirements force EKS/KubeVirt.
-- [x] Define workspace storage strategy for hosted sessions.
-- [x] Define routing for editor, preview, and tools URLs.
-- [x] Add secure per-session URL access.
-- [x] Implement hosted TTL cleanup.
-- [x] Add infrastructure as code under `infra/`.
-- [x] Validate one hosted React scenario end to end inside Fargate, including the expected starter failure and solution pass.
+Exit: `npm run dev:all` brings up Convex, Vite, kind, dispatcher, gateway; a session pod starts from the UI and the old Docker runner is deleted.
 
-## AWS Hosted Launch Plan
+- [ ] `runner/k8s-dispatcher.mjs` (`@kubernetes/client-node`): poll Convex → Pod + headless Service in `sessions`; record pod IP + route ID; reap stopped/expired; reconcile on start; Convex lease for multi-replica safety.
+- [ ] `runner/session-gateway.mjs`: implement ADR 0004 — bootstrap code → `HttpOnly` cookie bound to route ID; proxy `/s/:routeId/{pty,editor,preview,steps}/*` with WebSocket upgrade; ownership check per connection.
+- [ ] `deploy/helm/learning-lab/`: namespaces, dispatcher, gateway, RBAC (pods/services in `sessions` only), default-deny `NetworkPolicy` + egress allow-list, `ResourceQuota`, pod limits.
+- [ ] `deploy/kind/cluster.yaml` with port mapping `8080 → gateway`; `scripts/dev-supervisor.mjs` creates/loads/installs idempotently.
+- [ ] Delete `runner/local-runner.mjs`, `workspace-server.mjs`, and the `local` runner enum.
 
-The hosted architecture uses three ECS workloads with separate responsibilities:
+## Phase 4 — Frontend rewrite ⏳
 
-- an ECS service for the trusted AWS dispatcher;
-- an ECS service for the authenticated session gateway;
-- one standalone Fargate task for each learner session.
+Exit: all Phase 1 scenarios run end-to-end on local/kind from the new UI.
 
-The local runner remains the default local development path throughout this migration.
+- [ ] New `src/` with React Router; delete `App.tsx`. Switch to Convex `useQuery` subscriptions.
+- [ ] `/` Areas grid with search; Playgrounds and Examples tiles first.
+- [ ] `/:area` scenario cards with completion check marks from progress records.
+- [ ] `/:area/:slug` scenario shell: left `InstructionPane` (title, step dots, markdown with `<details>` and run-in-terminal code blocks, `START`/`BACK`/`NEXT`, verify feedback), right `WorkspacePane` (tab strip `Terminal | Editor | Preview | +`, xterm.js over gateway WS, iframes for editor/preview, TTL countdown, stop).
+- [ ] Session states: initialising line in the terminal pane; errored/expired modal with retry.
+- [ ] `/admin`: sessions table, runner heartbeat, import scenarios (operator only).
+- [ ] Visual pass to match `docs/2026-10-22/*.png`: dark terminal pane, light instruction pane.
 
-Promotion follows one direction: reusable Terraform modules and application artifacts, staging deployment and qualification, then production deployment. Production enablement is blocked unless every security, quota, cost, recovery, and regression gate below passes.
+## Phase 5 — `dev` environment on EKS ⏳
 
-Current deployment status as of 2026-08-16: the staging and production AWS
-environment roots were intentionally destroyed after validation. Their remote
-Terraform states are empty. The shared Terraform backend and account-security
-stack remain deployed, and the Clerk DNS records and external Clerk and Convex
-resources were not part of the AWS environment teardown. The shared
-`learning-lab-platform-*` CloudWatch alarms were removed after both environment
-states became empty; the retained account-security metric filters remain.
+Exit: a React and a terminal scenario run end-to-end from a phone browser against `app.dev.<domain>`.
 
-### 1. Environment Foundation
+- [ ] `infra/aws/modules/eks-platform`: VPC (2 AZ, private pod subnets, NAT), EKS Auto Mode, ECR repos, ACM wildcard + Route 53 (`app.dev.<domain>`, `*.dev.<domain>`), scenario-bundle S3 bucket (create-only), IRSA for dispatcher, CloudWatch log group, S3 + CloudFront + OAC for the frontend.
+- [ ] `infra/aws/environments/dev` root using the existing backend; deletion protection off.
+- [ ] Helm values for dev: ALB Ingress, wildcard host, image digests.
+- [ ] Clear legacy `staging`/`aws-ecs-fargate` rows from `scenarioArtifactApprovals`, `sessions`, `runnerHeartbeats` on `upbeat-crab-254` (or run a one-off internalMutation) before the first schema push.
+- [ ] Convex deploy to `upbeat-crab-254`; Clerk dev instance allowed origins.
+- [ ] `npm run infra:dev:plan|apply`, `npm run deploy:dev` (build → push ECR → helm upgrade → convex deploy → S3 sync + CloudFront invalidation).
 
-- [x] Implement the Terraform bootstrap stack for a private, versioned, KMS-encrypted state bucket and native S3 lock files outside the runner stack.
-- [x] Deploy the production state backend in the verified production AWS account, migrate bootstrap state, and prove native lock contention, version-copy recovery, KMS-encrypted reads, and backup comparison.
-- [x] Restore a copied state version into an isolated backend and run Terraform against it to rehearse the full backup restoration procedure.
-- [x] Rehearse KMS disable and re-enable recovery with an isolated key and copied state before any production break-glass exercise.
-- [x] Build reusable, versioned Terraform modules before instantiating staging or production; create separate variable sets, state, deletion protection, and immutable image inputs for each environment.
-- [ ] Isolate staging and production within the shared AWS account by using separate state, resource names, networks, IAM roles, KMS keys, registries, storage, and secrets, plus separate Clerk applications and Convex deployments. The AWS boundaries and automated readiness gate are implemented. Development and staging intentionally share one exact registered Clerk development identity, while the distinct production Clerk identity is provisioned and registered. Distinct staging and production Convex deployments are also provisioned and registered. Clerk production-domain verification, both `convex` JWT templates, and both matching Convex issuer values are complete; remaining hosted Clerk settings and hosted Convex code deployments are incomplete.
-- [x] Configure staging first, then production, with private subnets, ECS clusters, ECR repositories, S3 buckets, KMS keys, and CloudWatch log groups.
-- [x] Make network boundaries explicit: only the ALB reaches gateway security groups, only the gateway reaches session ports, dispatcher tasks have no inbound path, session tasks cannot reach other sessions, and egress is allowlisted through endpoints or a controlled proxy.
-- [x] Block task access to EC2 instance metadata and unrelated link-local endpoints; use ECS task metadata only where required and never expose its output to learner processes.
-- [ ] Migrate human operator access from the active `default` profile and long-lived `devAdmin` credentials to IAM Identity Center temporary sessions. Dispatcher credentials already use AWS Secrets Manager, secret retrieval is limited to the dedicated ECS execution role during startup, and runtime AWS API permissions use a separate, narrowly scoped task role.
-- [x] Add ACM certificates and Route 53 records for the hosted application and wildcard workspace domain.
-- [x] Add AWS WAF, ALB access logs, CloudTrail coverage, GuardDuty Runtime Monitoring, and security alarms.
-- [x] Define environment ownership, operator access, emergency access, secret rotation, and production change procedures.
+## Phase 6 — CI, TTL reaper, alarms ⏳
 
-### 2. Versioned ECS Images And Delivery
+- [ ] GitHub Actions: lint + tests + scenario smoke on kind for PRs; on `main`: build/push images by digest, publish bundles, convex deploy, helm upgrade dev, frontend sync. Reuse `modules/github-image-delivery` OIDC.
+  - [ ] Rework `modules/github-image-delivery` for a single `dev` environment (drop staging→production promotion sources and the environment enum).
+- [ ] In-cluster CronJob TTL reaper (replaces the ECS Lambda).
+- [ ] Alarms: gateway 5xx, dispatcher heartbeat stale, pod launch failures, daily cost budget.
 
-- [x] Build a production learner-session image that starts OpenVSCode, preview, and tools services without Docker-in-Docker or privileged mode.
-- [x] Build separate production images for the AWS dispatcher and session gateway.
-- [ ] Publish immutable, digest-addressed scenario artifacts and manifests to the environment artifact bucket before any hosted session can reference them; record the approved digest in Convex. The deterministic publisher, create-only S3 policy, Convex approval history, and fail-closed hosted-session gate are implemented. First environment publication remains blocked until the required Convex code is deployed and the hosted Clerk and Convex authentication flow is qualified as described in `docs/environment-isolation.md`.
-- [ ] Add CI image builds for ARM64, vulnerability scanning, software bills of materials, image signing, and immutable digest promotion. The guarded PR, staging publication, exact-digest production promotion workflow, and least-privilege GitHub OIDC Terraform are implemented. Completion remains blocked until every external action is pinned to an authenticated commit SHA and the account-level OIDC provider and environment roles are applied.
-- [ ] Pin every ECS task definition to an approved image digest and retain every digest referenced by an active task definition.
-- [ ] Add staged task-definition promotion with automated rollback when deployment health checks fail.
+## Later ⏳
 
-### 3. Trusted AWS Dispatcher Service
+- [ ] Kubernetes-API scenarios via `vcluster` per session (CKA/CKAD-style areas).
+- [ ] Organizations/teams, enrollment, role-based access.
+- [ ] Author-facing publishing workflow.
+- [ ] Quotas and abuse prevention before any public access.
 
-- [ ] Package `runner/aws-runner.mjs` as a continuously running ECS service in private subnets.
-- [ ] Replace reusable runner and Convex credentials with dispatcher workload identity and a session-bound callback protocol: the dispatcher mints a random, single-session, purpose-scoped credential with a short expiry; stores only its hash and expiry in Convex; injects it from a dedicated Secrets Manager entry through the ECS execution role; deletes that entry after task startup; and rejects replay, wrong session, wrong operation, or expired callbacks.
-- [ ] Prefer dispatcher-mediated readiness, validation, checkpoint, and lifecycle updates so learner tasks never receive a general Convex credential; document the narrowly scoped callback endpoint and rotation or revocation behavior for any direct callback that remains.
-- [ ] Give the dispatcher only the ECS, networking, tagging, route-registration, presigning, and cleanup permissions it requires.
-- [ ] Add leader election or a Convex lease so multiple dispatcher tasks can run safely without duplicate session launches.
-- [ ] Reconcile Convex session state with ECS task state after restarts, timeouts, partial launches, and missed cleanup events.
-- [ ] Make task launch idempotent with deterministic client tokens, capacity-provider configuration, and bounded retries.
-- [ ] Publish dispatcher heartbeats, launch latency, reconciliation failures, task capacity failures, and cleanup backlog metrics.
+## Dropped from the previous roadmap ❌
 
-### 4. Interactive Standalone Session Tasks
-
-- [ ] Replace the validation-only container command with the interactive learner-session entrypoint.
-- [ ] Download one authorized scenario artifact through a short-lived, exact-key presigned URL and extract it safely.
-- [ ] Start the editor, preview, and tools processes on fixed internal ports with container health checks.
-- [ ] Report readiness and endpoint health through the session-bound callback or dispatcher-mediated protocol; let the trusted dispatcher discover and record private task IP, task ARN, and image digest.
-- [ ] Enforce CPU, memory, ephemeral-storage, process, file-size, network, and session-duration limits inside each task.
-- [ ] Upload bounded checkpoints through short-lived exact-key presigned URLs and restore the latest authorized checkpoint after task replacement.
-- [ ] Run artifact and checkpoint URL presigning plus checkpoint deletion from a dedicated trusted service or dispatcher component, never from learner tasks; make deletion idempotent, retention-driven, observable, and independently reconciled.
-- [ ] Stop promptly on learner request, TTL expiry, account revocation, dispatcher reconciliation, or platform shutdown.
-- [ ] Prove that a stop during task startup cannot publish a usable route and always cleans any partially created resources.
-
-### 5. Session Gateway And Secure Routing
-
-- [ ] Implement the session gateway as a stateless ECS service across at least two Availability Zones.
-- [ ] Put the gateway behind an internet-facing ALB with HTTPS-only listeners and wildcard workspace routing.
-- [ ] Implement endpoint-bound one-time bootstrap codes, host-only `HttpOnly` cookies, bounded revocation, and authenticated ownership checks from ADR 0004.
-- [ ] Resolve opaque route IDs to healthy private task IPs without exposing ECS identifiers or private addresses to browsers.
-- [ ] Proxy editor WebSockets, preview HTTP traffic, and tools requests with correct timeout, streaming, and size limits.
-- [ ] Remove routes before task shutdown and deny stale, revoked, cross-user, and cross-endpoint access.
-- [ ] Add rate limits, request IDs, structured audit logs, security headers, and origin validation.
-
-### 6. Hosted Application And Account Integration
-
-- [ ] Host the React application as immutable static assets in a private S3 origin behind CloudFront with Origin Access Control, HTTPS, security headers, cache-versioned releases, and a documented rollback to the prior asset manifest.
-- [ ] Deploy the React application with `VITE_PRODUCT_SURFACE=hosted`, Clerk configured, authorized session access, and enforced cost controls.
-- [ ] Complete production Clerk integration. Production-domain verification and the exact `convex` JWT template are complete; production keys, allowed origins, redirects, account-management URLs, and webhook destinations remain pending.
-- [ ] Complete the hosted Convex rollout. Both registered deployments have their exact matching Clerk issuer values; deployment-scoped key handling, schema and function promotion through CI, reference-data seeding or migration, durable-data backups, forward and rollback compatibility, and end-to-end authentication qualification remain pending.
-- [ ] Move hosted session requests to `aws-ecs-fargate` while keeping local development on the local runner.
-- [ ] Issue workspace bootstrap codes only to the authenticated session owner and never place bearer credentials in workspace URLs.
-- [ ] Implement signed, idempotent Clerk deletion webhooks and the approved learning-data retention or anonymization policy.
-- [ ] Add learner-facing startup, stopping, recovery, capacity, and retry states for ECS-backed sessions.
-
-### 7. Reliability, Security, And Cost Gates
-
-- [ ] Add alarms for dispatcher health, gateway health, ALB errors, ECS launch failures, startup latency, cleanup backlog, expired tasks, and NAT or data-transfer anomalies.
-- [ ] Add ECS deployment circuit breakers, minimum healthy capacity, health-check grace periods, autoscaling bounds, capacity-provider strategy, graceful draining, deployment rollback, and explicit Fargate capacity-error handling.
-- [ ] Implement and verify per-user and global concurrency quotas, launch-rate limits, maximum TTLs, artifact-size limits, and an operator-tested production kill switch before enabling any hosted learner traffic.
-- [ ] Add CloudWatch dashboards and operational runbooks for launch failure, route failure, stuck cleanup, secret rotation, image rollback, and regional impairment.
-- [ ] Execute the ADR 0004 security suite for bootstrap replay, endpoint swapping, cookie scope, CSRF and origin rejection, cross-user denial, support grants, sign-out revocation, stale routes, log redaction, and hostile preview content.
-- [ ] Run dependency, container, infrastructure, IAM, network, and application security reviews with no unresolved critical or high findings.
-- [ ] Perform load tests for concurrent launches, gateway WebSockets, task churn, checkpoint traffic, and Convex control-plane load.
-- [ ] Run failure injection for dispatcher restarts, gateway task loss, ECS capacity errors, partial startup, lost callbacks, and cleanup retries.
-- [ ] Define recovery objectives for Convex data, S3 artifacts and checkpoints, routing state, Terraform state, and container availability; document RTO, RPO, backup ownership, and regional recovery order.
-- [ ] Measure per-session compute, NAT, storage, logging, and gateway costs; make CI or promotion fail when forecast or measured cost exceeds approved per-session, daily, or monthly thresholds; configure budgets and anomaly detection.
-
-### 8. Staging And Production Rollout
-
-- [ ] Create one coordinated CI/CD workflow that validates Terraform plans, publishes signed images and scenario artifacts, deploys Convex functions and data migrations, applies staging infrastructure, deploys ECS services and frontend assets, runs smoke tests, detects drift, and promotes the same digests to production with approval and component-level rollback.
-- [ ] Deploy the complete architecture to staging from CI using production-equivalent networking and security controls before creating or changing production workloads.
-- [ ] Pass automated end-to-end tests for sign-up, sign-in, launch, editor access, preview, checks, checkpoint recovery, stop, TTL expiry, sign-out, and cross-user denial.
-- [ ] Run the complete local-runner end-to-end suite in CI and block promotion on any regression to local session launch, checks, stop, cleanup, or auth-disabled development.
-- [ ] Run a controlled staging soak with repeated task creation and cleanup until no orphaned tasks, routes, network interfaces, or artifacts remain.
-- [ ] Complete backup, restore, rollback, incident-response, and disaster-recovery exercises.
-- [ ] Deploy production through an approval-gated pipeline and run a small internal canary cohort.
-- [ ] Expand availability only after service-level objectives, security gates, cost limits, and rollback criteria remain healthy through the canary period.
-- [ ] Record the production evidence and mark AWS migration complete only after real learner sessions run exclusively on standalone ECS tasks.
-
-## Later Multi-User Platform
-
-- [x] Add user accounts.
-- [ ] Add organizations or teams.
-- [ ] Add course enrollment and learner progress.
-- [ ] Add role-based access for learner, author, and operator.
-- [ ] Add billing or access control if the platform becomes public.
-- [ ] Add an author-facing scenario publishing and approval workflow beyond the automated artifact pipeline.
-- [ ] Add hosted resource quotas and abuse prevention.
+ECS/Fargate dispatcher and standalone tasks; staging → production promotion;
+image signing/SBOM gates; production kill switch and canary cohort; the
+ECS-specific metadata, credential, and network boundary validations. Revisit
+individual items if the platform goes public.

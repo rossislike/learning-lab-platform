@@ -1,6 +1,6 @@
 # ADR 0003: Hosted Session URL Routing
 
-- Status: Accepted
+- Status: Accepted; amended by [ADR 0005](0005-kubernetes-execution-model.md) on 2026-10-22 (ECS task → Kubernetes pod; task ARN/DescribeTasks → pod name/IP)
 - Date: 2026-07-09
 - Decision owners: Learning Lab Platform maintainers
 

@@ -2971,7 +2971,7 @@ function RunnerContractPanel() {
           <Clock3 size={16} /> Enforce TTL and teardown
         </li>
         <li>
-          <CircleDashed size={16} /> Swap local runner for AWS ECS
+          <CircleDashed size={16} /> Swap local runner for Kubernetes (Phase 3)
         </li>
       </ul>
     </article>

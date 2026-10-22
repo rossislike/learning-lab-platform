@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-const runnerValidator = v.union(v.literal("local"), v.literal("aws-ecs-fargate"));
+const runnerValidator = v.union(v.literal("local"), v.literal("kubernetes"));
 
 export const heartbeat = mutation({
   args: {

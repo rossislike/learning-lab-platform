@@ -20,9 +20,9 @@ Clerk is the identity provider for hosted user accounts. Convex validates Clerk 
    ```
 
    Use `RS256`, a 60-second token lifetime, a 5-second allowed clock skew, and
-   Clerk-managed signing keys with custom signing keys disabled. The hosted
-   shared development-staging and isolated production templates were remotely
-   verified with this exact configuration on 2026-08-15.
+   Clerk-managed signing keys with custom signing keys disabled. The Clerk
+   development instance used by `local` and `dev` was remotely verified with
+   this exact configuration on 2026-08-15.
 
 3. Copy the Clerk publishable key into `.env.local`:
 
@@ -40,7 +40,7 @@ Clerk is the identity provider for hosted user accounts. Convex validates Clerk 
 5. Run `npx convex dev` so `convex/auth.config.ts`, the user table, and account functions are deployed.
 
 Also set `RUNNER_SHARED_SECRET` to the same long random value in Convex and in
-each local or AWS runner environment. For local development, place it in the
+each runner environment (`local` now; the `dev` dispatcher in Phase 3+). For local development, place it in the
 ignored `.env.local`; both `npm run runner:local` and `npm run dev:all` load it
 without logging it. Runner-only lifecycle functions reject calls that do not
 supply this value. Set `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true`
@@ -52,7 +52,9 @@ provider. Configured frontend mode remains blocked unless the Clerk publishable
 key is present, and authenticated Convex calls will not succeed until the
 issuer is configured.
 
-Use the production Clerk publishable key and production issuer domain on the production frontend and Convex deployment.
+Both `local` and `dev` use the Clerk development instance recorded in
+`config/hosted-environments.json`. The production Clerk instance is parked
+(see the `parked` block there) and is not wired to any environment.
 
 ## Account lifecycle
 

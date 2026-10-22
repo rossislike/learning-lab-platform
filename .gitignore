@@ -15,13 +15,8 @@ crash.log
 infra/aws/bootstrap/terraform-backend/bootstrap.s3.tfbackend
 infra/aws/bootstrap/terraform-backend/backend.tf
 infra/aws/bootstrap/terraform-backend/terraform.tfvars
-infra/aws/environments/staging/staging.s3.tfbackend
-infra/aws/environments/staging/staging.tfvars
-infra/aws/environments/production/production.s3.tfbackend
-infra/aws/environments/production/production.tfvars
 infra/aws/account-security/account-security.s3.tfbackend
 infra/aws/account-security/terraform.tfvars
-infra/aws/account-security/learning_lab_alarms_teardown_override.tf
-infra/aws/modules/hosted-runner/teardown_override.tf
-infra/aws/modules/hosted-runner/.teardown-owner.json
+infra/aws/environments/dev/dev.s3.tfbackend
+infra/aws/environments/dev/dev.tfvars
 znotes.txt

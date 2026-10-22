@@ -82,7 +82,7 @@ export const listForLab = query({
 export const listRequested = query({
   args: {
     runnerSecret: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
+    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
   },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
@@ -103,7 +103,7 @@ export const listRequested = query({
 export const listStartable = query({
   args: {
     runnerSecret: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
+    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
   },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
@@ -144,7 +144,7 @@ export const listExpired = query({
 });
 
 export const listCleanupNeeded = query({
-  args: { runnerSecret: v.string(), runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))) },
+  args: { runnerSecret: v.string(), runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))) },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const cleanupStatuses = ["stopping", "stopped", "expired", "errored"] as const;
@@ -197,7 +197,7 @@ export const request = mutation({
   args: {
     labId: v.id("labs"),
     learnerLabel: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("aws-ecs-fargate"))),
+    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
     ttlSeconds: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -211,7 +211,7 @@ export const request = mutation({
     if (!learnerLabel) {
       throw new Error("Learner label is required");
     }
-    if (runner === "aws-ecs-fargate" && !ownerSubject) {
+    if (runner === "kubernetes" && !ownerSubject) {
       throw new Error("Hosted sessions require an authenticated owner subject");
     }
 

@@ -1,69 +1,41 @@
 {
-  "schemaVersion": 3,
-  "awsAccountTopology": {
-    "mode": "shared",
-    "sharedAccountId": "442359104502",
-    "environments": [
-      "staging",
-      "production"
-    ],
-    "isolationBoundaries": [
-      "terraformState",
-      "resourceNames",
-      "network",
-      "iam",
-      "kms",
-      "ecr",
-      "objectStorage",
-      "secrets"
-    ],
-    "owner": "platform owner",
-    "reason": "Staging and production intentionally share one AWS account while retaining environment-scoped infrastructure and credentials."
-  },
-  "clerkApplicationTopology": {
-    "mode": "sharedDevelopmentStaging",
-    "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
-    "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
-    "instanceType": "development",
-    "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev",
-    "environments": [
-      "development",
-      "staging"
-    ],
-    "owner": "platform owner",
-    "reason": "Development and staging intentionally share one Clerk development instance; production remains isolated."
-  },
-  "productionLearnerTrafficBlocked": true,
+  "schemaVersion": 4,
   "environments": {
-    "development": {
+    "local": {
+      "runner": "local",
+      "cluster": "kind (learning-lab)",
       "awsAccountId": null,
       "clerk": {
+        "mode": "optional",
         "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
         "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
         "instanceType": "development",
         "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
       },
-      "convexDeployment": null
+      "convexDeployment": null,
+      "note": "Legacy Docker runner until Phase 3; then kubernetes on kind. Convex is a per-developer `npx convex dev` deployment."
     },
-    "staging": {
+    "dev": {
+      "runner": "kubernetes",
+      "cluster": "EKS Auto Mode (learning-lab-dev, us-east-2)",
       "awsAccountId": "442359104502",
       "clerk": {
+        "mode": "required",
         "applicationId": "app_3GKhzAioaTZbOK6QwVEL8qxIHS3",
         "instanceId": "ins_3GKhzB4WHOIij3p0UthvLWPmVCG",
         "instanceType": "development",
         "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
       },
       "convexDeployment": "prod:upbeat-crab-254"
-    },
-    "production": {
-      "awsAccountId": "442359104502",
-      "clerk": {
-        "applicationId": "app_3HxpakMJmYEYqRjofDF3wrByUqx",
-        "instanceId": "ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq",
-        "instanceType": "production",
-        "issuerDomain": "https://clerk.learning-lab-platform.rumothy.com"
-      },
-      "convexDeployment": "prod:aware-fish-663"
     }
+  },
+  "parked": {
+    "reason": "Provisioned for the retired staging/production plan. Not referenced by any environment. Safe to delete later.",
+    "clerkProduction": {
+      "applicationId": "app_3HxpakMJmYEYqRjofDF3wrByUqx",
+      "instanceId": "ins_3Hxpwld1IGCSIDBX7vZ3qqzLkTq",
+      "issuerDomain": "https://clerk.learning-lab-platform.rumothy.com"
+    },
+    "convexProduction": "prod:aware-fish-663"
   }
 }

@@ -1,5 +1,0 @@
-**
-!runner/
-runner/**
-!runner/session-gateway.mjs
-!runner/hosted-session-gateway-healthcheck.mjs

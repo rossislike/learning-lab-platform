@@ -20,7 +20,7 @@ const approval = {
   _id: "approval-1",
   labId: "lab-1",
   slug: "react-welcome-message",
-  environment: "staging",
+  environment: "dev",
   artifactSha256,
   artifactKey: `scenarios/react-welcome-message/artifacts/sha256/${artifactSha256}.tar`,
   artifactSizeBytes: 4096,
@@ -52,9 +52,9 @@ test("local session resolution does not consult hosted configuration or approval
 test("hosted session resolution fails closed without an active approval", async () => {
   await assert.rejects(
     resolveScenarioSessionSnapshot({
-      runner: "aws-ecs-fargate",
+      runner: "kubernetes",
       labId: "lab-1",
-      configuredEnvironment: () => "staging",
+      configuredEnvironment: () => "dev",
       validateApproval: assertScenarioArtifactApproval,
       loadLab: async () => ({
         _id: "lab-1",
@@ -79,9 +79,9 @@ test("hosted session resolution snapshots the complete approved contract", async
   }
   const mutableApproval = { ...approval, runtime: mutableRuntime }
   const snapshot = await resolveScenarioSessionSnapshot({
-    runner: "aws-ecs-fargate",
+    runner: "kubernetes",
     labId: "lab-1",
-    configuredEnvironment: () => "staging",
+    configuredEnvironment: () => "dev",
     validateApproval: assertScenarioArtifactApproval,
     loadLab: async () => lab,
     loadApproval: async () => mutableApproval,
@@ -90,7 +90,7 @@ test("hosted session resolution snapshots the complete approved contract", async
   lab.slug = "mutable-lab-slug"
   mutableRuntime.validationCommand = "mutable lab command"
   assert.equal(snapshot.approvalId, "approval-1")
-  assert.equal(snapshot.environment, "staging")
+  assert.equal(snapshot.environment, "dev")
   assert.equal(snapshot.slug, "react-welcome-message")
   assert.equal(snapshot.sourceManifestSha256, "c".repeat(64))
   assert.equal(snapshot.runtime.validationCommand, "npm test")
@@ -99,19 +99,38 @@ test("hosted session resolution snapshots the complete approved contract", async
   ])
 })
 
-test("hosted session resolution rejects approval environment mismatch", async () => {
+test("hosted session resolution rejects approval lab mismatch", async () => {
   await assert.rejects(
     resolveScenarioSessionSnapshot({
-      runner: "aws-ecs-fargate",
+      runner: "kubernetes",
       labId: "lab-1",
-      configuredEnvironment: () => "production",
+      configuredEnvironment: () => "dev",
       validateApproval: assertScenarioArtifactApproval,
       loadLab: async () => ({
         _id: "lab-1",
         slug: "react-welcome-message",
         status: "active",
       }),
-      loadApproval: async () => approval,
+      loadApproval: async () => ({ ...approval, labId: "lab-2" }),
+    }),
+    /does not match the requested lab/,
+  )
+})
+
+test("hosted session resolution rejects approval environment mismatch", async () => {
+  await assert.rejects(
+    resolveScenarioSessionSnapshot({
+      runner: "kubernetes",
+      labId: "lab-1",
+      configuredEnvironment: () => "dev",
+      validateApproval: assertScenarioArtifactApproval,
+      loadLab: async () => ({
+        _id: "lab-1",
+        slug: "react-welcome-message",
+        status: "active",
+      }),
+      // Untyped test data: a legacy row whose environment is no longer in the enum.
+      loadApproval: async () => ({ ...approval, environment: "staging" }),
     }),
     /does not match the requested lab/,
   )
