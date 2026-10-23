@@ -7,28 +7,32 @@ import { assertScenarioArtifactApproval } from "./scenarioArtifactPolicy.ts"
 const artifactSha256 = "a".repeat(64)
 const manifestSha256 = "b".repeat(64)
 const runtime = {
-  expectedBehavior: "Welcome text changes",
-  expectedPorts: [{ name: "preview", containerPort: 5173, public: true }],
-  packagedWorkspaceTemplatePath:
-    "lab-definitions/react-welcome-message/workspace-template/update-welcome-message-1",
-  previewCommand: "npm run dev",
-  remediationFile: "src/App.jsx",
-  ttlSeconds: 3600,
-  validationCommand: "npm test",
-}
+    kind: "react",
+    ttlSeconds: 3600,
+    workspace: { cwd: "/workspace", user: "learner" },
+    tabs: ["terminal", "editor", "preview"],
+    setup: "scripts/setup.sh",
+    stepCount: 2,
+    react: {
+      previewPort: 5173,
+      installCommand: "npm ci",
+      devCommand: "npm run dev -- --host 0.0.0.0 --port 5173",
+      testCommand: "npm test -- --run",
+    },
+  }
 const approval = {
   _id: "approval-1",
   labId: "lab-1",
-  slug: "react-welcome-message",
+  slug: "welcome-message",
   environment: "dev",
   artifactSha256,
-  artifactKey: `scenarios/react-welcome-message/artifacts/sha256/${artifactSha256}.tar`,
+  artifactKey: `scenarios/welcome-message/bundles/sha256/${artifactSha256}.tar`,
   artifactSizeBytes: 4096,
   manifestSha256,
-  manifestKey: `scenarios/react-welcome-message/manifests/sha256/${manifestSha256}.json`,
+  manifestKey: `scenarios/welcome-message/manifests/sha256/${manifestSha256}.json`,
   sourceManifestSha256: "c".repeat(64),
   runtime,
-  schemaVersion: 1,
+  schemaVersion: 2,
 }
 
 test("local session resolution does not consult hosted configuration or approval", async () => {
@@ -58,7 +62,7 @@ test("hosted session resolution fails closed without an active approval", async 
       validateApproval: assertScenarioArtifactApproval,
       loadLab: async () => ({
         _id: "lab-1",
-        slug: "react-welcome-message",
+        slug: "welcome-message",
         status: "active",
       }),
       loadApproval: async () => null,
@@ -70,12 +74,13 @@ test("hosted session resolution fails closed without an active approval", async 
 test("hosted session resolution snapshots the complete approved contract", async () => {
   const lab = {
     _id: "lab-1",
-    slug: "react-welcome-message",
+    slug: "welcome-message",
     status: "active",
   }
   const mutableRuntime = {
     ...runtime,
-    expectedPorts: runtime.expectedPorts.map((port) => ({ ...port })),
+    tabs: [...runtime.tabs],
+    react: { ...runtime.react },
   }
   const mutableApproval = { ...approval, runtime: mutableRuntime }
   const snapshot = await resolveScenarioSessionSnapshot({
@@ -88,15 +93,14 @@ test("hosted session resolution snapshots the complete approved contract", async
   })
 
   lab.slug = "mutable-lab-slug"
-  mutableRuntime.validationCommand = "mutable lab command"
+  mutableRuntime.react.testCommand = "mutable lab command"
+  mutableRuntime.tabs.push("preview")
   assert.equal(snapshot.approvalId, "approval-1")
   assert.equal(snapshot.environment, "dev")
-  assert.equal(snapshot.slug, "react-welcome-message")
+  assert.equal(snapshot.slug, "welcome-message")
   assert.equal(snapshot.sourceManifestSha256, "c".repeat(64))
-  assert.equal(snapshot.runtime.validationCommand, "npm test")
-  assert.deepEqual(snapshot.runtime.expectedPorts, [
-    { name: "preview", containerPort: 5173, public: true },
-  ])
+  assert.equal(snapshot.runtime.react.testCommand, "npm test -- --run")
+  assert.deepEqual(snapshot.runtime.tabs, ["terminal", "editor", "preview"])
 })
 
 test("hosted session resolution rejects approval lab mismatch", async () => {
@@ -108,7 +112,7 @@ test("hosted session resolution rejects approval lab mismatch", async () => {
       validateApproval: assertScenarioArtifactApproval,
       loadLab: async () => ({
         _id: "lab-1",
-        slug: "react-welcome-message",
+        slug: "welcome-message",
         status: "active",
       }),
       loadApproval: async () => ({ ...approval, labId: "lab-2" }),
@@ -126,7 +130,7 @@ test("hosted session resolution rejects approval environment mismatch", async ()
       validateApproval: assertScenarioArtifactApproval,
       loadLab: async () => ({
         _id: "lab-1",
-        slug: "react-welcome-message",
+        slug: "welcome-message",
         status: "active",
       }),
       // Untyped test data: a legacy row whose environment is no longer in the enum.

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "slug": "welcome-message",
+  "area": "react",
+  "kind": "react",
+  "title": "Update Welcome Message",
+  "summary": "Make one heading text change and verify it with a single test.",
+  "difficulty": "easy",
+  "tags": ["react", "fundamentals", "vite", "vitest"],
+  "status": "active",
+  "displayOrder": 10,
+  "ttlSeconds": 3600,
+  "workspace": { "cwd": "/workspace", "user": "learner" },
+  "setup": "scripts/setup.sh",
+  "intro": "intro.md",
+  "finish": "finish.md",
+  "react": {
+    "previewPort": 5173,
+    "installCommand": "npm ci --no-audit --no-fund",
+    "devCommand": "npm run dev -- --host 0.0.0.0 --port 5173",
+    "testCommand": "npm test -- --run"
+  },
+  "steps": [
+    { "title": "Look around", "content": "step1.md" },
+    {
+      "title": "Change the heading",
+      "content": "step2.md",
+      "verify": "scripts/verify-tests.sh",
+      "solve": "scripts/solve.sh"
+    }
+  ]
+}

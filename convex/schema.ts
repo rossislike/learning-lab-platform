@@ -1,20 +1,38 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+export const scenarioKind = v.union(v.literal("terminal"), v.literal("react"));
+export const workspaceTab = v.union(
+  v.literal("terminal"),
+  v.literal("editor"),
+  v.literal("preview")
+);
+export const scenarioWorkspace = v.object({
+  cwd: v.string(),
+  user: v.union(v.literal("learner"), v.literal("root")),
+});
+export const scenarioReact = v.object({
+  previewPort: v.number(),
+  installCommand: v.string(),
+  devCommand: v.string(),
+  testCommand: v.string(),
+});
+export const scenarioStep = v.object({
+  title: v.string(),
+  content: v.string(),
+  setup: v.optional(v.string()),
+  verify: v.optional(v.string()),
+});
+
+// What a session pod needs to know about its scenario (manifest v2).
 const scenarioRuntimeContract = v.object({
-  expectedBehavior: v.string(),
-  expectedPorts: v.array(
-    v.object({
-      name: v.string(),
-      containerPort: v.number(),
-      public: v.boolean(),
-    })
-  ),
-  packagedWorkspaceTemplatePath: v.string(),
-  previewCommand: v.string(),
-  remediationFile: v.string(),
+  kind: scenarioKind,
   ttlSeconds: v.number(),
-  validationCommand: v.string(),
+  workspace: scenarioWorkspace,
+  tabs: v.array(workspaceTab),
+  setup: v.optional(v.string()),
+  stepCount: v.number(),
+  react: v.optional(scenarioReact),
 });
 
 export default defineSchema({
@@ -51,27 +69,56 @@ export default defineSchema({
     .index("by_course", ["courseId"])
     .index("by_slug", ["slug"]),
 
+  areas: defineTable({
+    slug: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    displayOrder: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]),
+
+  // Scenarios. The table keeps its historical name until the Phase 4 frontend
+  // rewrite; manifest v2 fields are below, legacy v1 fields are optional.
   labs: defineTable({
     courseId: v.optional(v.id("courses")),
     moduleId: v.optional(v.id("courseModules")),
     slug: v.string(),
     title: v.string(),
     summary: v.string(),
-    domainTitle: v.optional(v.string()),
-    domainSummary: v.optional(v.string()),
-    displayOrder: v.optional(v.number()),
-    scenarioLabel: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("active"), v.literal("archived")),
     difficulty: v.number(),
     tags: v.array(v.string()),
-    templatePath: v.string(),
-    validationCommand: v.string(),
-    previewCommand: v.string(),
+    displayOrder: v.optional(v.number()),
+    // manifest v2
+    manifestVersion: v.optional(v.number()),
+    area: v.optional(v.string()),
+    kind: v.optional(scenarioKind),
+    difficultyLabel: v.optional(v.string()),
+    ttlSeconds: v.optional(v.number()),
+    tabs: v.optional(v.array(workspaceTab)),
+    workspace: v.optional(scenarioWorkspace),
+    setup: v.optional(v.string()),
+    intro: v.optional(v.string()),
+    finish: v.optional(v.string()),
+    steps: v.optional(v.array(scenarioStep)),
+    react: v.optional(scenarioReact),
+    // dashboard grouping compatibility (removed in Phase 4)
+    domainTitle: v.optional(v.string()),
+    domainSummary: v.optional(v.string()),
+    scenarioLabel: v.optional(v.string()),
+    // legacy local Docker runner inputs (react only; removed in Phase 3)
+    templatePath: v.optional(v.string()),
+    validationCommand: v.optional(v.string()),
+    previewCommand: v.optional(v.string()),
+    // legacy, unused after Phase 4 (still read by App.tsx's session panel)
     remediationFile: v.optional(v.string()),
     expectedBehavior: v.optional(v.string()),
-    status: v.union(v.literal("draft"), v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_slug", ["slug"]),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_area", ["area"]),
 
   scenarioArtifactApprovals: defineTable({
     labId: v.id("labs"),
@@ -137,6 +184,8 @@ export default defineSchema({
     ),
     lastCheckSummary: v.optional(v.string()),
     lastCheckScore: v.optional(v.number()),
+    // 0 = intro shown, 1..n = step n shown, n+1 = finish shown
+    currentStep: v.optional(v.number()),
     ttlSeconds: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -159,6 +208,19 @@ export default defineSchema({
     .index("by_session_owner", ["sessionOwnerKey"])
     .index("by_status", ["status"])
     .index("by_expires_at", ["expiresAt"]),
+
+  sessionSteps: defineTable({
+    sessionId: v.id("sessions"),
+    stepIndex: v.number(),
+    status: v.union(v.literal("pending"), v.literal("passed"), v.literal("failed")),
+    output: v.optional(v.string()),
+    attempts: v.number(),
+    verifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_session_step", ["sessionId", "stepIndex"]),
 
   sessionEvents: defineTable({
     sessionId: v.id("sessions"),
@@ -188,6 +250,8 @@ export default defineSchema({
     ),
     score: v.optional(v.number()),
     summary: v.optional(v.string()),
+    completedSteps: v.optional(v.number()),
+    totalSteps: v.optional(v.number()),
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),

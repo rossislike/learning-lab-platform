@@ -1,0 +1,6 @@
+{
+  "slug": "react",
+  "title": "React",
+  "summary": "Components, state, and rendering performance in a live Vite app.",
+  "displayOrder": 40
+}

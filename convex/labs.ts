@@ -1,18 +1,33 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { scenarioSeedData } from "./scenarioSeedData";
+import { areaSeedData, scenarioSeedData } from "./scenarioSeedData";
 
 const now = () => Date.now();
-const DEFAULT_COURSE = {
-  slug: "react-labs",
-  title: "React Labs",
-  summary: "Self-serve React coding exercises.",
-};
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("labs").order("desc").collect();
+    // Reseeding archives scenarios that left the catalog instead of deleting
+    // them (sessions keep a valid labId); the dashboard must not list those.
+    const labs = await ctx.db.query("labs").order("desc").collect();
+    return labs.filter((lab) => lab.status === "active");
+  },
+});
+
+export const listByArea = query({
+  args: { area: v.string() },
+  handler: async (ctx, args) => {
+    const labs = await ctx.db
+      .query("labs")
+      .withIndex("by_area", (q) => q.eq("area", args.area))
+      .collect();
+    return labs
+      .filter((lab) => lab.status === "active")
+      .sort(
+        (a, b) =>
+          (a.displayOrder ?? 999) - (b.displayOrder ?? 999) ||
+          a.title.localeCompare(b.title)
+      );
   },
 });
 
@@ -33,55 +48,33 @@ export const get = query({
   },
 });
 
-export const seedReactProductDashboard = mutation({
+/**
+ * Upserts every area and scenario from the generated seed data
+ * (`npm run scenarios:import`). Scenarios that are no longer in the seed are
+ * archived rather than deleted so existing sessions keep a valid labId.
+ */
+export const seedScenarios = mutation({
   args: {},
   handler: async (ctx) => {
     const timestamp = now();
-    const ids = [];
-    const existingCourse = await ctx.db
-      .query("courses")
-      .withIndex("by_slug", (q) => q.eq("slug", DEFAULT_COURSE.slug))
-      .unique();
-    const courseId = existingCourse
-      ? existingCourse._id
-      : await ctx.db.insert("courses", {
-          ...DEFAULT_COURSE,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
+    const ids: string[] = [];
 
-    if (existingCourse) {
-      await ctx.db.patch(courseId, {
-        ...DEFAULT_COURSE,
-        updatedAt: timestamp,
-      });
+    for (const area of areaSeedData) {
+      const existing = await ctx.db
+        .query("areas")
+        .withIndex("by_slug", (q) => q.eq("slug", area.slug))
+        .unique();
+      const record = { ...area, updatedAt: timestamp };
+      if (existing) {
+        await ctx.db.patch(existing._id, record);
+      } else {
+        await ctx.db.insert("areas", { ...record, createdAt: timestamp });
+      }
     }
 
+    const seededSlugs = new Set<string>();
     for (const scenario of scenarioSeedData) {
-      const moduleSlug = slugFor(scenario.domainTitle ?? "React Scenarios");
-      const existingModule = await ctx.db
-        .query("courseModules")
-        .withIndex("by_slug", (q) => q.eq("slug", moduleSlug))
-        .unique();
-      const module = {
-        courseId,
-        slug: moduleSlug,
-        title: scenario.domainTitle ?? "React Scenarios",
-        summary: scenario.domainSummary ?? "Hands-on React practice scenarios.",
-        displayOrder: scenario.displayOrder ?? 999,
-        updatedAt: timestamp,
-      };
-      const moduleId = existingModule
-        ? existingModule._id
-        : await ctx.db.insert("courseModules", {
-            ...module,
-            createdAt: timestamp,
-          });
-
-      if (existingModule) {
-        await ctx.db.patch(moduleId, module);
-      }
-
+      seededSlugs.add(scenario.slug);
       const existing = await ctx.db
         .query("labs")
         .withIndex("by_slug", (q) => q.eq("slug", scenario.slug))
@@ -89,34 +82,30 @@ export const seedReactProductDashboard = mutation({
 
       const lab = {
         ...scenario,
-        courseId,
-        moduleId,
         tags: [...scenario.tags],
+        tabs: [...scenario.tabs],
+        steps: scenario.steps.map((step) => ({ ...step })),
         updatedAt: timestamp,
       };
 
       if (existing) {
-        await ctx.db.patch(existing._id, lab);
+        await ctx.db.replace(existing._id, {
+          ...lab,
+          createdAt: existing.createdAt,
+        });
         ids.push(existing._id);
       } else {
-        ids.push(
-          await ctx.db.insert("labs", {
-            ...lab,
-            createdAt: timestamp,
-          })
-        );
+        ids.push(await ctx.db.insert("labs", { ...lab, createdAt: timestamp }));
+      }
+    }
+
+    const all = await ctx.db.query("labs").collect();
+    for (const lab of all) {
+      if (!seededSlugs.has(lab.slug) && lab.status !== "archived") {
+        await ctx.db.patch(lab._id, { status: "archived", updatedAt: timestamp });
       }
     }
 
     return ids;
   },
 });
-
-export const seedScenarios = seedReactProductDashboard;
-
-function slugFor(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}

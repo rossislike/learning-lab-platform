@@ -9,7 +9,8 @@ export default [
     ignores: [
       "dist",
       "convex/_generated",
-      "lab-definitions/**",
+      "scenarios/**/workspace/**",
+      "scenarios/**/solution/**",
     ],
   },
   js.configs.recommended,

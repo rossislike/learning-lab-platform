@@ -1,5 +1,6 @@
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { scenarioKind, scenarioReact, scenarioWorkspace, workspaceTab } from "./schema";
 
 import {
   assertScenarioArtifactApproval,
@@ -9,19 +10,13 @@ import {
 
 const environmentValidator = v.literal("dev");
 const runtimeValidator = v.object({
-  expectedBehavior: v.string(),
-  expectedPorts: v.array(
-    v.object({
-      name: v.string(),
-      containerPort: v.number(),
-      public: v.boolean(),
-    })
-  ),
-  packagedWorkspaceTemplatePath: v.string(),
-  previewCommand: v.string(),
-  remediationFile: v.string(),
+  kind: scenarioKind,
   ttlSeconds: v.number(),
-  validationCommand: v.string(),
+  workspace: scenarioWorkspace,
+  tabs: v.array(workspaceTab),
+  setup: v.optional(v.string()),
+  stepCount: v.number(),
+  react: v.optional(scenarioReact),
 });
 
 export const approve = internalMutation({

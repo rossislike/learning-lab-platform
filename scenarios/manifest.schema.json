@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://learning-lab-platform/scenarios/manifest.schema.json",
+  "title": "Learning Lab scenario manifest (schemaVersion 2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "slug",
+    "area",
+    "kind",
+    "title",
+    "summary",
+    "difficulty",
+    "tags",
+    "status",
+    "displayOrder",
+    "ttlSeconds",
+    "workspace",
+    "intro",
+    "finish",
+    "steps"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Unique across all areas. Also the directory name, except the area playground: slug `<area>-playground` lives in `playground/` (and only there)."
+    },
+    "area": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Catalog area; must match the parent directory and its area.json."
+    },
+    "kind": { "type": "string", "enum": ["terminal", "react"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+    },
+    "status": { "type": "string", "enum": ["draft", "active", "archived"] },
+    "displayOrder": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sort key within the area. 0 is reserved for (and required by) the area playground."
+    },
+    "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 28800 },
+    "tabs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["terminal", "editor", "preview"] },
+      "description": "Workspace tabs. Defaults: terminal → [terminal]; react → [terminal, editor, preview]. Terminal scenarios may only list terminal."
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "user"],
+      "properties": {
+        "cwd": { "type": "string", "pattern": "^/[^\\s]*$" },
+        "user": { "type": "string", "enum": ["learner", "root"] }
+      }
+    },
+    "setup": {
+      "type": "string",
+      "pattern": "^scripts/[a-z0-9-]+\\.sh$",
+      "description": "Runs once in the background as soon as the session pod is ready, before the intro is shown; START only moves to step 1."
+    },
+    "intro": { "type": "string", "pattern": "^[a-z0-9-]+\\.md$" },
+    "finish": { "type": "string", "pattern": "^[a-z0-9-]+\\.md$" },
+    "steps": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "content"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "content": { "type": "string", "pattern": "^[a-z0-9-]+\\.md$" },
+          "setup": { "type": "string", "pattern": "^scripts/[a-z0-9-]+\\.sh$" },
+          "verify": {
+            "type": "string",
+            "pattern": "^scripts/[a-z0-9-]+\\.sh$",
+            "description": "Exit 0 = pass. Stdout is shown to the learner on failure."
+          },
+          "solve": {
+            "type": "string",
+            "pattern": "^scripts/[a-z0-9-]+\\.sh$",
+            "description": "Applies the solution. Used only by the smoke test; excluded from bundles."
+          }
+        }
+      }
+    },
+    "react": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previewPort", "installCommand", "devCommand", "testCommand"],
+      "properties": {
+        "previewPort": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+        "installCommand": { "type": "string", "minLength": 1 },
+        "devCommand": { "type": "string", "minLength": 1 },
+        "testCommand": { "type": "string", "minLength": 1 }
+      },
+      "description": "Required when kind is react; forbidden otherwise. The workspace/ directory is copied to workspace.cwd before setup."
+    }
+  }
+}

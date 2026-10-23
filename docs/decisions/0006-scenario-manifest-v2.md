@@ -23,11 +23,12 @@ intro.md           # shown before START
 step1.md … stepN.md
 finish.md          # shown after the last verified step
 scripts/
-  setup.sh         # background setup run on START (optional)
+  setup.sh         # runs in the background as soon as the pod is ready (optional)
   stepN-setup.sh   # per-step setup (optional)
   stepN-verify.sh  # exit 0 = pass; stdout is shown on failure
+  stepN-solve.sh   # applies the solution; smoke test only, never bundled
 workspace/         # react kind only: project copied to /workspace
-solution/          # optional; used by the scenario smoke test
+solution/          # optional; used by solve scripts, never bundled
 ```
 
 Key fields:
@@ -36,8 +37,10 @@ Key fields:
 - `kind` — `terminal` or `react`. `react` adds `editor` and `preview` tabs
   and a `react` block (`previewPort`, `installCommand`, `devCommand`,
   `testCommand`).
-- `steps[]` — ordered `{ title, content, setup?, verify? }`. A scenario with
-  zero steps is a playground.
+- `steps[]` — ordered `{ title, content, setup?, verify?, solve? }`. A
+  scenario with zero steps is a playground.
+- `setup` runs once in the background as soon as the session pod is ready,
+  before the intro is shown; `START` only moves the step pointer to step 1.
 - `workspace` — `{ cwd, user }`; `user` is `learner` or `root` (in-container
   only, see ADR 0005).
 - `ttlSeconds`, `difficulty`, `tags`, `status`.

@@ -11,7 +11,6 @@
     "convex:deploy": "convex deploy",
     "lint": "eslint .",
     "dev:all": "node scripts/dev-supervisor.mjs",
-    "import:react-lab": "node scripts/import-react-product-dashboard.mjs",
     "scenarios:import": "node scripts/import-scenarios.mjs",
     "scenarios:check": "node scripts/import-scenarios.mjs --check",
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",

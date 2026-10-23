@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "slug": "button-label",
+  "area": "react",
+  "kind": "react",
+  "title": "Update Button Label",
+  "summary": "Change one button label so the primary action is clear.",
+  "difficulty": "easy",
+  "tags": ["react", "fundamentals", "jsx", "vite", "vitest"],
+  "status": "active",
+  "displayOrder": 12,
+  "ttlSeconds": 3600,
+  "workspace": { "cwd": "/workspace", "user": "learner" },
+  "setup": "scripts/setup.sh",
+  "intro": "intro.md",
+  "finish": "finish.md",
+  "react": {
+    "previewPort": 5173,
+    "installCommand": "npm ci --no-audit --no-fund",
+    "devCommand": "npm run dev -- --host 0.0.0.0 --port 5173",
+    "testCommand": "npm test -- --run"
+  },
+  "steps": [
+    { "title": "Find the button", "content": "step1.md" },
+    {
+      "title": "Rename it",
+      "content": "step2.md",
+      "verify": "scripts/verify-tests.sh",
+      "solve": "scripts/solve.sh"
+    }
+  ]
+}

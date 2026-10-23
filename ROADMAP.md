@@ -12,17 +12,19 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
-| 1 | Scenario manifest v2 + content | 🔜 **Next** |
-| 2 | Session workspace image + agent | ⏳ Not started (can run in parallel with 1) |
+| 1 | Scenario manifest v2 + content | ✅ Done 2026-10-23 (React vitest smoke run pending on a machine with npm access) |
+| 2 | Session workspace image + agent | 🔜 **Next** |
 | 3 | Dispatcher + gateway on kind | ⏳ Not started |
-| 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start against mocks after 1) |
+| 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start now against the seeded Convex data) |
 | 5 | `dev` environment on EKS | ⏳ Not started (after 3) |
 | 6 | CI, TTL reaper, alarms | ⏳ Not started |
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phase 0 is complete. Start Phase 1 with the reference
-scenario `scenarios/git/first-commit`, then the JSON schema, then the importer.
+**You are here:** Phases 0–1 are complete. Start Phase 2 with the
+`session-workspace` image and the agent's `/pty` WebSocket; drive it with a
+30-line xterm.js page against `scenarios/git/first-commit` before touching the
+real frontend. Phase 4 can proceed in parallel against `labs.seedScenarios`.
 
 ---
 
@@ -39,28 +41,35 @@ scenario `scenarios/git/first-commit`, then the JSON schema, then the importer.
 - [x] `package.json` scripts and `.env.example` trimmed to what still exists.
 - [x] Rewrite this roadmap; trim the README and `infra/aws/README.md`.
 
-## Phase 1 — Scenario manifest v2 and content 🔜
+## Phase 1 — Scenario manifest v2 and content ✅
 
-Exit: seven v2 scenarios import cleanly and pass the smoke test.
+Exit: eleven v2 scenarios import cleanly and the terminal ones pass the smoke test.
 
-- [ ] Author `scenarios/git/first-commit` by hand as the reference scenario (intro, 3 steps, finish, verify scripts, solution).
-- [ ] Write `scenarios/manifest.schema.json` (JSON Schema for v2) from the reference.
-- [ ] Rewrite `scripts/import-scenarios.mjs`: validate against the schema, upsert `scenarios` + `steps` in Convex, bundle to a digest-named tarball.
-- [ ] Convex: add `steps` to scenarios, `currentStep` + `sessionSteps`, `completedSteps` on progress records. Rename `labs` → `scenarios` (or alias) and drop v1-only fields.
-- [ ] Convert the four React labs to v2 (2–4 steps each; vitest becomes the final verify). Delete `lab-definitions/`.
-- [ ] Author `linux/filesystem-basics` and `node/cli-tool`.
-- [ ] Add one zero-step `playground` per area.
-- [ ] Rewrite `scripts/smoke-test-scenarios.mjs` for v2: run `setup.sh`, apply `solution/`, run every verify in a throwaway `session-workspace` container.
+- [x] Author `scenarios/git/first-commit` by hand as the reference scenario (intro, 3 steps, finish, verify + solve scripts).
+- [x] `scenarios/manifest.schema.json` and `scenarios/area.schema.json`; `scripts/json-schema.mjs` validates against them (no new dependency).
+- [x] Rewrite `scripts/import-scenarios.mjs`: validate, inline markdown into `convex/scenarioSeedData.ts`, build digest-named bundles under `build/scenarios/` (git-ignored; solutions and solve scripts excluded, `steps[].solve` stripped from the bundled manifest). `scripts/scenario-catalog.mjs` is the shared loader.
+- [x] Convex: `areas` table; v2 fields on `labs` (`area`, `kind`, `steps`, `intro`, `finish`, `workspace`, `react`, `tabs`); `sessions.currentStep`; `sessionSteps` table; `completedSteps`/`totalSteps` on progress records; `steps.setCurrentStep` / `steps.recordStepResult` / `steps.listForSession`; navigation rules in `stepPolicy.ts` with tests. Hosted runtime contract (`scenarioArtifactPolicy.ts`) now carries the v2 shape.
+- [x] Convert the four React labs to `scenarios/react/*` (2–4 steps each; vitest is the final verify; `solution/src/` + solve script). Delete `lab-definitions/`.
+- [x] Author `linux/filesystem-basics` and `node/cli-tool`; one zero-step playground per area (react playground = minimal Vite app).
+- [x] Rewrite `scripts/smoke-test-scenarios.mjs` for v2: setup → per step verify-fails → solve → verify-passes, in Docker (`node:22-bookworm` until the Phase 2 image) or `--local`.
+- [x] Terminal scenarios proven: `first-commit`, `filesystem-basics`, `cli-tool` (9/9 steps). React scripts proven with a dependency-free stand-in workspace.
+- [ ] **Run on a machine with npm registry access:** `npm run scenarios:smoke -- --local --scenario welcome-message --scenario button-label --scenario empty-state --scenario product-dashboard --scenario react-playground` (this session's network allowlist blocked `npm ci`).
 
-## Phase 2 — Session workspace image and agent ⏳
+Deviations from the plan, on purpose:
+
+- The `labs` table keeps its name until the Phase 4 frontend rewrite; v1-only fields became optional instead of being dropped, so the legacy local Docker runner still runs React scenarios (`templatePath`, `validationCommand`, `previewCommand` are derived from the v2 `react` block). `sessions.request` rejects terminal scenarios on the local runner until Phase 3.
+- Playground slugs are `<area>-playground` (slugs are global) in a `playground/` directory.
+- The hosted runtime contract (`scenarioArtifactApprovals.runtime`, `sessions.hostedScenario`) changed shape to the v2 fields; there is no migration. Any Convex deployment holding old approval/hostedScenario rows must have them cleared before the schema push (local dev deployments: `npx convex run` a one-off, or wipe the tables from the dashboard).
+
+## Phase 2 — Session workspace image and agent 🔜
 
 Exit: `docker run` of the image with a mounted scenario serves a working terminal to a 30-line xterm.js page and verifies a step.
 
 - [ ] `images/session-workspace/Dockerfile`: Ubuntu, Node 22, git, OpenVSCode, non-root `learner`, `tini`. Multi-arch (arm64 + amd64).
-- [ ] `runner/session-agent/`: HTTP + WS on `:7000` — `/healthz`, `/ready`, `WS /pty?id=`, `POST /steps/setup`, `POST /steps/:i/verify`, `/editor/*` and `/preview/*` proxies.
+- [ ] `runner/session-agent/`: HTTP + WS on `:7000` — `/healthz`, `/ready`, `WS /pty?id=`, `GET /steps/setup` (status of the scenario `setup` script, which the agent runs automatically in the background as soon as the pod is ready — START does not trigger it), `POST /steps/:i/verify`, `/editor/*` and `/preview/*` proxies. Scripts run exactly as `docs/scenario-authoring.md` specifies (`bash`, cwd = `workspace.cwd`, `LAB_*` env); react bundles copy `workspace/` to `workspace.cwd` before setup. Results go to `steps.recordStepResult`.
 - [ ] Salvage process supervision and the readiness callback from the old `hosted-learner-entrypoint.mjs` (git history, up to and including commit `11916e0`).
 - [ ] Session-bound callback token: dispatcher mints per session, agent presents it to Convex; Convex stores only its hash + expiry.
-- [ ] Agent integration test driven by a script against the running container.
+- [ ] Agent integration test driven by a script against the running container; point `SMOKE_IMAGE` at the new image and make it the smoke-test default.
 
 ## Phase 3 — Dispatcher and gateway on Kubernetes ⏳
 
@@ -91,7 +100,7 @@ Exit: a React and a terminal scenario run end-to-end from a phone browser agains
 - [ ] `infra/aws/modules/eks-platform`: VPC (2 AZ, private pod subnets, NAT), EKS Auto Mode, ECR repos, ACM wildcard + Route 53 (`app.dev.<domain>`, `*.dev.<domain>`), scenario-bundle S3 bucket (create-only), IRSA for dispatcher, CloudWatch log group, S3 + CloudFront + OAC for the frontend.
 - [ ] `infra/aws/environments/dev` root using the existing backend; deletion protection off.
 - [ ] Helm values for dev: ALB Ingress, wildcard host, image digests.
-- [ ] Clear legacy `staging`/`aws-ecs-fargate` rows from `scenarioArtifactApprovals`, `sessions`, `runnerHeartbeats` on `upbeat-crab-254` (or run a one-off internalMutation) before the first schema push.
+- [ ] Clear legacy `staging`/`aws-ecs-fargate` rows from `scenarioArtifactApprovals`, `sessions`, `runnerHeartbeats` on `upbeat-crab-254` (or run a one-off internalMutation) before the first schema push. This includes every pre-Phase-1 `scenarioArtifactApprovals.runtime` and `sessions.hostedScenario` value: their shape changed to the manifest v2 contract and the old rows no longer validate.
 - [ ] Convex deploy to `upbeat-crab-254`; Clerk dev instance allowed origins.
 - [ ] `npm run infra:dev:plan|apply`, `npm run deploy:dev` (build → push ECR → helm upgrade → convex deploy → S3 sync + CloudFront invalidation).
 

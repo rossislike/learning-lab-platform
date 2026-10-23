@@ -69,7 +69,9 @@ export async function resolveScenarioSessionSnapshot<LabId, ApprovalId>({
     sourceManifestSha256: approval.sourceManifestSha256,
     runtime: {
       ...approval.runtime,
-      expectedPorts: approval.runtime.expectedPorts.map((port) => ({ ...port })),
+      workspace: { ...approval.runtime.workspace },
+      tabs: [...approval.runtime.tabs],
+      ...(approval.runtime.react ? { react: { ...approval.runtime.react } } : {}),
     },
     schemaVersion: approval.schemaVersion,
   };

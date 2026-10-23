@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "slug": "node-playground",
+  "area": "node",
+  "kind": "terminal",
+  "title": "Playground",
+  "summary": "An empty shell with Node.js and npm installed. No steps, no checks.",
+  "difficulty": "easy",
+  "tags": ["node", "playground"],
+  "status": "active",
+  "displayOrder": 0,
+  "ttlSeconds": 3600,
+  "workspace": { "cwd": "/workspace", "user": "learner" },
+  "intro": "intro.md",
+  "finish": "finish.md",
+  "steps": []
+}

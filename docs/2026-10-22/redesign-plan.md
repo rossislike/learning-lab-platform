@@ -96,7 +96,7 @@ scenarios/<area>/<slug>/
 }
 ```
 
-Behavior: `START` runs `setup.sh`, then shows step 1. `NEXT` runs the step's `verify` script; failure shows the script's stdout as the remediation message and keeps the learner on the step. Collapsible blocks in markdown (`<details>`) give the Hint/Solution panels from screenshot 4.
+Behavior: `setup.sh` starts in the background as soon as the session pod is ready, before the intro is shown; `START` only moves to step 1 (the shell shows "preparing…" if setup is still running). `NEXT` runs the step's `verify` script; failure shows the script's stdout as the remediation message and keeps the learner on the step. Collapsible blocks in markdown (`<details>`) give the Hint/Solution panels from screenshot 4.
 
 Convex additions: `scenarios.steps[]` (denormalized from manifest), `sessions.currentStep`, `sessionSteps` table (`sessionId, stepIndex, status, verifiedAt, output`). `progressRecords` gains `completedSteps`.
 
@@ -123,7 +123,7 @@ Each phase ends with something runnable. Order is chosen so the UI can be built 
 - `runner/session-agent/` (new, Node): HTTP+WS on `:7000`.
   - `GET /healthz`, `GET /ready`
   - `WS /pty?id=<n>` → node-pty (bash, cwd from manifest). Multiple terminals per session.
-  - `POST /steps/:i/verify`, `POST /steps/setup` → runs scripts, streams output, reports result to Convex via the session-bound token (reuse the callback-token design from the ECS plan — it is runner-agnostic).
+  - `POST /steps/:i/verify`, `GET /steps/setup (setup runs automatically on readiness)` → runs scripts, streams output, reports result to Convex via the session-bound token (reuse the callback-token design from the ECS plan — it is runner-agnostic).
   - `/editor/*` → proxy to OpenVSCode; `/preview/*` → proxy to Vite (react kind only).
 - Salvage process supervision + readiness callback from `hosted-learner-entrypoint.mjs`.
 - Test: `docker run` the image with a scenario bundle mounted, drive the agent with a script.

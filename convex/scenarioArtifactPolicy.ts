@@ -2,17 +2,18 @@ export const HOSTED_ENVIRONMENTS = ["dev"] as const;
 export type HostedEnvironment = (typeof HOSTED_ENVIRONMENTS)[number];
 
 export type ScenarioRuntimeContract = {
-  expectedBehavior: string;
-  expectedPorts: Array<{
-    name: string;
-    containerPort: number;
-    public: boolean;
-  }>;
-  packagedWorkspaceTemplatePath: string;
-  previewCommand: string;
-  remediationFile: string;
+  kind: "terminal" | "react";
   ttlSeconds: number;
-  validationCommand: string;
+  workspace: { cwd: string; user: "learner" | "root" };
+  tabs: Array<"terminal" | "editor" | "preview">;
+  setup?: string;
+  stepCount: number;
+  react?: {
+    previewPort: number;
+    installCommand: string;
+    devCommand: string;
+    testCommand: string;
+  };
 };
 
 const digestPattern = /^[0-9a-f]{64}$/;
@@ -54,7 +55,7 @@ export function assertScenarioArtifactApproval(input: {
   ) {
     throw new Error("Invalid artifactSizeBytes");
   }
-  const expectedArtifactKey = `scenarios/${input.slug}/artifacts/sha256/${input.artifactSha256}.tar`;
+  const expectedArtifactKey = `scenarios/${input.slug}/bundles/sha256/${input.artifactSha256}.tar`;
   const expectedManifestKey = `scenarios/${input.slug}/manifests/sha256/${input.manifestSha256}.json`;
   if (input.artifactKey !== expectedArtifactKey) {
     throw new Error("Artifact key does not match its approved digest");
@@ -62,61 +63,77 @@ export function assertScenarioArtifactApproval(input: {
   if (input.manifestKey !== expectedManifestKey) {
     throw new Error("Manifest key does not match its approved digest");
   }
-  if (input.schemaVersion !== 1) throw new Error("Invalid schemaVersion");
+  if (input.schemaVersion !== 2) throw new Error("Invalid schemaVersion");
   assertScenarioRuntimeContract(input.slug, input.runtime);
 }
+
+const scriptPattern = /^scripts\/[a-z0-9-]+\.sh$/;
+const commandPattern = /^\S.*\S$|^\S$/;
 
 export function assertScenarioRuntimeContract(
   slug: string,
   runtime: ScenarioRuntimeContract
 ) {
+  void slug;
   if (!runtime || typeof runtime !== "object") {
     throw new Error("Invalid runtime contract");
   }
-  for (const name of [
-    "expectedBehavior",
-    "packagedWorkspaceTemplatePath",
-    "previewCommand",
-    "remediationFile",
-    "validationCommand",
-  ] as const) {
-    const value = runtime?.[name];
-    if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
-      throw new Error(`Invalid runtime.${name}`);
-    }
-  }
-  const expectedTemplatePrefix = `lab-definitions/${slug}/`;
-  if (
-    !runtime.packagedWorkspaceTemplatePath.startsWith(expectedTemplatePrefix) ||
-    runtime.packagedWorkspaceTemplatePath.includes("\\") ||
-    runtime.packagedWorkspaceTemplatePath.split("/").includes("..")
-  ) {
-    throw new Error("Invalid runtime.packagedWorkspaceTemplatePath");
+  if (runtime.kind !== "terminal" && runtime.kind !== "react") {
+    throw new Error("Invalid runtime.kind");
   }
   if (
     !Number.isSafeInteger(runtime.ttlSeconds) ||
-    runtime.ttlSeconds < 1 ||
+    runtime.ttlSeconds < 60 ||
     runtime.ttlSeconds > 8 * 60 * 60
   ) {
     throw new Error("Invalid runtime.ttlSeconds");
   }
-  if (!Array.isArray(runtime.expectedPorts) || runtime.expectedPorts.length > 16) {
-    throw new Error("Invalid runtime.expectedPorts");
+  if (
+    !runtime.workspace ||
+    typeof runtime.workspace.cwd !== "string" ||
+    !/^\/[^\s]*$/.test(runtime.workspace.cwd) ||
+    runtime.workspace.cwd.split("/").includes("..") ||
+    (runtime.workspace.user !== "learner" && runtime.workspace.user !== "root")
+  ) {
+    throw new Error("Invalid runtime.workspace");
   }
-  const names = new Set<string>();
-  for (const port of runtime.expectedPorts) {
+  if (
+    !Array.isArray(runtime.tabs) ||
+    runtime.tabs.length === 0 ||
+    runtime.tabs.length > 3 ||
+    new Set(runtime.tabs).size !== runtime.tabs.length ||
+    runtime.tabs.some((tab) => !["terminal", "editor", "preview"].includes(tab))
+  ) {
+    throw new Error("Invalid runtime.tabs");
+  }
+  if (runtime.setup !== undefined && !scriptPattern.test(runtime.setup)) {
+    throw new Error("Invalid runtime.setup");
+  }
+  if (
+    !Number.isSafeInteger(runtime.stepCount) ||
+    runtime.stepCount < 0 ||
+    runtime.stepCount > 30
+  ) {
+    throw new Error("Invalid runtime.stepCount");
+  }
+  if (runtime.kind === "react") {
+    const react = runtime.react;
     if (
-      typeof port?.name !== "string" ||
-      !/^[a-z][a-z0-9-]{0,31}$/.test(port.name) ||
-      names.has(port.name) ||
-      !Number.isSafeInteger(port.containerPort) ||
-      port.containerPort < 1 ||
-      port.containerPort > 65535 ||
-      typeof port.public !== "boolean"
+      !react ||
+      !Number.isSafeInteger(react.previewPort) ||
+      react.previewPort < 1024 ||
+      react.previewPort > 65535
     ) {
-      throw new Error("Invalid runtime.expectedPorts");
+      throw new Error("Invalid runtime.react");
     }
-    names.add(port.name);
+    for (const name of ["installCommand", "devCommand", "testCommand"] as const) {
+      const value = react[name];
+      if (typeof value !== "string" || !commandPattern.test(value)) {
+        throw new Error(`Invalid runtime.react.${name}`);
+      }
+    }
+  } else if (runtime.react !== undefined) {
+    throw new Error("Terminal scenarios cannot define runtime.react");
   }
 }
 

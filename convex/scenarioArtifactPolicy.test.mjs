@@ -10,27 +10,29 @@ import {
 const digest = "a".repeat(64)
 const manifestDigest = "b".repeat(64)
 const approval = {
-  artifactKey: `scenarios/react-welcome-message/artifacts/sha256/${digest}.tar`,
+  artifactKey: `scenarios/welcome-message/bundles/sha256/${digest}.tar`,
   artifactSha256: digest,
   artifactSizeBytes: 4096,
   environment: "dev",
-  manifestKey: `scenarios/react-welcome-message/manifests/sha256/${manifestDigest}.json`,
+  manifestKey: `scenarios/welcome-message/manifests/sha256/${manifestDigest}.json`,
   manifestSha256: manifestDigest,
-  slug: "react-welcome-message",
+  slug: "welcome-message",
   sourceManifestSha256: "c".repeat(64),
   runtime: {
-    expectedBehavior: "Welcome text changes",
-    expectedPorts: [
-      { name: "preview", containerPort: 5173, public: true },
-    ],
-    packagedWorkspaceTemplatePath:
-      "lab-definitions/react-welcome-message/workspace-template/update-welcome-message-1",
-    previewCommand: "npm run dev",
-    remediationFile: "src/App.jsx",
+    kind: "react",
     ttlSeconds: 3600,
-    validationCommand: "npm test",
+    workspace: { cwd: "/workspace", user: "learner" },
+    tabs: ["terminal", "editor", "preview"],
+    setup: "scripts/setup.sh",
+    stepCount: 2,
+    react: {
+      previewPort: 5173,
+      installCommand: "npm ci",
+      devCommand: "npm run dev -- --host 0.0.0.0 --port 5173",
+      testCommand: "npm test -- --run",
+    },
   },
-  schemaVersion: 1,
+  schemaVersion: 2,
 }
 
 test("artifact approval requires keys derived from exact digests", () => {
@@ -39,9 +41,44 @@ test("artifact approval requires keys derived from exact digests", () => {
     () =>
       assertScenarioArtifactApproval({
         ...approval,
-        artifactKey: "scenarios/react-welcome-message/artifacts/latest.tar",
+        artifactKey: "scenarios/welcome-message/bundles/latest.tar",
       }),
     /does not match/,
+  )
+})
+
+test("runtime contract validates the v2 manifest shape", () => {
+  const terminal = {
+    kind: "terminal",
+    ttlSeconds: 3600,
+    workspace: { cwd: "/workspace", user: "learner" },
+    tabs: ["terminal"],
+    stepCount: 3,
+  }
+  assert.doesNotThrow(() => assertScenarioArtifactApproval({ ...approval, runtime: terminal }))
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, runtime: { ...terminal, react: approval.runtime.react } }),
+    /cannot define runtime.react/,
+  )
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, runtime: { ...approval.runtime, react: undefined } }),
+    /Invalid runtime.react/,
+  )
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, runtime: { ...terminal, workspace: { cwd: "../x", user: "learner" } } }),
+    /Invalid runtime.workspace/,
+  )
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, runtime: { ...terminal, tabs: ["terminal", "terminal"] } }),
+    /Invalid runtime.tabs/,
+  )
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, runtime: { ...terminal, setup: "../evil.sh" } }),
+    /Invalid runtime.setup/,
+  )
+  assert.throws(
+    () => assertScenarioArtifactApproval({ ...approval, schemaVersion: 1 }),
+    /Invalid schemaVersion/,
   )
 })
 

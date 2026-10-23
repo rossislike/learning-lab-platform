@@ -1,0 +1,6 @@
+{
+  "slug": "linux",
+  "title": "Linux",
+  "summary": "Shell fundamentals: files, directories, permissions, and processes.",
+  "displayOrder": 10
+}

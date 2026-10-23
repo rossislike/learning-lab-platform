@@ -5,9 +5,9 @@ step-by-step instructions, plus OpenVSCode and a live preview for React
 exercises. Convex is the control plane; every learner session is a Kubernetes
 pod — `kind` locally, EKS in `dev`.
 
-> **Status (2026-10-22):** the platform is being redesigned. Phase 0 (decisions
-> and cleanup) is done; the terminal shell, session agent, and Kubernetes
-> dispatcher are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
+> **Status (2026-10-23):** the platform is being redesigned. Phase 0 (decisions
+> and cleanup) and Phase 1 (scenario manifest v2 and content) are done; the
+> session agent and Kubernetes dispatcher are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
 > [`docs/2026-10-22/redesign-plan.md`](docs/2026-10-22/redesign-plan.md) for
 > the design. Until Phase 3 lands, the legacy local Docker runner below is
 > still the way to run a session.
@@ -72,12 +72,12 @@ and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md)
 | `src/` | React frontend (being rewritten in Phase 4) |
 | `convex/` | Control plane: schema, sessions, scenarios, progress, access |
 | `runner/` | Session execution: legacy local Docker runner today; session agent, dispatcher, gateway from Phase 2–3 |
-| `lab-definitions/` | Manifest v1 React labs (converted to `scenarios/` in Phase 1) |
+| `scenarios/` | Scenario catalog (manifest v2): `<area>/area.json`, `<area>/<slug>/` with steps, scripts, and react workspaces |
 | `scripts/` | Import, smoke test, dev supervisor |
 | `infra/aws/` | Terraform: state backend, account security, (Phase 5) EKS platform + `dev` root |
 | `docs/` | Design, decisions, authoring guide, manual test scripts |
 
-## Local setup (legacy runner, until Phase 3)
+## Local setup (legacy runner, until Phase 3 — React scenarios only)
 
 ```bash
 npm install
@@ -88,7 +88,9 @@ npm run dev:all         # convex dev + vite + local runner, supervised
 
 Docker Desktop must be running: the local runner starts OpenVSCode with
 `gitpod/openvscode-server:latest`. Then open the dashboard, click
-`Seed scenarios`, pick a scenario, and `Request session`.
+`Seed scenarios`, pick a React scenario, and `Request session`. Terminal
+scenarios (`git`, `linux`, `node`) need the Kubernetes runner from Phase 3;
+until then they are only exercised by `npm run scenarios:smoke`.
 
 Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`,
 `VITE_SESSION_ACCESS_MODE=local-only`, and `VITE_COST_CONTROLS_MODE=local-limits`
@@ -100,12 +102,12 @@ Useful commands:
 ```bash
 npm run runner:local:once     # one dispatcher poll
 npm run scenarios:import      # re-import manifests after editing
-npm run scenarios:smoke -- --scenario react-button-label
+npm run scenarios:smoke -- --scenario first-commit   # or --local to skip Docker
 npm run test:runner           # unit tests for convex/, scripts/, runner/
 npm run lint && npm run build
 ```
 
-Scenario authoring (v1, until Phase 1): [`docs/scenario-authoring.md`](docs/scenario-authoring.md).
+Scenario authoring: [`docs/scenario-authoring.md`](docs/scenario-authoring.md).
 
 ## Troubleshooting (legacy runner)
 

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "slug": "linux-playground",
+  "area": "linux",
+  "kind": "terminal",
+  "title": "Playground",
+  "summary": "An empty Linux shell. No steps, no checks.",
+  "difficulty": "easy",
+  "tags": ["linux", "playground"],
+  "status": "active",
+  "displayOrder": 0,
+  "ttlSeconds": 3600,
+  "workspace": { "cwd": "/workspace", "user": "learner" },
+  "intro": "intro.md",
+  "finish": "finish.md",
+  "steps": []
+}

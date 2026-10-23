@@ -14,7 +14,6 @@ legacy local runner is deleted at the end of Phase 3.
 | `session-gateway.mjs` | Stub gateway. Answers health checks and returns `503 gateway-deployment-pending` for everything else; implemented for real in Phase 3 (ADR 0004). |
 | `session-runner.ts` | Shared runner lifecycle types (`start` / `check` / `stop` contract). |
 | `startup-cancellation.mjs` | Helper for cancelling a session that is stopped while it is still starting. |
-| `package-learner-templates.mjs` | Packages lab workspace templates for a session (solution files excluded). |
 | `learner-process-env.mjs` | Builds the environment handed to learner-facing processes without the runner secret. Used by `workspace-server.mjs`. |
 
 Each `.mjs` module has a sibling `*.test.mjs`; run them with `npm run test:runner`.

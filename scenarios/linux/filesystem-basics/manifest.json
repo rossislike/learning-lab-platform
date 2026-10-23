@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "slug": "filesystem-basics",
+  "area": "linux",
+  "kind": "terminal",
+  "title": "Filesystem Basics",
+  "summary": "Create a directory, move files into it, and write a file from the shell.",
+  "difficulty": "easy",
+  "tags": ["linux", "shell", "fundamentals"],
+  "status": "active",
+  "displayOrder": 10,
+  "ttlSeconds": 3600,
+  "workspace": { "cwd": "/workspace", "user": "learner" },
+  "setup": "scripts/setup.sh",
+  "intro": "intro.md",
+  "finish": "finish.md",
+  "steps": [
+    {
+      "title": "Create a directory",
+      "content": "step1.md",
+      "verify": "scripts/step1-verify.sh",
+      "solve": "scripts/step1-solve.sh"
+    },
+    {
+      "title": "Move the photos",
+      "content": "step2.md",
+      "verify": "scripts/step2-verify.sh",
+      "solve": "scripts/step2-solve.sh"
+    },
+    {
+      "title": "Write a file",
+      "content": "step3.md",
+      "verify": "scripts/step3-verify.sh",
+      "solve": "scripts/step3-solve.sh"
+    }
+  ]
+}

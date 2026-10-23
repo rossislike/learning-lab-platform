@@ -22,7 +22,13 @@ import {
 } from "./sessionLifecycle";
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
-const MAX_TTL_SECONDS = 60 * 60;
+const MIN_TTL_SECONDS = 60;
+// The legacy local Docker runner keeps its one-hour cap. Kubernetes sessions
+// may run as long as the manifest schema allows (ttlSeconds maximum 28800).
+const MAX_TTL_SECONDS: Record<"local" | "kubernetes", number> = {
+  local: 60 * 60,
+  kubernetes: 8 * 60 * 60,
+};
 const MAX_ACTIVE_LOCAL_SESSIONS = 5;
 const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
@@ -202,7 +208,6 @@ export const request = mutation({
   },
   handler: async (ctx, args) => {
     const timestamp = now();
-    const ttlSeconds = Math.min(args.ttlSeconds ?? DEFAULT_TTL_SECONDS, MAX_TTL_SECONDS);
     const runner = args.runner ?? "local";
     const learnerLabel = args.learnerLabel.trim();
     const identity = await ctx.auth.getUserIdentity();
@@ -214,13 +219,29 @@ export const request = mutation({
     if (runner === "kubernetes" && !ownerSubject) {
       throw new Error("Hosted sessions require an authenticated owner subject");
     }
+    const lab = await ctx.db.get(args.labId);
+    if (!lab || lab.status !== "active") {
+      throw new Error("Scenario is not available");
+    }
+    if (runner === "local" && lab.kind === "terminal") {
+      throw new Error(
+        "Terminal scenarios need the Kubernetes runner (Phase 3); the local Docker runner only supports React scenarios"
+      );
+    }
+    // Clamp into [MIN, MAX] so a zero/negative request cannot create a
+    // session that expires immediately (or never, via NaN arithmetic).
+    const requestedTtl = args.ttlSeconds ?? lab.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const ttlSeconds = Math.min(
+      MAX_TTL_SECONDS[runner],
+      Math.max(MIN_TTL_SECONDS, Number.isFinite(requestedTtl) ? requestedTtl : DEFAULT_TTL_SECONDS)
+    );
 
     const hostedScenario = await resolveScenarioSessionSnapshot({
       runner,
       labId: args.labId,
       configuredEnvironment: configuredHostedEnvironment,
       validateApproval: assertScenarioArtifactApproval,
-      loadLab: () => ctx.db.get(args.labId),
+      loadLab: async () => lab,
       loadApproval: (environment) =>
         ctx.db
           .query("scenarioArtifactApprovals")
@@ -289,6 +310,7 @@ export const request = mutation({
       status: "requested",
       runner,
       ...(hostedScenario ? { hostedScenario } : {}),
+      currentStep: 0,
       ttlSeconds,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -309,6 +331,8 @@ export const request = mutation({
       ...(ownerSubject ? { ownerSubject } : {}),
       sessionOwnerKey,
       status: "requested",
+      completedSteps: 0,
+      totalSteps: lab.steps?.length ?? 0,
       startedAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp,

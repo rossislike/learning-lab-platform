@@ -1,1 +1,0 @@
-- "An empty task list shows 'No tasks yet. Add your first task to get started.'"

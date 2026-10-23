@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Learning Lab catalog area",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["slug", "title", "summary", "displayOrder"],
+  "properties": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "displayOrder": { "type": "integer", "minimum": 0 }
+  }
+}
