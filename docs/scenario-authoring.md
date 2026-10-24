@@ -78,7 +78,9 @@ are for `kind: react`.
 ## Scripts
 
 All scripts run with `bash`, with the working directory set to
-`workspace.cwd`, as `workspace.user`, and with these variables:
+`workspace.cwd`, as `workspace.user` (the dispatcher applies it as the pod's
+`runAsUser`; the whole container, agent included, runs as that user), and
+with these variables:
 
 | Variable | Value |
 |---|---|
@@ -87,15 +89,19 @@ All scripts run with `bash`, with the working directory set to
 | `LAB_SCENARIO_SLUG` | the slug |
 | `LAB_STEP` | 1-based step number (step scripts only) |
 
-- `setup` (the scenario-level script) starts in the background as soon as
-  the session pod is ready, before the intro is shown, so dependency
-  installs overlap with the learner reading. **START** only moves the pointer
-  to step 1; it does not wait for or re-run setup. The session agent exposes
-  setup status (Phase 2) so the shell can show "preparing…" if the learner is
-  quicker than the install.
+- `setup` (the scenario-level script) runs in the background: the session
+  becomes `running` as soon as the terminal is usable, before the intro is
+  shown, so dependency installs overlap with the learner reading. **START**
+  only moves the pointer to step 1; it does not wait for or re-run setup. The
+  session agent reports setup status (`GET /ready` → `setup.status`), so the
+  shell shows it until it passes; for react scenarios the preview starts
+  once setup has passed and appears when it is ready. A setup that exits
+  non-zero puts the agent in `phase: failed` and the session errors.
 - `verify` scripts exit `0` to pass. On failure, everything they print to
   **stdout** is shown to the learner under the step, so print one or two lines
-  that say what is missing and which command fixes it.
+  that say what is missing and which command fixes it. If stdout is empty,
+  stderr is shown instead (so an unexpected bash error is still visible); the
+  last 16 000 characters are kept.
 - `solve` scripts exist only so the smoke test can prove each step. They are
   excluded from bundles, as is the top-level `solution/` directory, and the
   bundled `manifest.json` has `steps[].solve` stripped.
@@ -117,6 +123,7 @@ npm run scenarios:check      # validate and confirm the seed file is current (CI
 npm run scenarios:smoke      # prove every verify fails → solve → passes (Docker if available)
 npm run scenarios:smoke -- --local --scenario first-commit   # on this machine, one scenario
 npm run test:runner          # unit tests, including schema and bundle tests
+npm run agent:integration -- --scenario first-commit   # run a scenario in the real session-workspace image (Docker)
 ```
 
 The importer writes `convex/scenarioSeedData.ts`; commit it. The dashboard's

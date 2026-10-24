@@ -186,6 +186,9 @@ export default defineSchema({
     lastCheckScore: v.optional(v.number()),
     // 0 = intro shown, 1..n = step n shown, n+1 = finish shown
     currentStep: v.optional(v.number()),
+    // Session-bound agent credential: only its hash is stored (ADR 0005).
+    agentTokenHash: v.optional(v.string()),
+    agentTokenExpiresAt: v.optional(v.number()),
     ttlSeconds: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),

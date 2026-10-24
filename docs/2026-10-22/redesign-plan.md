@@ -130,7 +130,7 @@ Each phase ends with something runnable. Order is chosen so the UI can be built 
 
 ### Phase 3 — Dispatcher + gateway on Kubernetes (2–3 days)
 - `runner/k8s-dispatcher.mjs`: polls Convex (same shape as today's runners), `@kubernetes/client-node` creates a Pod + headless Service per session in namespace `sessions`, labels `session=<id>`, annotates `expiresAt`; records pod IP + routeId in Convex; reaps stopped/expired pods; reconciles on restart (list pods ↔ Convex sessions). Convex lease so two replicas don't double-launch.
-- `runner/session-gateway.mjs`: implement ADR 0004 — `GET /bootstrap/:code` sets an `HttpOnly` cookie bound to `routeId`; `/s/:routeId/{pty,editor,preview,steps}/*` proxied to pod IP:7000 (`http-proxy` with WS upgrade). Ownership check against Convex on every new connection.
+- `runner/session-gateway.mjs`: implement ADR 0004 — `GET /bootstrap/:code` sets an `HttpOnly` cookie bound to `routeId`; `/s/:routeId/{pty,editor,preview,steps}/*` proxied to pod IP:7000 (`http-proxy` with WS upgrade). Ownership check against Convex on every new connection. *Superseded 2026-10-24: path routing was replaced by host routing — `ws-{routeId}` → pod:7000 (`/pty`, `/steps`, `/editor`) and `pv-{routeId}` → pod:previewPort — so preview content never shares the agent origin (ADR 0003/0004 amendments).*
 - `deploy/helm/learning-lab/`: namespaces, dispatcher, gateway, RBAC (dispatcher may create/delete pods only in `sessions`), `NetworkPolicy` (sessions → egress only to allowlist; gateway → sessions:7000; nothing else inbound), `ResourceQuota` on `sessions`.
 - Local: `kind` config with port mapping 8080 → gateway. `npm run dev:all` becomes: `convex dev` + `vite` + `kind create` (idempotent) + `helm upgrade --install` + `kind load docker-image`.
 

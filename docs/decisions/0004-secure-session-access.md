@@ -1,6 +1,6 @@
 # ADR 0004: Secure Per-Session URL Access
 
-- Status: Accepted
+- Status: Accepted; amended 2026-10-24 (Phase 2, with ADR 0003's amendment): there are two endpoint scopes per session, not three — `workspace` (terminals, steps and the editor on the agent port; host `ws-{routeId}`) and `preview` (host `pv-{routeId}`). The bootstrap bundle therefore carries two codes; the `editor`/`tools` scopes and `ed-`/`tl-` hosts below are superseded. Everything else stands.
 - Date: 2026-07-09
 - Decision owners: Learning Lab Platform maintainers
 

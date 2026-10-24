@@ -5,9 +5,10 @@ step-by-step instructions, plus OpenVSCode and a live preview for React
 exercises. Convex is the control plane; every learner session is a Kubernetes
 pod — `kind` locally, EKS in `dev`.
 
-> **Status (2026-10-23):** the platform is being redesigned. Phase 0 (decisions
-> and cleanup) and Phase 1 (scenario manifest v2 and content) are done; the
-> session agent and Kubernetes dispatcher are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
+> **Status (2026-10-24):** the platform is being redesigned. Phases 0–1 are
+> done (decisions, scenario catalog v2); Phase 2 (the session image and agent)
+> is code complete, pending an image build and Docker integration run; the
+> Kubernetes dispatcher and gateway (Phase 3) are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
 > [`docs/2026-10-22/redesign-plan.md`](docs/2026-10-22/redesign-plan.md) for
 > the design. Until Phase 3 lands, the legacy local Docker runner below is
 > still the way to run a session.
@@ -34,7 +35,7 @@ flowchart TB
   subgraph cluster["Kubernetes (kind locally, EKS Auto Mode in dev)"]
     gateway["Session gateway<br/>auth cookie, HTTP + WS proxy"]
     dispatcher["Dispatcher<br/>polls Convex, creates/reaps pods"]
-    pod["Session pod (one per session)<br/>session agent: PTYs, editor proxy, preview proxy, step scripts<br/>OpenVSCode · Vite · bash"]
+    pod["Session pod (one per session)<br/>session agent: PTYs, editor proxy, step scripts<br/>OpenVSCode · Vite · bash"]
   end
 
   browser -->|JWT| clerk
@@ -71,7 +72,8 @@ and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md)
 |---|---|
 | `src/` | React frontend (being rewritten in Phase 4) |
 | `convex/` | Control plane: schema, sessions, scenarios, progress, access |
-| `runner/` | Session execution: legacy local Docker runner today; session agent, dispatcher, gateway from Phase 2–3 |
+| `runner/` | Session execution: `session-agent/` (runs inside each session pod), the legacy local Docker runner, dispatcher + gateway from Phase 3 |
+| `images/` | `session-workspace`: the per-session container image (agent, OpenVSCode, Node, git) |
 | `scenarios/` | Scenario catalog (manifest v2): `<area>/area.json`, `<area>/<slug>/` with steps, scripts, and react workspaces |
 | `scripts/` | Import, smoke test, dev supervisor |
 | `infra/aws/` | Terraform: state backend, account security, (Phase 5) EKS platform + `dev` root |

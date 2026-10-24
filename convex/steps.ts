@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { requireRunnerSecret, requireSessionOwner } from "./access";
+import { requireSessionAgent, requireSessionOwner } from "./access";
 import { isActiveSessionStatus } from "./sessionLifecycle";
 import { planStepNavigation, summarizeStepProgress } from "./stepPolicy";
 import type { Doc } from "./_generated/dataModel";
@@ -102,19 +102,28 @@ export const setCurrentStep = mutation({
   },
 });
 
-/** Recorded by the session agent after running a step's verify script. */
+/**
+ * Recorded by the session agent after running a step's verify script.
+ * Authorized by the session-bound agent token (normal path) or the runner
+ * secret (dispatcher / legacy runner).
+ */
+/**
+ * Called by the session agent with its session-bound token (ADR 0005). A
+ * missing session and a bad token produce the same error so the response does
+ * not reveal whether a session id exists.
+ */
 export const recordStepResult = mutation({
   args: {
-    runnerSecret: v.string(),
+    sessionToken: v.string(),
     sessionId: v.id("sessions"),
     stepIndex: v.number(),
     passed: v.boolean(),
     output: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    requireRunnerSecret(args.runnerSecret);
     const session = await ctx.db.get(args.sessionId);
-    if (!session) throw new Error("Session not found");
+    if (!session) throw new Error("Session agent authorization failed");
+    requireSessionAgent(session, args.sessionToken);
     requireActiveSession(session);
     const lab = await ctx.db.get(session.labId);
     const steps = lab?.steps ?? [];

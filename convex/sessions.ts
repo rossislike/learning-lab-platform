@@ -7,7 +7,7 @@ import {
   configuredHostedEnvironment,
 } from "./scenarioArtifactPolicy";
 import { resolveScenarioSessionSnapshot } from "./scenarioSessionPolicy";
-import { learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
+import { hashAgentToken, learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
 import {
   ACTIVE_SESSION_STATUSES,
   canBeginStartup,
@@ -384,6 +384,45 @@ export const markRunning = mutation({
   },
 });
 
+// The agent token outlives the session TTL by this much so a verify that is
+// running when the session expires can still record its result, and so the
+// dispatcher's expiry → cleanup sequence is not racing the token. markExpired
+// and markCleaned clear the token, so the grace never extends a session that
+// has already been torn down.
+const AGENT_TOKEN_GRACE_MS = 60 * 60 * 1000;
+
+/**
+ * Mints the session-bound agent token (ADR 0005). Returned in plaintext
+ * exactly once to the runner-secret holder (the dispatcher), which injects it
+ * into the session pod; Convex keeps only the hash. Re-issuing replaces the
+ * previous token.
+ */
+export const issueAgentToken = mutation({
+  args: { runnerSecret: v.string(), sessionId: v.id("sessions") },
+  handler: async (ctx, args) => {
+    requireRunnerSecret(args.runnerSecret);
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) throw new Error("Session not found");
+    if (!canUpdateRunnerMetadata(session.status)) {
+      throw new Error(`Cannot issue an agent token for a ${session.status} session`);
+    }
+    const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+    const timestamp = now();
+    await ctx.db.patch(args.sessionId, {
+      agentTokenHash: hashAgentToken(token),
+      agentTokenExpiresAt: session.expiresAt + AGENT_TOKEN_GRACE_MS,
+      updatedAt: timestamp,
+    });
+    await ctx.db.insert("sessionEvents", {
+      sessionId: args.sessionId,
+      level: "info",
+      message: "Session agent token issued",
+      createdAt: timestamp,
+    });
+    return { token, expiresAt: session.expiresAt + AGENT_TOKEN_GRACE_MS };
+  },
+});
+
 export const updateRunnerMetadata = mutation({
   args: {
     runnerSecret: v.string(),
@@ -621,6 +660,8 @@ export const markExpired = mutation({
       status: "expired",
       stoppedAt: session.stoppedAt ?? timestamp,
       stopReason: args.reason ?? "Session TTL expired",
+      agentTokenHash: undefined,
+      agentTokenExpiresAt: undefined,
       updatedAt: timestamp,
     });
     await patchProgressRecord(ctx, args.sessionId, {
@@ -690,6 +731,8 @@ export const markCleaned = mutation({
         : {}),
       cleanedAt: timestamp,
       cleanupSummary: args.summary,
+      agentTokenHash: undefined,
+      agentTokenExpiresAt: undefined,
       ...(typeof cleanupStartedAt === "number"
         ? { cleanupDurationMs: timestamp - cleanupStartedAt }
         : {}),

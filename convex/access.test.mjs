@@ -2,8 +2,10 @@ import assert from "node:assert/strict"
 import process from "node:process"
 import test from "node:test"
 import {
+  hashAgentToken,
   learnerOwnerKey,
   requireRunnerSecret,
+  requireSessionAgent,
   requireSessionOwner,
 } from "./access.ts"
 
@@ -48,4 +50,21 @@ test("runner functions require the configured shared secret", () => {
   assert.doesNotThrow(() => requireRunnerSecret("test-runner-secret"))
   if (previous === undefined) delete process.env.RUNNER_SHARED_SECRET
   else process.env.RUNNER_SHARED_SECRET = previous
+})
+
+test("session agent token authorizes only the matching, unexpired session", () => {
+  const token = "a".repeat(64)
+  const session = {
+    agentTokenHash: hashAgentToken(token),
+    agentTokenExpiresAt: Date.now() + 60_000,
+  }
+  assert.doesNotThrow(() => requireSessionAgent(session, token))
+  assert.throws(() => requireSessionAgent(session, "b".repeat(64)), /authorization failed/)
+  assert.throws(() => requireSessionAgent(session, "short"), /authorization failed/)
+  assert.throws(
+    () => requireSessionAgent({ ...session, agentTokenExpiresAt: Date.now() - 1 }, token),
+    /expired/,
+  )
+  assert.throws(() => requireSessionAgent({}, token), /authorization failed/, "no token issued reads like a bad token")
+  assert.notEqual(hashAgentToken(token), token)
 })

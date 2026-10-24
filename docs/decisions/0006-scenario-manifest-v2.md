@@ -39,8 +39,10 @@ Key fields:
   `testCommand`).
 - `steps[]` — ordered `{ title, content, setup?, verify?, solve? }`. A
   scenario with zero steps is a playground.
-- `setup` runs once in the background as soon as the session pod is ready,
-  before the intro is shown; `START` only moves the step pointer to step 1.
+- `setup` runs once in the background: the session is `running` as soon as
+  the terminal is usable, before the intro is shown; the shell shows setup
+  status until it passes and the preview appears when it is ready. `START`
+  only moves the step pointer to step 1.
 - `workspace` — `{ cwd, user }`; `user` is `learner` or `root` (in-container
   only, see ADR 0005).
 - `ttlSeconds`, `difficulty`, `tags`, `status`.

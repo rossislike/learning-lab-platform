@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Development-only page: the session agent serves this at / and /terminal.html only when it runs without SESSION_TOKEN (standalone / docker run). The real learner UI is the Phase 4 frontend behind the gateway. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session agent terminal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; font: 13px system-ui, sans-serif; }
+  #bar { display: flex; gap: 12px; align-items: center; padding: 6px 10px; background: #111; }
+  #bar button { background: #333; color: #eee; border: 0; padding: 4px 10px; cursor: pointer; }
+  #bar a { color: #8cf; }
+  #term { height: calc(100% - 32px); }
+  #out { white-space: pre-wrap; max-width: 60ch; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>agent</strong>
+  <span style="color:#fc6">development page — not served when SESSION_TOKEN is set</span>
+  <span id="status">connecting…</span>
+  <button onclick="verify(prompt('Step number', '1'))">verify step</button>
+  <a href="/state" target="_blank">state</a>
+  <a href="/editor/" target="_blank" id="editorLink" hidden>editor</a>
+  <span id="out"></span>
+</div>
+<div id="term"></div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script>
+  const term = new Terminal({ cursorBlink: true, fontSize: 14, theme: { background: "#1e1e1e" } });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById("term"));
+  fit.fit();
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/pty?id=1&cols=${term.cols}&rows=${term.rows}`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { document.getElementById("status").textContent = "connected"; term.focus(); };
+  ws.onclose = () => { document.getElementById("status").textContent = "disconnected"; };
+  ws.onmessage = (event) => term.write(typeof event.data === "string" ? event.data : new Uint8Array(event.data));
+  term.onData((data) => ws.readyState === 1 && ws.send(data));
+  const resize = () => { fit.fit(); ws.readyState === 1 && ws.send("\u0000" + JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })); };
+  window.addEventListener("resize", resize);
+  term.onResize(() => ws.readyState === 1 && ws.send("\u0000" + JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })));
+  async function verify(step) {
+    if (!step) return;
+    const res = await fetch(`/steps/${step}/verify`, { method: "POST" });
+    const body = await res.json();
+    document.getElementById("out").textContent = body.passed ? `step ${step}: passed` : `step ${step}: ${body.output || body.error}`;
+  }
+  fetch("/ready").then((r) => r.json()).then((s) => { if (s.editor.enabled) document.getElementById("editorLink").hidden = false; });
+</script>
+</body>
+</html>

@@ -16,9 +16,12 @@
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
     "runner:local": "node runner/local-runner.mjs",
     "runner:local:once": "node runner/local-runner.mjs --once",
-    "test:runner": "node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs",
+    "test:runner": "node --test convex/*.test.mjs scripts/*.test.mjs runner/*.test.mjs runner/session-agent/*.test.mjs",
     "infra:fmt": "terraform fmt -check -recursive infra/aws",
-    "infra:validate": "terraform -chdir=infra/aws/account-security validate && terraform -chdir=infra/aws/bootstrap/terraform-backend validate"
+    "infra:validate": "terraform -chdir=infra/aws/account-security validate && terraform -chdir=infra/aws/bootstrap/terraform-backend validate",
+    "agent:integration": "node scripts/agent-integration-test.mjs",
+    "agent:dev": "node runner/session-agent/agent.mjs",
+    "image:build": "images/session-workspace/build.sh"
   },
   "dependencies": {
     "@clerk/react": "^6.12.2",

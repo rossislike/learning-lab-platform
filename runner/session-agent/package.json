@@ -1,0 +1,17 @@
+{
+  "name": "learning-lab-session-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Per-session agent: terminals over WebSocket, scenario step scripts, OpenVSCode proxy.",
+  "main": "agent.mjs",
+  "bin": { "session-agent": "agent.mjs" },
+  "scripts": {
+    "start": "node agent.mjs",
+    "test": "node --test *.test.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  }
+}

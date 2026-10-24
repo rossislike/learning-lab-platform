@@ -1,6 +1,6 @@
 # ADR 0005: Kubernetes Execution Model (Local kind, AWS EKS)
 
-- Status: Accepted
+- Status: Accepted; amended 2026-10-24 (Phase 2): the preview is not proxied through the agent port — the gateway routes it to the pod's `react.previewPort` on a separate hostname (see ADR 0003's amendment and ADR 0004).
 - Date: 2026-10-22
 - Decision owners: Learning Lab Platform maintainers
 - Supersedes: [ADR 0001](0001-hosted-execution-model.md)
@@ -47,12 +47,13 @@ namespace.
 - The **session gateway** Deployment (the design intent of ADR 0003/0004
   carries over; ECS-specific mechanics are replaced here) is the only
   ingress to session pods. It terminates learner auth, proxies HTTP and
-  WebSocket traffic (`/pty`, `/editor`, `/preview`, `/steps`) to the pod's
-  agent port, and is exposed by an ALB in dev and a `kind` port mapping
-  locally.
+  WebSocket traffic (`/pty`, `/editor`, `/steps`) to the pod's agent port and
+  the preview to the pod's preview port, and is exposed by an ALB in dev and
+  a `kind` port mapping locally.
 - A single container image, `session-workspace`, provides bash, git, Node,
   OpenVSCode, and the Node **session agent** that owns the PTYs, proxies the
-  editor and preview, and runs scenario step scripts.
+  editor, and runs scenario step scripts (the preview is served by Vite on
+  its own port).
 - Pods run with explicit CPU, memory, and ephemeral-storage requests and
   limits, under a `ResourceQuota`, a default-deny `NetworkPolicy` with an
   egress allow-list, no privileged mode, and no host namespaces. A scenario

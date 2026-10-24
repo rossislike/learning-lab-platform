@@ -1,6 +1,6 @@
 # ADR 0003: Hosted Session URL Routing
 
-- Status: Accepted; amended by [ADR 0005](0005-kubernetes-execution-model.md) on 2026-10-22 (ECS task → Kubernetes pod; task ARN/DescribeTasks → pod name/IP)
+- Status: Accepted; amended by [ADR 0005](0005-kubernetes-execution-model.md) on 2026-10-22 (ECS task → Kubernetes pod; task ARN/DescribeTasks → pod name/IP) and on 2026-10-24 (Phase 2): the agent serves terminals, step scripts, and OpenVSCode (`--server-base-path /editor`) on one port, 7000; the Vite preview is routed by its own port (5173) so hostile preview content never shares the agent's origin. The gateway therefore exposes two endpoints per session, `workspace` → pod:7000 and `preview` → pod:previewPort.
 - Date: 2026-07-09
 - Decision owners: Learning Lab Platform maintainers
 

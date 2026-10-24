@@ -1,8 +1,11 @@
 .git
 .terraform
+build
 dist
 lab-workspaces
 node_modules
+**/node_modules
+**/*.test.mjs
 **/.aws
 **/.direnv
 **/.env

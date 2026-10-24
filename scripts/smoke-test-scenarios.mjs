@@ -4,9 +4,10 @@
 // script, then for each step run its setup, prove that `verify` FAILS on the
 // untouched workspace, apply `solve`, and prove that `verify` PASSES.
 //
-// Runs inside a Docker container when `docker` is available (default image
-// node:22-bookworm until the Phase 2 session-workspace image exists), or
-// directly on this machine with --local (requires bash, git, node).
+// Runs inside a Docker container when `docker` is available — the
+// session-workspace image if it has been built (`npm run image:build`),
+// otherwise node:22-bookworm — or directly on this machine with --local
+// (requires bash, git, node).
 //
 // Usage:
 //   npm run scenarios:smoke                      all scenarios
@@ -20,7 +21,8 @@ import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 import { CatalogError, loadCatalog, projectRoot } from "./scenario-catalog.mjs";
 
-const DEFAULT_IMAGE = process.env.SMOKE_IMAGE ?? "node:22-bookworm";
+const SESSION_IMAGE = "learning-lab/session-workspace:dev";
+const FALLBACK_IMAGE = "node:22-bookworm";
 const COMMAND_TIMEOUT_MS = Number(process.env.SMOKE_COMMAND_TIMEOUT_MS ?? 10 * 60 * 1000);
 const CONTAINER_WORKSPACE = "/workspace";
 const CONTAINER_SCENARIO = "/scenario";
@@ -92,6 +94,13 @@ function output(result) {
 async function dockerAvailable() {
   const result = await exec("docker", ["version", "--format", "{{.Server.Version}}"]);
   return result.code === 0;
+}
+
+/** Prefer the real session image when it exists locally. */
+async function resolveImage() {
+  if (process.env.SMOKE_IMAGE) return process.env.SMOKE_IMAGE;
+  const inspect = await exec("docker", ["image", "inspect", SESSION_IMAGE]);
+  return inspect.code === 0 ? SESSION_IMAGE : FALLBACK_IMAGE;
 }
 
 /** Executes scenario scripts directly on this machine in a temp workspace. */
@@ -244,12 +253,13 @@ async function main(argv) {
     if (!selected.some((scenario) => scenario.manifest.slug === slug)) fail(`Unknown scenario slug: ${slug}`);
   }
   const useDocker = !options.local && (await dockerAvailable());
+  const image = useDocker ? await resolveImage() : null;
   if (!useDocker && !options.local) {
     console.log("[scenario-smoke] docker not available; running locally");
   }
   for (const scenario of selected) {
     const runner = useDocker
-      ? new DockerRunner(scenario, options.keep, DEFAULT_IMAGE)
+      ? new DockerRunner(scenario, options.keep, image)
       : new LocalRunner(scenario, options.keep);
     await smokeScenario(scenario, runner);
   }
