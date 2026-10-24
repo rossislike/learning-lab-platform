@@ -12,7 +12,7 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 | Phase | Goal | Status |
 |---|---|---|
 | 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
-| 1 | Scenario manifest v2 + content | ✅ Done 2026-10-23 (React vitest smoke run pending on a machine with npm access) |
+| 1 | Scenario manifest v2 + content | ✅ Done 2026-10-24 |
 | 2 | Session workspace image + agent | 🔜 **Next** |
 | 3 | Dispatcher + gateway on kind | ⏳ Not started |
 | 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start now against the seeded Convex data) |
@@ -53,7 +53,7 @@ Exit: eleven v2 scenarios import cleanly and the terminal ones pass the smoke te
 - [x] Author `linux/filesystem-basics` and `node/cli-tool`; one zero-step playground per area (react playground = minimal Vite app).
 - [x] Rewrite `scripts/smoke-test-scenarios.mjs` for v2: setup → per step verify-fails → solve → verify-passes, in Docker (`node:22-bookworm` until the Phase 2 image) or `--local`.
 - [x] Terminal scenarios proven: `first-commit`, `filesystem-basics`, `cli-tool` (9/9 steps). React scripts proven with a dependency-free stand-in workspace.
-- [ ] **Run on a machine with npm registry access:** `npm run scenarios:smoke -- --local --scenario welcome-message --scenario button-label --scenario empty-state --scenario product-dashboard --scenario react-playground` (this session's network allowlist blocked `npm ci`).
+- [x] React scenarios verified on a machine with npm access (2026-10-24): `welcome-message`, `button-label`, `empty-state`, `product-dashboard` fail→solve→pass; `react-playground` setup ok.
 
 Deviations from the plan, on purpose:
 
