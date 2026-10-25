@@ -5,7 +5,7 @@ step-by-step instructions, plus OpenVSCode and a live preview for React
 exercises. Convex is the control plane; every learner session is a Kubernetes
 pod — `kind` locally, EKS in `dev`.
 
-> **Status (2026-10-24):** the platform is being redesigned. Phases 0–1 are
+> **Status (2026-10-25):** the platform is being redesigned. Phases 0–1 are
 > done (decisions, scenario catalog v2); Phase 2 (the session image and agent)
 > is code complete, pending an image build and Docker integration run; the
 > Kubernetes dispatcher and gateway (Phase 3) are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and

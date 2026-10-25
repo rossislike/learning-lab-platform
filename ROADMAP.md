@@ -13,7 +13,7 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 |---|---|---|
 | 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
 | 1 | Scenario manifest v2 + content | ✅ Done 2026-10-24 |
-| 2 | Session workspace image + agent | 🔧 Code complete 2026-10-24 — image build + Docker integration run pending |
+| 2 | Session workspace image + agent | ✅ Done 2026-10-25 |
 | 3 | Dispatcher + gateway on kind | 🔜 **Next** |
 | 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start now against the seeded Convex data) |
 | 5 | `dev` environment on EKS | ⏳ Not started (after 3) |
@@ -21,13 +21,7 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phases 0–1 are complete; Phase 2 is code complete and
-unit-tested but has not yet been built as an image or run under Docker. Build
-the image and run the Docker integration test on a machine with Docker (`npm
-run image:build && npm run agent:integration`) to close Phase 2, then start
-Phase 3: the Kubernetes dispatcher, the real gateway, and the Helm chart on
-kind. Phase 4 can proceed in parallel against the agent's HTTP/WS API
-(`runner/README.md`, "Contract for the dispatcher and gateway").
+**You are here:** Phases 0–2 are complete and verified on Docker. Start Phase 3: the Kubernetes dispatcher, the real gateway, and the Helm chart on kind. Phase 4 can proceed in parallel against the agent contract in `runner/README.md`.
 
 ---
 
@@ -64,7 +58,7 @@ Deviations from the plan, on purpose:
 - Playground slugs are `<area>-playground` (slugs are global) in a `playground/` directory.
 - The hosted runtime contract (`scenarioArtifactApprovals.runtime`, `sessions.hostedScenario`) changed shape to the v2 fields; there is no migration. Any Convex deployment holding old approval/hostedScenario rows must have them cleared before the schema push (local dev deployments: `npx convex run` a one-off, or wipe the tables from the dashboard).
 
-## Phase 2 — Session workspace image and agent 🔧
+## Phase 2 — Session workspace image and agent ✅
 
 Exit: `docker run` of the image with a mounted scenario serves a working terminal to a 30-line xterm.js page and verifies a step.
 
@@ -74,7 +68,7 @@ Exit: `docker run` of the image with a mounted scenario serves a working termina
 - [x] Session-bound agent token: `sessions.issueAgentToken` (runner secret) returns the plaintext once and stores only its SHA-256 + expiry (`convex/sha256.ts`, pure TS); `steps.recordStepResult` requires `sessionToken` (no runner-secret path); `markExpired`/`markCleaned` clear the token. Learner shells/scripts get an environment **allowlist** (`PATH`, `HOME`, `TERM`, `LANG`, `LC_*`, `SHELL`, `USER`, `LOGNAME`, `TZ`, `COLORTERM`, `LAB_*`, `AGENT_LEARNER_ENV_PASSTHROUGH`). Known limit: the learner shares the agent's uid, so the token is recoverable from `/proc`; it only authorizes recording the learner's own step results (self-cheating), see `runner/README.md` "Agent token exposure". No uid split in this phase.
 - [x] Unit tests (`runner/session-agent/*.test.mjs`): WebSocket handshake/echo/large frames/close codes/protocol violations/ping-idle, full agent flow against `git/first-commit` (setup → verify fails → terminal does the work → verify passes → results reported → scrollback replay), readiness phases, open/verify races, terminal cap, malformed request targets, react workspace copy, script path contract + timeout, env allowlist, cwd roots, proxy forward/502/upgrade relay, reporter retries/timeouts.
 - [x] `scripts/agent-integration-test.mjs` (`npm run agent:integration`): drives the built image over Docker — readiness, terminal user/cwd/tty, every verifiable step fails→solve→passes, editor proxy and preview for react scenarios. The smoke test now prefers `learning-lab/session-workspace:dev` when it exists.
-- [ ] **Run on a machine with Docker:** `npm run image:build && npm run agent:integration && npm run agent:integration -- --scenario welcome-message`. First things to check if it fails: the OpenVSCode release URL/flags (`--server-base-path`, `--default-folder`) and `node-pty` compiling in the `agent-deps` stage.
+- [x] Image built and the Docker integration test passes for `first-commit` (3/3 steps, TTY, learner user) and `welcome-message` (verify, editor proxy, preview) — 2026-10-25. Two image fixes came out of it: `/opt/agent` must be world-readable, and OpenVSCode serves the workbench at exactly `/editor` and needs its data directories pre-created.
 - [ ] Generate `runner/session-agent/package-lock.json` (`cd runner/session-agent && npm install`) so the image build is reproducible; the Dockerfile switches from `npm install` to `npm ci` automatically once the lockfile is present.
 
 Deviations: the legacy entrypoint was not salvaged literally — process supervision and readiness were rewritten in `processes.mjs`/`server.mjs` around the step model. The dispatcher (Phase 3) reads pod readiness from `GET /ready` and records endpoints in Convex; the agent itself only reports step results.
