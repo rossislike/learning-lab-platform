@@ -45,7 +45,7 @@ const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms)
 // `/ready` is 200 as soon as the terminal is usable; setup (and the preview,
 // which starts after setup) finish in the background. The integration test
 // needs both, so it waits for the setup to settle and the preview to run.
-async function waitForReady(base, timeoutMs) {
+async function waitForReady(base, timeoutMs, name) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   let sawReady = false;
@@ -53,22 +53,30 @@ async function waitForReady(base, timeoutMs) {
     try {
       const response = await fetch(`${base}/ready`);
       last = await response.json();
-      if (last.phase === "failed") {
-        fail(`agent failed (${last.failure?.component}):\n${last.failure?.output ?? ""}`);
-      }
-      if (response.ok && last.ready) {
+      last.httpOk = response.ok;
+    } catch (error) {
+      last = { error: error.message };
+    }
+    if (last.phase === "failed") {
+      const logs = await exec("docker", ["logs", "--tail", "60", name]);
+      fail(`agent failed (${last.failure?.component}):\n${last.failure?.output ?? ""}\n--- docker logs ---\n${logs.stdout}${logs.stderr}`);
+    }
+    {
+      if (last.httpOk && last.ready) {
         if (!sawReady) console.log(`  ready after ${Math.round(last.uptimeMs / 1000)} s; waiting for setup`);
         sawReady = true;
         const setupDone = last.setup.status === "passed" || last.setup.status === "none";
         const previewDone = !last.preview.enabled || last.preview.status === "running";
         if (setupDone && previewDone) return last;
       }
-    } catch (error) {
-      last = { error: error.message };
     }
     await sleep(1000);
   }
-  fail(`agent did not become ready within ${timeoutMs} ms; last /ready: ${JSON.stringify(last)}`);
+  const logs = await exec("docker", ["logs", "--tail", "60", name]);
+  fail(
+    `agent did not become ready within ${timeoutMs} ms; last /ready: ${JSON.stringify(last)}\n` +
+      `--- docker logs ---\n${logs.stdout}${logs.stderr}`,
+  );
 }
 
 function terminal(base) {
@@ -94,7 +102,7 @@ async function main(argv) {
   const tag = `[agent-integration] ${manifest.area}/${manifest.slug}`;
 
   const run = await exec("docker", [
-    "run", "-d", "--rm", "--name", name,
+    "run", "-d", "--name", name,
     "-p", "127.0.0.1::7000",
     "-p", "127.0.0.1::5173",
     "-v", `${scenario.scenarioDir}:/scenario:ro`,
@@ -112,10 +120,17 @@ async function main(argv) {
     const ports = await exec("docker", ["port", name]);
     const agentPort = ports.stdout.match(/7000\/tcp -> 127\.0\.0\.1:(\d+)/)?.[1];
     const previewPort = ports.stdout.match(/5173\/tcp -> 127\.0\.0\.1:(\d+)/)?.[1];
-    if (!agentPort) fail(`could not read the mapped agent port:\n${ports.stdout}`);
+    if (!agentPort) {
+      const state = await exec("docker", ["inspect", "--format", "{{.State.Status}} exit={{.State.ExitCode}}", name]);
+      const logs = await exec("docker", ["logs", "--tail", "60", name]);
+      fail(
+        `the container is ${state.stdout.trim() || "gone"}; could not read the mapped agent port.\n` +
+          `--- docker logs ---\n${logs.stdout}${logs.stderr}`,
+      );
+    }
     const base = `http://127.0.0.1:${agentPort}`;
 
-    const ready = await waitForReady(base, READY_TIMEOUT_MS);
+    const ready = await waitForReady(base, READY_TIMEOUT_MS, name);
     console.log(`${tag}: setup ${ready.setup.status} after ${Math.round(ready.uptimeMs / 1000)} s (phase ${ready.phase})`);
     if ((await fetch(`${base}/healthz`)).status !== 200) fail("/healthz is not 200");
 
