@@ -1,0 +1,59 @@
+# Learning Lab Platform chart. Install into the platform namespace (e.g.
+# learning-lab); the chart also creates the sessions namespace and its policy.
+
+images:
+  platform: learning-lab/platform:dev            # dispatcher + gateway
+  session: learning-lab/session-workspace:dev    # one pod per learner session
+  pullPolicy: IfNotPresent
+
+# Required (set with --set or a values file; stored in a Secret).
+convexUrl: ""
+runnerSecret: ""
+
+sessionsNamespace: sessions
+
+gateway:
+  replicas: 1
+  port: 8080
+  service:
+    type: NodePort      # kind maps node port 30080 → host 8080; dev uses an ALB Ingress (Phase 5)
+    nodePort: 30080
+  hostSuffix: lab.localhost
+  appOrigin: http://app.lab.localhost:8080
+  publicScheme: http
+  publicPort: 8080
+  secureCookies: false   # true behind HTTPS (cookie becomes __Host-llp)
+  devPage: true          # /__llp/dev on workspace hosts; off in dev
+  appUpstream: ""        # e.g. host.docker.internal:5174 to serve the Vite app at app.<hostSuffix>
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+dispatcher:
+  replicas: 1
+  pollMs: 3000
+  startupTimeoutMs: 600000
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+bundle:
+  mode: hostPath         # local: scenarios/ mounted into the kind node at hostRoot
+  hostRoot: /scenarios
+
+sessions:
+  maxPods: 10
+  # Pod Security Admission level for the sessions namespace. hostPath bundle
+  # volumes (local) need "privileged"; dev (S3 init container) uses "baseline".
+  podSecurityEnforce: privileged
+  # Namespace ResourceQuota `hard` entries, rendered verbatim (per-pod
+  # requests/limits are pod-spec.mjs defaults). The keys contain dots on
+  # purpose: they are ResourceQuota resource names, not nested values, so
+  # override them from a values file or with `--set-string 'sessions.quota.requests\.cpu=8'`
+  # (escaped dot) — a plain `--set sessions.quota.requests.cpu=8` would create
+  # a nested `requests: {cpu: 8}` map instead.
+  quota:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "16"
+    limits.memory: 24Gi

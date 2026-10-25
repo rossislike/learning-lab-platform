@@ -1,12 +1,4 @@
 import { spawn } from "node:child_process";
-import { readEnvLocalValue } from "./env-local.mjs";
-
-const localRunnerSecret =
-  process.env.RUNNER_SHARED_SECRET ??
-  (await readEnvLocalValue(
-    "RUNNER_SHARED_SECRET",
-    new URL("../.env.local", import.meta.url),
-  ));
 
 const processes = [];
 let shuttingDown = false;
@@ -22,17 +14,20 @@ const commands = [
     command: "npm",
     args: ["run", "dev"],
   },
-  {
-    name: "runner",
-    command: "npm",
-    args: ["run", "runner:local"],
-    delayMs: Number(process.env.LOCAL_RUNNER_START_DELAY_MS ?? 6000),
-    env: {
-      LOCAL_EDITOR_PROVIDER:
-        process.env.LOCAL_EDITOR_PROVIDER ?? "openvscode-docker",
-      ...(localRunnerSecret ? { RUNNER_SHARED_SECRET: localRunnerSecret } : {}),
-    },
-  },
+  // Sessions run on the local kind cluster (dispatcher + gateway in-cluster).
+  // `cluster up` is idempotent: creates the cluster once, rebuilds/loads the
+  // images, and upgrades the Helm chart. Set SKIP_CLUSTER=1 to leave it alone.
+  ...(process.env.SKIP_CLUSTER
+    ? []
+    : [
+        {
+          name: "cluster",
+          command: "node",
+          args: ["scripts/cluster.mjs", "up"],
+          delayMs: Number(process.env.CLUSTER_START_DELAY_MS ?? 8000),
+          oneShot: true,
+        },
+      ]),
 ];
 
 function log(name, chunk, stream) {
@@ -70,6 +65,18 @@ function startProcess(entry) {
   child.stdout.on("data", (chunk) => log(entry.name, chunk, process.stdout));
   child.stderr.on("data", (chunk) => log(entry.name, chunk, process.stderr));
   child.on("exit", (code, signal) => {
+    if (entry.oneShot) {
+      // A one-shot step (the kind cluster) must not take Convex and the
+      // dashboard down with it: report, and leave the long-running
+      // processes alone so the developer can fix it and re-run it by hand.
+      if (code === 0) console.log(`[supervisor] ${entry.name} finished`);
+      else if (!shuttingDown) {
+        console.error(
+          `[supervisor] ${entry.name} exited with ${signal ?? `code ${code}`}; Convex and the dashboard keep running. Fix it and re-run: npm run cluster:up`
+        );
+      }
+      return;
+    }
     if (!shuttingDown && code !== 0) {
       console.error(
         `[supervisor] ${entry.name} exited with ${signal ?? `code ${code}`}; stopping local dev stack.`
@@ -89,7 +96,12 @@ for (const entry of commands) {
   }
 }
 
-console.log("[supervisor] started Convex, dashboard, and local runner");
+console.log(
+  process.env.SKIP_CLUSTER
+    ? "[supervisor] started Convex and the dashboard (SKIP_CLUSTER set; sessions need npm run cluster:up)"
+    : "[supervisor] started Convex and the dashboard; the kind cluster (dispatcher + gateway) follows"
+);
+console.log("[supervisor] open the dashboard at http://app.lab.localhost:8080 (through the gateway) for workspace access");
 console.log("[supervisor] press Ctrl-C to stop all processes");
 
 process.on("SIGINT", () => {

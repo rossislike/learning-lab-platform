@@ -11,7 +11,14 @@ type Ctx = QueryCtx | MutationCtx;
 export async function learnerOwnerKey(ctx: Ctx) {
   const identity = await ctx.auth.getUserIdentity();
   if (identity) return identity.tokenIdentifier;
-  if (process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE === "true") return null;
+  if (process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE === "true") {
+    // The escape hatch exists for local development only (ADR 0007): a dev
+    // deployment that carries it would expose every learner's sessions.
+    if (process.env.HOSTED_ENVIRONMENT === "dev") {
+      throw new Error("Unauthenticated local mode is not allowed in the dev environment");
+    }
+    return null;
+  }
   throw new Error("Authentication required");
 }
 

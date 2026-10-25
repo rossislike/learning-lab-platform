@@ -107,7 +107,10 @@ export default defineSchema({
     domainTitle: v.optional(v.string()),
     domainSummary: v.optional(v.string()),
     scenarioLabel: v.optional(v.string()),
-    // legacy local Docker runner inputs (react only; removed in Phase 3)
+    // Scenario directory relative to scenarios/ (e.g. "git/first-commit");
+    // the dispatcher mounts it as the pod's bundle in local mode.
+    sourceDir: v.optional(v.string()),
+    // legacy local Docker runner inputs (unused since Phase 3; Phase 4 drops them)
     templatePath: v.optional(v.string()),
     validationCommand: v.optional(v.string()),
     previewCommand: v.optional(v.string()),
@@ -156,7 +159,12 @@ export default defineSchema({
       v.literal("errored"),
       v.literal("expired")
     ),
-    runner: v.union(v.literal("local"), v.literal("kubernetes")),
+    runner: v.literal("kubernetes"),
+    // Gateway route (ADR 0003/0004): opaque id in the endpoint hostnames.
+    routeId: v.optional(v.string()),
+    podName: v.optional(v.string()),
+    podIp: v.optional(v.string()),
+    agentPort: v.optional(v.number()),
     workspaceUrl: v.optional(v.string()),
     previewUrl: v.optional(v.string()),
     terminalUrl: v.optional(v.string()),
@@ -210,7 +218,48 @@ export default defineSchema({
     .index("by_lab", ["labId"])
     .index("by_session_owner", ["sessionOwnerKey"])
     .index("by_status", ["status"])
-    .index("by_expires_at", ["expiresAt"]),
+    .index("by_expires_at", ["expiresAt"])
+    .index("by_route", ["routeId"]),
+
+  // ADR 0004: one-time bootstrap codes (hashes only), 60 s.
+  bootstrapCodes: defineTable({
+    sessionId: v.id("sessions"),
+    routeId: v.string(),
+    scope: v.union(v.literal("workspace"), v.literal("preview")),
+    ownerKey: v.string(),
+    codeHash: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    consumedAt: v.optional(v.number()),
+  })
+    .index("by_code_hash", ["codeHash"])
+    .index("by_session", ["sessionId"]),
+
+  // ADR 0004: host-bound access grants; the cookie carries grantId.verifier.
+  accessGrants: defineTable({
+    sessionId: v.id("sessions"),
+    routeId: v.string(),
+    scope: v.union(v.literal("workspace"), v.literal("preview")),
+    role: v.literal("owner"),
+    ownerKey: v.string(),
+    verifierHash: v.string(),
+    status: v.union(v.literal("active"), v.literal("revoked"), v.literal("expired")),
+    issuedAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    revokedReason: v.optional(v.string()),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_route", ["routeId"]),
+
+  // Dispatcher leadership lease so several replicas never double-launch.
+  leases: defineTable({
+    name: v.string(),
+    holder: v.string(),
+    expiresAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_name", ["name"]),
 
   sessionSteps: defineTable({
     sessionId: v.id("sessions"),
@@ -266,7 +315,7 @@ export default defineSchema({
     .index("by_lab_and_learner", ["labId", "learnerLabel"]),
 
   runnerHeartbeats: defineTable({
-    runner: v.union(v.literal("local"), v.literal("kubernetes")),
+    runner: v.literal("kubernetes"),
     runnerId: v.string(),
     pollMs: v.number(),
     pid: v.optional(v.number()),

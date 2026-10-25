@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llp-dispatcher
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llp-dispatcher
+  namespace: {{ .Values.sessionsNamespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llp-dispatcher
+  namespace: {{ .Values.sessionsNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llp-dispatcher
+subjects:
+  - kind: ServiceAccount
+    name: llp-dispatcher
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llp-dispatcher
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+    app.kubernetes.io/name: llp-dispatcher
+spec:
+  replicas: {{ .Values.dispatcher.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llp-dispatcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llp-dispatcher
+    spec:
+      serviceAccountName: llp-dispatcher
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: dispatcher
+          image: {{ .Values.images.platform }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [node, /app/runner/dispatcher/main.mjs]
+          envFrom:
+            - secretRef: { name: learning-lab-platform }
+          env:
+            - { name: SESSIONS_NAMESPACE, value: {{ .Values.sessionsNamespace | quote }} }
+            - { name: SESSION_IMAGE, value: {{ .Values.images.session | quote }} }
+            - { name: SESSION_IMAGE_PULL_POLICY, value: {{ .Values.images.pullPolicy | quote }} }
+            - { name: BUNDLE_MODE, value: {{ .Values.bundle.mode | quote }} }
+            - { name: BUNDLE_HOST_ROOT, value: {{ .Values.bundle.hostRoot | quote }} }
+            - { name: GATEWAY_HOST_SUFFIX, value: {{ .Values.gateway.hostSuffix | quote }} }
+            - { name: GATEWAY_PUBLIC_SCHEME, value: {{ .Values.gateway.publicScheme | quote }} }
+            - { name: GATEWAY_PUBLIC_PORT, value: {{ .Values.gateway.publicPort | quote }} }
+            - { name: DISPATCHER_POLL_MS, value: {{ .Values.dispatcher.pollMs | quote }} }
+            - { name: DISPATCHER_STARTUP_TIMEOUT_MS, value: {{ .Values.dispatcher.startupTimeoutMs | quote }} }
+            - { name: KUBERNETES_MODE, value: in-cluster }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            {{- toYaml .Values.dispatcher.resources | nindent 12 }}

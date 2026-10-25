@@ -1,6 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import {
   assertScenarioArtifactApproval,
@@ -8,6 +8,7 @@ import {
 } from "./scenarioArtifactPolicy";
 import { resolveScenarioSessionSnapshot } from "./scenarioSessionPolicy";
 import { hashAgentToken, learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
+import { isAllowedPodIp, ROUTE_ID_PATTERN } from "./accessPolicy";
 import {
   ACTIVE_SESSION_STATUSES,
   canBeginStartup,
@@ -23,14 +24,14 @@ import {
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
 const MIN_TTL_SECONDS = 60;
-// The legacy local Docker runner keeps its one-hour cap. Kubernetes sessions
-// may run as long as the manifest schema allows (ttlSeconds maximum 28800).
-const MAX_TTL_SECONDS: Record<"local" | "kubernetes", number> = {
-  local: 60 * 60,
-  kubernetes: 8 * 60 * 60,
-};
-const MAX_ACTIVE_LOCAL_SESSIONS = 5;
-const LOCAL_COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
+// Sessions may run as long as the manifest schema allows (ttlSeconds ≤ 28800).
+const MAX_TTL_SECONDS = 8 * 60 * 60;
+// Cost control until quotas exist (Phase 6): concurrent active sessions.
+const MAX_ACTIVE_SESSIONS = (() => {
+  const parsed = Number.parseInt(process.env.MAX_ACTIVE_SESSIONS ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+})();
+const COMPLETED_INSPECTABLE_SECONDS = 30 * 60;
 const now = () => Date.now();
 
 type ProgressStatus = SessionLifecycleStatus;
@@ -60,6 +61,30 @@ async function patchProgressRecord(
   await ctx.db.patch(record._id, patch);
 }
 
+/**
+ * Revokes every active workspace access grant of a session (ADR 0004). Called
+ * whenever a session leaves the usable states so a cookie cannot outlive the
+ * pod; the gateway also re-checks grants on its own cadence.
+ */
+async function revokeActiveGrants(
+  ctx: MutationCtx,
+  sessionId: Id<"sessions">,
+  reason: "stopping" | "expired" | "errored",
+  timestamp: number
+) {
+  const grants = await ctx.db
+    .query("accessGrants")
+    .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
+    .collect();
+  let revoked = 0;
+  for (const grant of grants) {
+    if (grant.status !== "active") continue;
+    await ctx.db.patch(grant._id, { status: "revoked", revokedAt: timestamp, revokedReason: reason });
+    revoked += 1;
+  }
+  return revoked;
+}
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -85,91 +110,59 @@ export const listForLab = query({
   },
 });
 
-export const listRequested = query({
-  args: {
-    runnerSecret: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
-  },
-  handler: async (ctx, args) => {
-    requireRunnerSecret(args.runnerSecret);
-    const sessions = await ctx.db
-      .query("sessions")
-      .withIndex("by_status", (q) => q.eq("status", "requested"))
-      .order("asc")
-      .take(20);
-
-    if (!args.runner) {
-      return sessions;
-    }
-
-    return sessions.filter((session) => session.runner === args.runner);
-  },
-});
-
-export const listStartable = query({
-  args: {
-    runnerSecret: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
-  },
-  handler: async (ctx, args) => {
-    requireRunnerSecret(args.runnerSecret);
-    const sessions = await ctx.db.query("sessions").order("asc").take(100);
-    return sessions.filter((session) => {
-      if (!["requested", "starting"].includes(session.status)) return false;
-      if (args.runner && session.runner !== args.runner) return false;
-      return true;
-    });
-  },
-});
-
-export const listActive = query({
-  args: { runnerSecret: v.string() },
-  handler: async (ctx, args) => {
-    requireRunnerSecret(args.runnerSecret);
-    const sessions = await ctx.db.query("sessions").order("desc").take(100);
-    return sessions.filter(
-      (session) =>
-        !["stopped", "expired", "errored"].includes(session.status)
-    );
-  },
-});
-
-export const listExpired = query({
+/**
+ * Everything the dispatcher needs for one poll, with the scenario attached:
+ * sessions to start or finish starting, sessions past their TTL, sessions
+ * whose pod must be removed, and every active session (for orphan
+ * reconciliation).
+ */
+export const listForDispatcher = query({
   args: { runnerSecret: v.string() },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const timestamp = now();
-    const sessions = await ctx.db
-      .query("sessions")
-      .withIndex("by_expires_at", (q) => q.lt("expiresAt", timestamp))
-      .order("asc")
-      .take(100);
-
-    return sessions.filter((session) => canExpire(session.status));
-  },
-});
-
-export const listCleanupNeeded = query({
-  args: { runnerSecret: v.string(), runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))) },
-  handler: async (ctx, args) => {
-    requireRunnerSecret(args.runnerSecret);
-    const cleanupStatuses = ["stopping", "stopped", "expired", "errored"] as const;
-    const sessions = (
-      await Promise.all(
-        cleanupStatuses.map((status) =>
-          ctx.db
-            .query("sessions")
-            .withIndex("by_status", (q) => q.eq("status", status))
-            .order("asc")
-            .take(100)
-        )
-      )
+    // Per-status lists are complete (`collect`), not sampled: an active
+    // session missing from `active` would make the orphan reaper delete a
+    // live pod. Active sessions are bounded by MAX_ACTIVE_SESSIONS; the
+    // terminal statuses are filtered to the un-cleaned ones below.
+    const byStatus = async (status: SessionLifecycleStatus) =>
+      await ctx.db
+        .query("sessions")
+        .withIndex("by_status", (q) => q.eq("status", status))
+        .order("asc")
+        .collect();
+    const [requested, starting, ...cleanupLists] = await Promise.all(
+      (["requested", "starting", "stopping", "stopped", "expired", "errored"] as const).map(byStatus)
+    );
+    const active = (
+      await Promise.all([...ACTIVE_SESSION_STATUSES].map((status) => byStatus(status)))
     ).flat();
-    return sessions.filter((session) => {
-      if (args.runner && session.runner !== args.runner) return false;
-      if (session.cleanedAt) return false;
-      return canMarkCleaned(session.status);
-    }).sort((a, b) => a.updatedAt - b.updatedAt).slice(0, 100);
+    const expired = (
+      await ctx.db
+        .query("sessions")
+        .withIndex("by_expires_at", (q) => q.lt("expiresAt", timestamp))
+        .order("asc")
+        .take(100)
+    ).filter((session) => canExpire(session.status));
+    const cleanup = cleanupLists
+      .flat()
+      .filter((session) => !session.cleanedAt && canMarkCleaned(session.status))
+      .sort((a, b) => a.updatedAt - b.updatedAt)
+      .slice(0, 100);
+    const withLab = async (session: Doc<"sessions">) => ({
+      session,
+      lab: await ctx.db.get(session.labId),
+    });
+    return {
+      startable: await Promise.all([...requested, ...starting].map(withLab)),
+      expired,
+      cleanup,
+      active: active.map((session) => ({
+        sessionId: session._id,
+        status: session.status,
+        podName: session.podName ?? null,
+      })),
+    };
   },
 });
 
@@ -203,12 +196,13 @@ export const request = mutation({
   args: {
     labId: v.id("labs"),
     learnerLabel: v.string(),
-    runner: v.optional(v.union(v.literal("local"), v.literal("kubernetes"))),
+    runner: v.optional(v.literal("kubernetes")),
     ttlSeconds: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const timestamp = now();
-    const runner = args.runner ?? "local";
+    const runner = "kubernetes" as const;
+    void args.runner;
     const learnerLabel = args.learnerLabel.trim();
     const identity = await ctx.auth.getUserIdentity();
     const authenticatedOwnerKey = await learnerOwnerKey(ctx);
@@ -216,28 +210,27 @@ export const request = mutation({
     if (!learnerLabel) {
       throw new Error("Learner label is required");
     }
-    if (runner === "kubernetes" && !ownerSubject) {
-      throw new Error("Hosted sessions require an authenticated owner subject");
+    // Outside auth-disabled local development every session needs an
+    // authenticated owner (ADR 0004); learnerOwnerKey already threw otherwise.
+    if (!ownerSubject && process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE !== "true") {
+      throw new Error("Sessions require an authenticated owner subject");
     }
     const lab = await ctx.db.get(args.labId);
     if (!lab || lab.status !== "active") {
       throw new Error("Scenario is not available");
     }
-    if (runner === "local" && lab.kind === "terminal") {
-      throw new Error(
-        "Terminal scenarios need the Kubernetes runner (Phase 3); the local Docker runner only supports React scenarios"
-      );
+    if (lab.manifestVersion !== 2 || !lab.sourceDir) {
+      throw new Error("Scenario must be re-imported (manifest v2 with sourceDir)");
     }
     // Clamp into [MIN, MAX] so a zero/negative request cannot create a
     // session that expires immediately (or never, via NaN arithmetic).
     const requestedTtl = args.ttlSeconds ?? lab.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const ttlSeconds = Math.min(
-      MAX_TTL_SECONDS[runner],
+      MAX_TTL_SECONDS,
       Math.max(MIN_TTL_SECONDS, Number.isFinite(requestedTtl) ? requestedTtl : DEFAULT_TTL_SECONDS)
     );
 
     const hostedScenario = await resolveScenarioSessionSnapshot({
-      runner,
       labId: args.labId,
       configuredEnvironment: configuredHostedEnvironment,
       validateApproval: assertScenarioArtifactApproval,
@@ -288,18 +281,10 @@ export const request = mutation({
       );
     }
 
-    if (runner === "local") {
-      const activeLocalSessions = await ctx.db.query("sessions").order("desc").take(100);
-      const activeCount = activeLocalSessions.filter(
-        (session) =>
-          session.runner === "local" &&
-          isActiveSessionStatus(session.status)
-      ).length;
-      if (activeCount >= MAX_ACTIVE_LOCAL_SESSIONS) {
-        throw new Error(
-          `Local session limit reached (${MAX_ACTIVE_LOCAL_SESSIONS} active sessions)`
-        );
-      }
+    const recentSessions = await ctx.db.query("sessions").order("desc").take(200);
+    const activeCount = recentSessions.filter((session) => isActiveSessionStatus(session.status)).length;
+    if (activeCount >= MAX_ACTIVE_SESSIONS) {
+      throw new Error(`Session limit reached (${MAX_ACTIVE_SESSIONS} active sessions)`);
     }
 
     const sessionId = await ctx.db.insert("sessions", {
@@ -437,12 +422,27 @@ export const updateRunnerMetadata = mutation({
     toolsPort: v.optional(v.number()),
     workspacePath: v.optional(v.string()),
     runnerResourceId: v.optional(v.string()),
+    routeId: v.optional(v.string()),
+    podName: v.optional(v.string()),
+    podIp: v.optional(v.string()),
+    agentPort: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
     if (!canUpdateRunnerMetadata(session.status)) return false;
+    if (args.routeId !== undefined && !ROUTE_ID_PATTERN.test(args.routeId)) {
+      throw new Error("Invalid routeId");
+    }
+    if (args.routeId !== undefined && session.routeId !== undefined && session.routeId !== args.routeId) {
+      throw new Error("routeId cannot change once set");
+    }
+    // The gateway proxies every request on the route to podIp: only a
+    // routable pod address is acceptable (never loopback or link-local).
+    if (args.podIp !== undefined && !isAllowedPodIp(args.podIp)) {
+      throw new Error("Invalid podIp");
+    }
     const { sessionId, runnerSecret: _runnerSecret, ...metadata } = args;
     void _runnerSecret;
     await ctx.db.patch(sessionId, {
@@ -524,6 +524,7 @@ export const markErrored = mutation({
       lastCheckSummary: args.message,
       updatedAt: timestamp,
     });
+    await revokeActiveGrants(ctx, args.sessionId, "errored", timestamp);
     await patchProgressRecord(ctx, args.sessionId, {
       status: "errored",
       summary: args.message,
@@ -573,12 +574,12 @@ export const recordCheck = mutation({
       ...(args.passed
         ? {
             completedAt: timestamp,
-            ...(session.runner === "local"
-              ? {
-                  expiresAt:
-                    timestamp + LOCAL_COMPLETED_INSPECTABLE_SECONDS * 1000,
-                }
-              : {}),
+            // Keep a passed workspace inspectable for a while, but never
+            // extend the session past its original TTL.
+            expiresAt: Math.min(
+              session.expiresAt,
+              timestamp + COMPLETED_INSPECTABLE_SECONDS * 1000
+            ),
           }
         : {}),
       updatedAt: timestamp,
@@ -614,6 +615,7 @@ export const stop = mutation({
       cleanupSummary: "Stop requested; waiting for session runner cleanup.",
       updatedAt: timestamp,
     });
+    await revokeActiveGrants(ctx, args.sessionId, "stopping", timestamp);
     await patchProgressRecord(ctx, args.sessionId, {
       status: "stopping",
       summary: "Stop requested; waiting for session runner cleanup.",
@@ -627,8 +629,6 @@ export const stop = mutation({
     });
   },
 });
-
-export const markStopped = stop;
 
 export const removeFromList = mutation({
   args: { sessionId: v.id("sessions") },
@@ -664,6 +664,7 @@ export const markExpired = mutation({
       agentTokenExpiresAt: undefined,
       updatedAt: timestamp,
     });
+    await revokeActiveGrants(ctx, args.sessionId, "expired", timestamp);
     await patchProgressRecord(ctx, args.sessionId, {
       status: "expired",
       summary: args.reason ?? "Session TTL expired",

@@ -7,7 +7,7 @@ type HostedApproval<LabId, ApprovalId> = {
   _id: ApprovalId;
   labId: LabId;
   slug: string;
-  environment: HostedEnvironment;
+  environment: "dev";
   artifactSha256: string;
   artifactKey: string;
   artifactSizeBytes: number;
@@ -18,26 +18,26 @@ type HostedApproval<LabId, ApprovalId> = {
   schemaVersion: number;
 };
 
+/**
+ * In the local environment (kind) bundles are mounted from the repository
+ * and sessions carry no approval snapshot. In dev every session pins the
+ * approved, digest-addressed bundle for its scenario.
+ */
 export async function resolveScenarioSessionSnapshot<LabId, ApprovalId>({
-  runner,
   labId,
   configuredEnvironment,
   validateApproval,
   loadLab,
   loadApproval,
 }: {
-  runner: "local" | "kubernetes";
   labId: LabId;
   configuredEnvironment: () => HostedEnvironment;
   validateApproval: (approval: HostedApproval<LabId, ApprovalId>) => void;
   loadLab: () => Promise<{ _id: LabId; slug: string; status: string } | null>;
-  loadApproval: (
-    environment: HostedEnvironment
-  ) => Promise<HostedApproval<LabId, ApprovalId> | null>;
+  loadApproval: (environment: "dev") => Promise<HostedApproval<LabId, ApprovalId> | null>;
 }) {
-  if (runner === "local") return undefined;
-
   const environment = configuredEnvironment();
+  if (environment === "local") return undefined;
   const lab = await loadLab();
   if (!lab || lab.status !== "active") {
     throw new Error("Hosted sessions require an active scenario");

@@ -1,6 +1,6 @@
 # ADR 0005: Kubernetes Execution Model (Local kind, AWS EKS)
 
-- Status: Accepted; amended 2026-10-24 (Phase 2): the preview is not proxied through the agent port — the gateway routes it to the pod's `react.previewPort` on a separate hostname (see ADR 0003's amendment and ADR 0004).
+- Status: Accepted; amended 2026-10-24 (Phase 2): the preview is not proxied through the agent port — the gateway routes it to the pod's `react.previewPort` on a separate hostname (see ADR 0003's amendment and ADR 0004). Amended 2026-10-25 (Phase 3, as built): no headless Service per session — the gateway reaches the pod IP recorded in Convex directly; the `NetworkPolicy` is two policies (gateway-only ingress to session pods, internet-only egress excluding RFC 1918, link-local and CGNAT ranges), enforced on EKS but not by kind's default CNI; session `runner` values are `kubernetes` only (the legacy local runner was deleted); the dispatcher talks to the API server with a dependency-free REST client, not `@kubernetes/client-node`.
 - Date: 2026-10-22
 - Decision owners: Learning Lab Platform maintainers
 - Supersedes: [ADR 0001](0001-hosted-execution-model.md)
@@ -40,7 +40,7 @@ namespace.
 - The same Helm chart (`deploy/helm/learning-lab`) deploys the dispatcher and
   the session gateway to both clusters; only values differ.
 - A **dispatcher** Deployment polls Convex for `requested` sessions and
-  creates a Pod (plus a headless Service) per session, labelled with the
+  creates a Pod per session (no Service; see the 2026-10-25 amendment), labelled with the
   session ID and annotated with its expiry. It records the pod IP and an
   opaque route ID in Convex, reaps stopped and expired pods, and reconciles
   pods against Convex on start.
@@ -59,8 +59,8 @@ namespace.
   egress allow-list, no privileged mode, and no host namespaces. A scenario
   may request that its PTY runs as `root` *inside* the container; it cannot
   request host or cluster privileges.
-- Session `runner` values in Convex are `local` (legacy Docker runner, removed
-  in Phase 3) and `kubernetes`.
+- Session `runner` values in Convex are `kubernetes` only (the legacy `local`
+  Docker runner was removed in Phase 3).
 
 ## Out of scope (recorded for later)
 

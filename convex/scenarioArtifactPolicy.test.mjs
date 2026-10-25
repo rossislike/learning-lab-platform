@@ -82,10 +82,11 @@ test("runtime contract validates the v2 manifest shape", () => {
   )
 })
 
-test("hosted environment fails closed when deployment configuration is absent", () => {
+test("hosted environment defaults to local and rejects unknown values", () => {
   assert.equal(configuredHostedEnvironment("dev"), "dev")
-  assert.throws(() => configuredHostedEnvironment(undefined), /must be dev/)
-  assert.throws(() => configuredHostedEnvironment("staging"), /must be dev/)
+  assert.equal(configuredHostedEnvironment(undefined), "local")
+  assert.equal(configuredHostedEnvironment("local"), "local")
+  assert.throws(() => configuredHostedEnvironment("staging"), /must be local or dev/)
 })
 
 test("artifact approval planning retains history and is idempotent", () => {

@@ -36,6 +36,7 @@ test("seed records inline markdown, drop solve scripts, and keep legacy runner f
   const git = scenarios.find((scenario) => scenario.manifest.slug === "first-commit")
   const record = toSeedRecord(git, areasBySlug)
   assert.equal(record.kind, "terminal")
+  assert.equal(record.sourceDir, "git/first-commit")
   assert.equal(record.difficulty, 1)
   assert.match(record.intro, /git init|Git/)
   assert.equal(record.steps.length, 3)

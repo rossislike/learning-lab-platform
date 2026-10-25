@@ -130,6 +130,6 @@ Local development has conservative session limits:
 
 - Requested TTL is capped at 1 hour.
 - Each learner label is limited to one active session across `requested`, `starting`, `running`, `checking`, `passed`, and `failed`.
-- The local runner is capped at 5 active sessions across those statuses when distinct learner labels are used.
+- The dispatcher is capped at `MAX_ACTIVE_SESSIONS` (default 5) active sessions across those statuses when distinct learner labels are used.
 
 Hosted or public mode is also gated by `VITE_COST_CONTROLS_MODE=enforced`. This prevents hosted workloads from starting until the deployment has explicit cost controls for session concurrency, TTL, cleanup, and hosted runner capacity.

@@ -1,4 +1,4 @@
-export const HOSTED_ENVIRONMENTS = ["dev"] as const;
+export const HOSTED_ENVIRONMENTS = ["local", "dev"] as const;
 export type HostedEnvironment = (typeof HOSTED_ENVIRONMENTS)[number];
 
 export type ScenarioRuntimeContract = {
@@ -22,10 +22,11 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function configuredHostedEnvironment(
   value = process.env.HOSTED_ENVIRONMENT
 ): HostedEnvironment {
-  if (value !== "dev") {
-    throw new Error("HOSTED_ENVIRONMENT must be dev for hosted sessions");
-  }
-  return value;
+  // Unset means local (kind): bundles are mounted from the repository and no
+  // approval record is required. "dev" requires an approved S3 bundle.
+  if (value === undefined || value === "" || value === "local") return "local";
+  if (value === "dev") return "dev";
+  throw new Error("HOSTED_ENVIRONMENT must be local or dev");
 }
 
 export function assertScenarioArtifactApproval(input: {

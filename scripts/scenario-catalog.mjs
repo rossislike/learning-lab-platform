@@ -9,7 +9,7 @@
 
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatSchemaErrors, validateAgainstSchema } from "./json-schema.mjs";
 
@@ -235,6 +235,8 @@ export function toSeedRecord(scenario, areasBySlug) {
     manifestVersion: 2,
     slug: manifest.slug,
     area: manifest.area,
+    // Directory relative to scenarios/; the dispatcher mounts it as the bundle in local mode.
+    sourceDir: relative(scenariosRoot, scenario.scenarioDir).split(sep).join("/"),
     kind: manifest.kind,
     title: manifest.title,
     summary: manifest.summary,

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: learning-lab
+description: Learning Lab Platform — session dispatcher, session gateway, and the sessions namespace policy (ADR 0005)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

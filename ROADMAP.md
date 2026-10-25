@@ -14,14 +14,14 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 | 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
 | 1 | Scenario manifest v2 + content | ✅ Done 2026-10-24 |
 | 2 | Session workspace image + agent | ✅ Done 2026-10-25 |
-| 3 | Dispatcher + gateway on kind | 🔜 **Next** |
-| 4 | Frontend rewrite (Killercoda shell) | ⏳ Not started (can start now against the seeded Convex data) |
+| 3 | Dispatcher + gateway on kind | 🔧 Code complete 2026-10-25 — `cluster:up` + `gateway:smoke` run pending on your Mac |
+| 4 | Frontend rewrite (Killercoda shell) | 🔜 **Next** |
 | 5 | `dev` environment on EKS | ⏳ Not started (after 3) |
 | 6 | CI, TTL reaper, alarms | ⏳ Not started |
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phases 0–2 are complete and verified on Docker. Start Phase 3: the Kubernetes dispatcher, the real gateway, and the Helm chart on kind. Phase 4 can proceed in parallel against the agent contract in `runner/README.md`.
+**You are here:** Phase 3 is code complete; run `npm run cluster:up && npm run gateway:smoke` on a machine with Docker/kind/helm to close it. Then Phase 4: the Killercoda-style frontend against the gateway (`workspaceAccess.issueBootstrap` → `POST /__llp/bootstrap` on each endpoint host → WebSocket `/pty`, iframes for `/editor` and the preview host).
 
 ---
 
@@ -54,7 +54,7 @@ Exit: eleven v2 scenarios import cleanly and the terminal ones pass the smoke te
 
 Deviations from the plan, on purpose:
 
-- The `labs` table keeps its name until the Phase 4 frontend rewrite; v1-only fields became optional instead of being dropped, so the legacy local Docker runner still runs React scenarios (`templatePath`, `validationCommand`, `previewCommand` are derived from the v2 `react` block). `sessions.request` rejects terminal scenarios on the local runner until Phase 3.
+- The `labs` table keeps its name until the Phase 4 frontend rewrite; v1-only fields became optional instead of being dropped, so the legacy local Docker runner (deleted in Phase 3) could keep running React scenarios until the dispatcher landed (`templatePath`, `validationCommand`, `previewCommand` were derived from the v2 `react` block). Until Phase 3, `sessions.request` rejected terminal scenarios on that runner.
 - Playground slugs are `<area>-playground` (slugs are global) in a `playground/` directory.
 - The hosted runtime contract (`scenarioArtifactApprovals.runtime`, `sessions.hostedScenario`) changed shape to the v2 fields; there is no migration. Any Convex deployment holding old approval/hostedScenario rows must have them cleared before the schema push (local dev deployments: `npx convex run` a one-off, or wipe the tables from the dashboard).
 
@@ -73,24 +73,31 @@ Exit: `docker run` of the image with a mounted scenario serves a working termina
 
 Deviations: the legacy entrypoint was not salvaged literally — process supervision and readiness were rewritten in `processes.mjs`/`server.mjs` around the step model. The dispatcher (Phase 3) reads pod readiness from `GET /ready` and records endpoints in Convex; the agent itself only reports step results.
 
-## Phase 3 — Dispatcher and gateway on Kubernetes 🔜
+## Phase 3 — Dispatcher and gateway on Kubernetes 🔧
 
 Exit: `npm run dev:all` brings up Convex, Vite, kind, dispatcher, gateway; a session pod starts from the UI and the old Docker runner is deleted.
 
-- [ ] `runner/k8s-dispatcher.mjs` (`@kubernetes/client-node`), in this order: `sessions.listStartable` → `sessions.markStarting` → `sessions.issueAgentToken` (rejects `requested` sessions, so it must follow `markStarting`; re-issuing on a retry is safe and replaces the previous token) → create Pod (env `CONVEX_URL`, `SESSION_ID`, `SESSION_TOKEN`; `runAsUser` 0 only for `workspace.user: root`; `automountServiceAccountToken: false`) + headless Service in `sessions`; initContainer or volume delivers the scenario bundle to `/scenario`; poll the agent's `GET /ready` until `phase: ready` (`failed` → session error) → record pod IP, route ID, and endpoints → `sessions.markRunning`; reap stopped/expired; reconcile on start; Convex lease for multi-replica safety.
-- [ ] Confirm `npx convex dev` accepts the `./sha256.ts` import in `convex/access.ts` (else drop the extension and `allowImportingTsExtensions` from `tsconfig.json`).
-- [ ] `runner/session-gateway.mjs`: implement ADR 0004 — bootstrap code → `HttpOnly` cookie bound to route ID; two upstreams per session: `workspace` (`/pty`, `/steps/*`, `/editor/*` → pod:7000, with WebSocket upgrade) and `preview` (→ pod:previewPort) on separate hostnames; ownership check per connection.
-- [ ] `deploy/helm/learning-lab/`: namespaces, dispatcher, gateway, RBAC (pods/services in `sessions` only), default-deny `NetworkPolicy` + egress allow-list, `ResourceQuota`, pod limits.
-- [ ] `deploy/kind/cluster.yaml` with port mapping `8080 → gateway`; `scripts/dev-supervisor.mjs` creates/loads/installs idempotently.
-- [ ] Delete `runner/local-runner.mjs`, `workspace-server.mjs`, and the `local` runner enum.
+- [x] `runner/dispatcher/` — dependency-free (Kubernetes REST + Convex HTTP API; no `@kubernetes/client-node`): `listForDispatcher` → `markStarting` → `issueAgentToken` → pod (`pod-spec.mjs`: no SA token, non-root unless `workspace.user: root`, drop ALL caps, limits, `activeDeadlineSeconds` TTL backstop, hostPath bundle at `/scenario`) → kubelet Ready (readiness probe = agent `/ready`) → `markRunning` with `ws-`/`pv-` URLs; startup timeout and failed pods → `markErrored`; expiry, cleanup, orphan reaping; `runners:acquireLease` for replica safety. Tests with in-memory Convex/Kubernetes fakes.
+- [x] `runner/gateway/` — ADR 0004: `ws-<routeId>`/`pv-<routeId>` hosts, `POST /__llp/bootstrap` (exact app `Origin`, JSON, size and rate limits) → host-only cookie `grantId.verifier` (`__Host-llp`, or `llp` on plain http), `checkGrant`/`resolveRoute` cached ≤ 5 s, credential stripping both ways, `frame-ancestors`, WebSocket `Origin` rules, `/__llp/logout`, dev page. End-to-end test through the real agent.
+- [x] Convex: runner is `kubernetes` only; `HOSTED_ENVIRONMENT` `local` (bundles from the repo, no approvals) or `dev`; `sessions.request` allows the auth-disabled local mode and enforces `MAX_ACTIVE_SESSIONS`; `routeId`/`podName`/`podIp`/`agentPort` on sessions; `bootstrapCodes`, `accessGrants`, `leases` tables; `workspaceAccess.*`; `labs.sourceDir` from the importer.
+- [x] `deploy/helm/learning-lab/`: `sessions` namespace (PSA level configurable; `privileged` locally because of hostPath), `ResourceQuota`, gateway-only ingress + internet-only egress NetworkPolicies, dispatcher ServiceAccount/Role/RoleBinding, gateway NodePort Service, platform Secret from values.
+- [x] `deploy/kind/cluster.yaml.tpl` (scenarios mount, 30080 → 127.0.0.1:8080) rendered by `scripts/cluster.mjs` (`cluster:up|deploy|status|logs|down`); `npm run dev:all` runs `cluster up` as an idempotent one-shot step; `images/platform/Dockerfile`.
+- [x] `scripts/gateway-smoke.mjs` (`npm run gateway:smoke`): request → pod → running → bootstrap → gateway `/ready` + terminal + verify (result reported to Convex) → preview → stop → cleaned.
+- [x] Deleted the legacy local runner (`local-runner.mjs`, `workspace-server.mjs`, `session-gateway.mjs` stub, `session-runner.ts`, `startup-cancellation.mjs`, `learner-process-env.mjs`) and the `local` runner enum; the dashboard requests `kubernetes` sessions.
+- [x] Review fixes (2026-10-25): `runners.heartbeat` takes `runnerSecret` and a static contract test (`runner/shared/convex-contract.test.mjs`) checks every dispatcher/gateway call against `convex/`; routing metadata is written before the pod exists and back-filled from pod labels; running sessions whose pod is gone are errored; stop/expire/error revoke access grants; `podIp` validated (no loopback/link-local) on both sides; `workspace.cwd` restricted to `/workspace`/`/home/<user>`; gateway: per-route + global bootstrap limits, `Origin` on logout and state-changing requests, app upstream only under the app host with `Host` kept (Vite `allowedHosts`), grant-bound socket teardown with a 5 s re-validation sweep, caches bounded by expiry, dev page refused with secure cookies and `?code=` limited to direct navigations, bare `/__llp/health` on endpoint hosts, Convex error messages sanitized; `cluster.mjs` recovers pending Helm releases and uses `--set-string`; dashboard no longer probes or frames gateway URLs (Phase 4 shell does the bootstrap).
+- [ ] **Run on your Mac (needs Docker, kind, kubectl, helm, and a Convex dev deployment with `RUNNER_SHARED_SECRET` + `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true`):** `npx convex dev` (also confirms the `./sha256.ts` import bundles), then `npm run cluster:up && npm run gateway:smoke && npm run gateway:smoke -- --scenario welcome-message`.
+- [ ] If an existing Convex dev deployment holds sessions with `runner: "local"` or old `hostedScenario` shapes, clear the `sessions`, `progressRecords`, `sessionEvents`, `sessionSteps`, `runnerHeartbeats` tables before the schema push.
 
-## Phase 4 — Frontend rewrite ⏳
+Deviations: no headless Service per session (the gateway proxies to the pod IP, which is stable for the pod's life); readiness comes from the kubelet condition rather than the dispatcher polling the agent; NetworkPolicies are declared but kind's default CNI does not enforce them (EKS does).
+
+## Phase 4 — Frontend rewrite 🔜
 
 Exit: all Phase 1 scenarios run end-to-end on local/kind from the new UI.
 
 - [ ] New `src/` with React Router; delete `App.tsx`. Switch to Convex `useQuery` subscriptions.
 - [ ] `/` Areas grid with search; Playgrounds and Examples tiles first.
 - [ ] `/:area` scenario cards with completion check marks from progress records.
+- [ ] Session access: after `sessions.request`, poll until `running`, call `workspaceAccess.issueBootstrap`, `POST` each code to `<workspaceUrl>/__llp/bootstrap` and `<previewUrl>/__llp/bootstrap` with `credentials: "include"`, then open `/pty` (WebSocket, binary frames) and iframe `/editor?folder=…` and the preview origin. Locally the app must be served from the same site as the gateway (`app.lab.localhost:8080` via `GATEWAY_APP_UPSTREAM`) so the `SameSite=Lax` cookie is sent.
 - [ ] `/:area/:slug` scenario shell: left `InstructionPane` (title, step dots, markdown with `<details>` and run-in-terminal code blocks, `START`/`BACK`/`NEXT`, verify feedback), right `WorkspacePane` (tab strip `Terminal | Editor | Preview | +`, xterm.js over gateway WS, iframes for editor/preview, TTL countdown, stop).
 - [ ] Session states: initialising line in the terminal pane; errored/expired modal with retry.
 - [ ] `/admin`: sessions table, runner heartbeat, import scenarios (operator only).

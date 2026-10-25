@@ -44,10 +44,10 @@ Create at least three sessions so each filter and summary has useful data:
 8. Set learner label to `carol-filter`.
 9. Click `Request session`.
 
-Wait for the local runner to move the requested sessions into `running`. If they remain `requested`, confirm the runner is still active or run:
+Wait for the dispatcher (in the kind cluster) to move the requested sessions into `running`. If they remain `requested`, check the dispatcher:
 
 ```bash
-npm run runner:local:once
+npm run cluster:status
 ```
 
 ## Session Filters

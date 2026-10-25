@@ -7,11 +7,11 @@ pod — `kind` locally, EKS in `dev`.
 
 > **Status (2026-10-25):** the platform is being redesigned. Phases 0–1 are
 > done (decisions, scenario catalog v2); Phase 2 (the session image and agent)
-> is code complete, pending an image build and Docker integration run; the
-> Kubernetes dispatcher and gateway (Phase 3) are next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
+> is code complete, pending an image build and Docker integration run; Phase 3
+> (Kubernetes dispatcher, gateway, kind + Helm) is code complete, pending a
+> cluster run; the Phase 4 shell is next. See [`ROADMAP.md`](ROADMAP.md) for the status board and
 > [`docs/2026-10-22/redesign-plan.md`](docs/2026-10-22/redesign-plan.md) for
-> the design. Until Phase 3 lands, the legacy local Docker runner below is
-> still the way to run a session.
+> the design.
 
 ## Target experience
 
@@ -72,27 +72,36 @@ and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md)
 |---|---|
 | `src/` | React frontend (being rewritten in Phase 4) |
 | `convex/` | Control plane: schema, sessions, scenarios, progress, access |
-| `runner/` | Session execution: `session-agent/` (runs inside each session pod), the legacy local Docker runner, dispatcher + gateway from Phase 3 |
-| `images/` | `session-workspace`: the per-session container image (agent, OpenVSCode, Node, git) |
+| `runner/` | `session-agent/` (inside each session pod), `dispatcher/` (Convex → pods), `gateway/` (ADR 0004 ingress), `shared/` |
+| `deploy/` | Helm chart (`helm/learning-lab`) and the kind cluster template |
+| `images/` | `session-workspace` (per-session: agent, OpenVSCode, Node, git) and `platform` (dispatcher + gateway) |
 | `scenarios/` | Scenario catalog (manifest v2): `<area>/area.json`, `<area>/<slug>/` with steps, scripts, and react workspaces |
 | `scripts/` | Import, smoke test, dev supervisor |
 | `infra/aws/` | Terraform: state backend, account security, (Phase 5) EKS platform + `dev` root |
 | `docs/` | Design, decisions, authoring guide, manual test scripts |
 
-## Local setup (legacy runner, until Phase 3 — React scenarios only)
+## Local setup
+
+Requires Node 22, Docker Desktop, `kind`, `kubectl`, and `helm`
+(`brew install kind kubectl helm`).
 
 ```bash
 npm install
-cp .env.example .env.local
-npx convex dev          # copy the printed URL into VITE_CONVEX_URL in .env.local
-npm run dev:all         # convex dev + vite + local runner, supervised
+cp .env.example .env.local           # set RUNNER_SHARED_SECRET
+npx convex dev                       # copy the printed URL into VITE_CONVEX_URL in .env.local
+npx convex env set RUNNER_SHARED_SECRET <same value>
+npx convex env set ALLOW_UNAUTHENTICATED_LOCAL_MODE true
+npm run dev:all                      # convex dev + vite + `cluster up` (kind, images, Helm chart)
 ```
 
-Docker Desktop must be running: the local runner starts OpenVSCode with
-`gitpod/openvscode-server:latest`. Then open the dashboard, click
-`Seed scenarios`, pick a React scenario, and `Request session`. Terminal
-scenarios (`git`, `linux`, `node`) need the Kubernetes runner from Phase 3;
-until then they are only exercised by `npm run scenarios:smoke`.
+Then open the dashboard at **http://app.lab.localhost:8080** (the gateway
+proxies the Vite dev server under the app host, which is the origin workspace
+endpoints trust; `http://localhost:5174` works for the dashboard alone),
+click `Seed scenarios`, pick a scenario, and `Request session`. Sessions run
+as pods on the kind cluster behind the gateway at `http://127.0.0.1:8080`;
+the current dashboard shows the endpoint URLs but cannot open them until the
+Phase 4 shell bootstraps access. `npm run gateway:smoke` proves the whole
+path from the command line.
 
 Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`,
 `VITE_SESSION_ACCESS_MODE=local-only`, and `VITE_COST_CONTROLS_MODE=local-limits`
@@ -102,18 +111,24 @@ for local development. Account setup for configured auth is in
 Useful commands:
 
 ```bash
-npm run runner:local:once     # one dispatcher poll
+npm run cluster:status        # pods + dispatcher/gateway logs
+npm run cluster:deploy        # after changing runner/ or images/
 npm run scenarios:import      # re-import manifests after editing
-npm run scenarios:smoke -- --scenario first-commit   # or --local to skip Docker
+npm run scenarios:smoke -- --scenario first-commit
+npm run agent:integration     # drive the session image over Docker
 npm run test:runner           # unit tests for convex/, scripts/, runner/
 npm run lint && npm run build
 ```
 
 Scenario authoring: [`docs/scenario-authoring.md`](docs/scenario-authoring.md).
 
-## Troubleshooting (legacy runner)
+## Troubleshooting
 
-- Session stuck in `requested`: the runner is not polling — run `npm run runner:local`.
-- Docker errors: confirm `docker info` works; `docker pull gitpod/openvscode-server:latest`.
-- Convex URL mismatch: `.env.local` must match the URL printed by `npx convex dev`.
-- Stale containers: `Stop` in the dashboard, then `npm run runner:local:once`, then `docker ps`.
+- Session stuck in `requested`: the dispatcher is not running or cannot reach Convex — `npm run cluster:status`.
+- Session `errored` with "did not become ready": `kubectl -n sessions describe pod <podName>`; usually the image is not loaded into kind (`npm run cluster:deploy`) or the scenario mount is missing.
+- Gateway 401 in the browser: bootstrap the host first (the Phase 4 shell does this; `npm run gateway:smoke -- --keep` prints a one-time dev link).
+- Convex URL mismatch: `.env.local` must match the URL printed by `npx convex dev`, and `RUNNER_SHARED_SECRET` must match the Convex env.
+- Dashboard shows "Blocked request. This host is not allowed" under `app.lab.localhost`: `vite.config.ts` must list `.lab.localhost` and `host.docker.internal` in `server.allowedHosts` (it does by default).
+- `kind load docker-image` fails (containerd import errors, Docker Desktop quirks): `docker save learning-lab/platform:dev -o build/platform.tar && kind load image-archive build/platform.tar --name learning-lab` (same for the session image).
+- `npm run dispatcher:once` from this machine: scale the in-cluster dispatcher to 0 first (`kubectl -n learning-lab scale deploy/llp-dispatcher --replicas=0`), otherwise it holds the lease and the local tick is skipped; scale back to 1 afterwards.
+- Helm reports the release as `pending-upgrade`/`pending-install` (an interrupted deploy): `npm run cluster:deploy` rolls back or uninstalls it automatically before upgrading.

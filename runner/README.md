@@ -1,10 +1,12 @@
 # Runner
 
-`runner/` holds the session agent (Phase 2, code complete; image build and
-Docker integration run pending), the legacy local Docker runner, and the
-pieces that survive into the Kubernetes design (ADR 0005). The Kubernetes
-dispatcher and the real session gateway arrive in ROADMAP Phase 3; the legacy
-local runner is deleted at the end of that phase.
+`runner/` holds the three platform programs of the Kubernetes design
+(ADR 0005): the session agent (`session-agent/`, inside every session pod),
+the dispatcher (`dispatcher/`, Convex sessions → pods) and the gateway
+(`gateway/`, the only ingress to pods), plus `shared/` (Convex HTTP client,
+reverse proxy, pod-IP rules). Phase 2 and Phase 3 are code complete; the
+image build, the Docker integration run and the kind cluster run are
+pending. The legacy local Docker runner is gone.
 
 ## Session agent (`session-agent/`)
 
@@ -108,47 +110,138 @@ create `/workspace` writable by you); `openvscode-server` on `PATH` or
 `failed`); `node-pty` installed in `runner/session-agent/` for a real TTY
 (otherwise a pipe-backed bash without prompt colours or resize).
 
-## What else is here
+## Dispatcher (`dispatcher/`)
 
-| File | Purpose |
-|---|---|
-| `local-runner.mjs` | Legacy local runner. Polls Convex for sessions with `status: requested` and `runner: local`, copies the lab template into `lab-workspaces/<sessionId>`, runs `npm ci`, starts a Vite preview, an OpenVSCode editor, and a per-session workspace/tools server, then marks the session `running`. |
-| `workspace-server.mjs` | The per-session tools/check HTTP server the local runner starts (runs the validation command on demand). |
-| `session-gateway.mjs` | Stub gateway. Answers health checks and returns `503 gateway-deployment-pending` for everything else; implemented for real in Phase 3 (ADR 0004). |
-| `session-runner.ts` | Shared runner lifecycle types (`start` / `check` / `stop` contract). |
-| `startup-cancellation.mjs` | Helper for cancelling a session that is stopped while it is still starting. |
-| `learner-process-env.mjs` | Builds the environment handed to learner-facing processes without the runner secret. Used by `workspace-server.mjs`. |
+Turns Convex sessions into pods (ADR 0005). Dependency-free: it talks to the
+Kubernetes REST API directly (`k8s.mjs`, in-cluster service account or
+`kubectl config view --raw` on a developer machine) and to Convex over its
+HTTP API (`shared/convex-http.mjs`).
 
-Each `.mjs` module has a sibling `*.test.mjs`; run them with `npm run test:runner`.
+Each tick, idempotent and safe to repeat after a crash:
 
-## Running the legacy local runner
+1. `runners:heartbeat`, then `runners:acquireLease` — only the lease holder
+   acts, so replicas never double-launch.
+2. `sessions:listForDispatcher` — one round trip with everything attached.
+3. `requested` → `sessions:markStarting` → `sessions:issueAgentToken` →
+   `sessions:updateRunnerMetadata` (routeId, podName, ports — written
+   **before** the pod exists so a crash never leaves an unroutable pod) →
+   create the pod (`pod-spec.mjs`). `starting` → wait for the kubelet Ready
+   condition (the readiness probe is the agent's `/ready`) → record `podIp`
+   (re-sending the routing metadata from the pod labels if Convex lost it) →
+   `sessions:markRunning` with the `ws-`/`pv-` URLs. A pod that fails, or
+   does not become ready within `DISPATCHER_STARTUP_TIMEOUT_MS`, is deleted
+   and the session errored.
+4. `expired` → `sessions:markExpired`; `cleanup` → delete pod →
+   `sessions:markCleaned`; session pods Convex no longer knows as active are
+   deleted after a 60 s grace; a `running`/`checking`/`passed`/`failed`
+   session whose pod is gone or finished (TTL deadline, eviction, OOM) is
+   errored.
 
-Requires a Convex dev deployment (`npm run convex:dev`) and `RUNNER_SHARED_SECRET`
-set to the same value in Convex and `.env.local`.
+Every Convex function these programs call must take `runnerSecret`;
+`shared/convex-contract.test.mjs` checks that statically against `convex/`.
+
+Pod shape: `restartPolicy: Never`, no service-account token, non-root
+`learner` (uid 1001) unless the manifest says `workspace.user: root`,
+`capabilities: drop ALL`, seccomp RuntimeDefault, CPU/memory/ephemeral
+limits, `activeDeadlineSeconds = ttl + 10 min` as a kubelet-enforced TTL
+backstop. The bundle is mounted read-only at `/scenario` from the node's
+`/scenarios/<sourceDir>` (`BUNDLE_MODE=hostPath`, local); `s3` arrives in
+Phase 5. Env injected: `CONVEX_URL`, `SESSION_ID`, `SESSION_TOKEN`.
+`workspace.cwd` is the workspace volume's mount path and must be under
+`/workspace` or `/home/<user>` (the dispatcher refuses anything else).
+
+Known exposures, accepted for local and dev:
+
+- `SESSION_TOKEN` is a plain pod env var, readable by anyone with `pods/get`
+  in the `sessions` namespace (the dispatcher's own Role, cluster admins).
+  It authorizes only `steps.recordStepResult` for that session (see "Agent
+  token exposure" above); a Secret-backed env var would be readable by the
+  same principals.
+- `BUNDLE_MODE=hostPath` mounts `scenarios/<sourceDir>` **including its
+  `solution/` directory** into the pod (read-only, local only). Learners on
+  a local kind cluster are the developer; `dev` uses S3 bundles (Phase 5),
+  where the published bundle excludes `solution/`.
 
 ```bash
-npm run runner:local        # polling worker
-npm run runner:local:once   # process one requested session and exit
+npm run dispatcher:once     # one tick from this machine against the current kubeconfig context
 ```
 
-`npm run dev:all` starts Convex, Vite, and the runner together.
+`dispatcher:once` needs the lease: scale the in-cluster dispatcher to 0
+first (`kubectl -n learning-lab scale deploy/llp-dispatcher --replicas=0`),
+otherwise the local tick logs `skipped: lease` and does nothing; scale it
+back to 1 afterwards. The kubeconfig mode (`k8s.mjs`) supports
+client-certificate and static-token users only (kind); exec/auth-provider
+credential plugins (EKS, GKE) are refused — run the dispatcher in-cluster
+there. In-cluster, the projected service-account token is re-read once on a
+401 (token rotation).
 
-Editor providers (`LOCAL_EDITOR_PROVIDER`):
+## Gateway (`gateway/`)
 
-- `openvscode-docker` (default): starts `gitpod/openvscode-server:latest` in
-  Docker. Docker Desktop must be running.
-- `openvscode-native`: starts `OPENVSCODE_SERVER_BIN` (or `openvscode-server` on
-  `PATH`) directly.
-- `lightweight`: the built-in textarea editor, as a debugging fallback.
+The only way into a session pod (ADR 0003/0004). Hosts
+`ws-<routeId>.<suffix>` → pod:7000 (terminals, steps, `/editor`) and
+`pv-<routeId>.<suffix>` → pod:previewPort. Reserved `/__llp/*` paths are
+never proxied:
 
-The OpenVSCode URL is saved on the session as `workspaceUrl`, the Vite URL as
-`previewUrl`, and the tools/check URL as `terminalUrl`. Validation is
-user-triggered from the UI.
+| Path | Purpose |
+|---|---|
+| `GET /__llp/health` | Liveness (any host); request/denial stats only under the app host. |
+| `POST /__llp/bootstrap` `{code}` | Consumes a one-time code from `workspaceAccess:issueBootstrap` (exact `Origin` = `GATEWAY_APP_ORIGIN`, checked before anything is counted; JSON only, ≤ 4 KB; 20 failures/min per route and 200/min overall) and sets the host-only cookie `<grantId>.<verifier>` (`__Host-llp`, or `llp` when `GATEWAY_SECURE_COOKIES=false`). A rejected code is recorded as a session event by reason; the response is always a bare 401. |
+| `POST /__llp/logout` | Revokes the cookie's grant (exact `Origin` = app origin) and destroys that grant's open connections. |
+| `GET /__llp/dev[?code=]` | Dev terminal page on workspace hosts when `GATEWAY_DEV_PAGE=true` (refused at startup unless `GATEWAY_SECURE_COOKIES=false`); `?code=` consumes a code first and only for a direct navigation (`Sec-Fetch-Site` absent, `none` or `same-site`). |
 
-## What comes next
+Everything else: cookie → `workspaceAccess:checkGrant` (cached ≤ 5 s and
+never past the grant's expiry; 401/403) → `workspaceAccess:resolveRoute`
+(cached the same way; 503 while the session is not running; loopback and
+link-local pod IPs are never proxied to) → proxy with the platform cookie,
+`Authorization`, and forwarding headers stripped, `X-Forwarded-Host/Proto`
+added, pod `Set-Cookie` headers with a `Domain` or a platform name dropped,
+and `Content-Security-Policy: frame-ancestors 'self' <appOrigin>`. Requests
+with a method other than GET/HEAD/OPTIONS, and every WebSocket upgrade, must
+carry an allowed `Origin` (workspace: app origin or own host; preview: own
+host); a request with no `Origin` passes only when it has no
+`Sec-Fetch-Site` either (a non-browser client, for which the grant is the
+credential). Proxied connections are tracked per grant: logout destroys
+them, and a 5 s sweep re-validates every grant with live connections and
+destroys those no longer valid (stop/expire/error revoke all grants in
+Convex). Requests whose `Host` is exactly the app origin's host go to
+`GATEWAY_APP_UPSTREAM` when set (the Vite dev server locally, with the
+original `Host` kept — Vite 7 only accepts hosts listed in
+`server.allowedHosts`); every other non-endpoint host is 404.
 
-- Phase 3: `runner/k8s-dispatcher.mjs` and a working `session-gateway.mjs`,
-  deployed to kind locally and EKS in `dev` via the Helm chart.
+## Local cluster
+
+```bash
+npm run cluster:up        # kind cluster "learning-lab" + images + Helm chart (idempotent)
+npm run cluster:deploy    # rebuild + reload images, upgrade the chart
+npm run cluster:status    # pods + recent logs
+npm run cluster:logs
+npm run cluster:down
+npm run gateway:smoke     # end-to-end: request → pod → gateway → terminal → verify → stop
+```
+
+`deploy/kind/cluster.yaml.tpl` mounts `scenarios/` into the node at
+`/scenarios` and maps node port 30080 → `127.0.0.1:8080`.
+`deploy/helm/learning-lab/` installs the dispatcher (ServiceAccount + Role on
+pods in `sessions`), the gateway (NodePort), the `sessions` namespace with a
+`ResourceQuota`, and NetworkPolicies (gateway-only ingress, internet-only
+egress — enforced on EKS, not by kind's default CNI). `images/platform` holds
+both programs; the command is set per Deployment.
+
+Browsers resolve `*.localhost` to loopback (Chrome, Firefox), so
+`http://ws-<routeId>.lab.localhost:8080` works without DNS; scripts set the
+`Host` header by hand. Open the dashboard at `http://app.lab.localhost:8080`
+(through the gateway) so its origin is the one workspace endpoints trust.
+
+Troubleshooting:
+
+- `kind load docker-image` fails: `docker save <image> -o build/<name>.tar`
+  then `kind load image-archive build/<name>.tar --name learning-lab`.
+- An interrupted `helm upgrade` leaves the release `pending-*`;
+  `cluster:deploy` rolls back (revision > 1) or uninstalls it first.
+- `dispatcher:once` reports `skipped: "lease"`: the in-cluster dispatcher
+  holds the lease — scale it to 0 (see above).
+- Dashboard under `app.lab.localhost` shows Vite's "host is not allowed":
+  check `server.allowedHosts` in `vite.config.ts`.
 
 See [`ROADMAP.md`](../ROADMAP.md) and
 [ADR 0005](../docs/decisions/0005-kubernetes-execution-model.md).

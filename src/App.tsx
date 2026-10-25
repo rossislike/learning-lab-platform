@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import {
   CheckCircle2,
-  CircleDashed,
   Clock3,
   Cloud,
   Folder,
@@ -168,7 +167,10 @@ type EmptyStateCopy = {
   tone: EmptyStateTone
 }
 type EndpointKey = "workspace" | "tools" | "preview"
-type EndpointStatus = "missing" | "checking" | "reachable" | "stale"
+type EndpointStatus = "missing" | "checking" | "reachable" | "stale" | "gated"
+
+const WORKSPACE_GATED_NOTE =
+  "Workspace access requires the Phase 4 shell (bootstrap)"
 type EndpointHealth = {
   status: EndpointStatus
   checkedAt?: number
@@ -550,7 +552,7 @@ function ConnectedApp({ account }: { account?: UserAccount }) {
         convex.query(api.labs.list, {}),
         convex.query(api.sessions.list, {}),
         convex.query(api.progress.list, {}),
-        convex.query(api.runners.latest, { runner: "local" }),
+        convex.query(api.runners.latest, { runner: "kubernetes" }),
         convex.query(api.observability.sessionSummary, {}),
       ])
       setLabs(nextLabs as LabSummary[])
@@ -669,7 +671,7 @@ function ConnectedApp({ account }: { account?: UserAccount }) {
     const sessionId = await convex.mutation(api.sessions.request, {
       labId: selectedScenario._id,
       learnerLabel,
-      runner: "local",
+      runner: "kubernetes",
       ttlSeconds: 60 * 60,
     })
     selectSession(sessionId as Id<"sessions">)
@@ -700,15 +702,10 @@ function ConnectedApp({ account }: { account?: UserAccount }) {
   }
 
   async function runSessionCheck(session: SessionSummary) {
-    if (!session.terminalUrl?.startsWith("http")) return
-
-    const checkUrl = new URL("/api/check", session.terminalUrl).toString()
-    const response = await fetch(checkUrl, { method: "POST" })
-    if (!response.ok) {
-      throw new Error(`Check failed with HTTP ${response.status}`)
-    }
-    await refreshDashboard()
-    await refreshEvents(session._id)
+    // Checks run inside the session pod via the gateway-authenticated agent
+    // (POST /steps/:i/verify); only the Phase 4 scenario shell can reach it.
+    void session
+    throw new Error("Use the scenario shell (Phase 4) to run checks")
   }
 
   async function seedScenarios() {
@@ -897,9 +894,6 @@ function DashboardTab({
   onStartSession: () => Promise<void>
   onStop: (sessionId: Id<"sessions">) => Promise<void>
 }) {
-  const requestedLocalSessions = sessions.filter(
-    (session) => session.runner === "local" && session.status === "requested",
-  )
   const [requestBusy, setRequestBusy] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
   const [sessionScenarioFilter, setSessionScenarioFilter] = useState("all")
@@ -973,18 +967,6 @@ function DashboardTab({
         onSelectScenario={onSelectScenario}
       />
 
-      {requestedLocalSessions.length > 0 ? (
-        <div className="notice runner-notice">
-          <strong>Local runner required.</strong>
-          <span>
-            {requestedLocalSessions.length} requested session
-            {requestedLocalSessions.length === 1 ? "" : "s"} will stay queued
-            until
-            <code>npm run runner:local</code> is running in this project.
-          </span>
-        </div>
-      ) : null}
-
       <section className="grid request-grid">
         <article className="panel request-panel">
           <div className="panel-header">
@@ -1054,7 +1036,9 @@ function DashboardTab({
         <RunnerHealthPanel
           heartbeat={runnerHeartbeat}
           observability={observabilitySummary}
-          requestedCount={requestedLocalSessions.length}
+          requestedCount={
+            sessions.filter((session) => session.status === "requested").length
+          }
         />
       </section>
 
@@ -1543,7 +1527,7 @@ function SessionDetailPanel({
             <div className="notice compact-notice">
               <strong>{session.stopReason ?? "Cleanup"}</strong>
               <span>
-                {session.cleanupSummary ?? "Awaiting local runner cleanup."}
+                {session.cleanupSummary ?? "Awaiting dispatcher cleanup."}
               </span>
             </div>
           ) : null}
@@ -1866,8 +1850,8 @@ function WorkspaceSplitView({
   const previewReady = session.previewUrl?.startsWith("http")
   const editorUrl = session.workspaceUrl ?? ""
   const previewUrl = session.previewUrl ?? ""
-  const editorReachable = endpointHealth.workspace.status !== "stale"
-  const previewReachable = endpointHealth.preview.status !== "stale"
+  const editorReachable = endpointHealth.workspace.status === "reachable"
+  const previewReachable = endpointHealth.preview.status === "reachable"
   const editorAvailable = Boolean(editorReady && editorReachable)
   const previewAvailable = Boolean(previewReady && previewReachable)
   const compactLayout = useMediaQuery("(max-width: 900px)")
@@ -2029,7 +2013,13 @@ function WorkspaceFramePlaceholder({
           body: health.message,
           tone: "danger" as const,
         }
-      : {
+      : health.status === "gated"
+        ? {
+            title: `${label} published`,
+            body: health.message,
+            tone: "warning" as const,
+          }
+        : {
           title: `${label} not ready`,
           body: url?.startsWith("http")
             ? "The endpoint is still being checked."
@@ -2347,40 +2337,13 @@ async function probeEndpoint(
     }
   }
 
-  if (label === "workspace" || label === "preview") {
-    return {
-      status: "reachable",
-      checkedAt: Date.now(),
-      message: `${label} endpoint published`,
-    }
-  }
-
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 1500)
-
-  try {
-    await fetch(url, {
-      cache: "no-store",
-      mode: "no-cors",
-      signal: controller.signal,
-    })
-
-    return {
-      status: "reachable",
-      checkedAt: Date.now(),
-      message: `${label} endpoint responded`,
-    }
-  } catch (error) {
-    return {
-      status: "stale",
-      checkedAt: Date.now(),
-      message:
-        error instanceof DOMException && error.name === "AbortError"
-          ? `${label} endpoint timed out`
-          : `${label} endpoint is not responding`,
-    }
-  } finally {
-    window.clearTimeout(timeout)
+  // Endpoint hosts sit behind the gateway (ADR 0004): they answer 401 until
+  // the browser has bootstrapped a grant, which only the Phase 4 scenario
+  // shell does. The dashboard therefore never fetches or frames them.
+  return {
+    status: "gated",
+    checkedAt: Date.now(),
+    message: WORKSPACE_GATED_NOTE,
   }
 }
 
@@ -2394,6 +2357,8 @@ function endpointStatusLabel(health: EndpointHealth) {
       return "checking"
     case "stale":
       return `${health.message}${checked}`
+    case "gated":
+      return health.message
     case "missing":
       return health.message
   }
@@ -2437,8 +2402,8 @@ function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
   switch (session.status) {
     case "requested":
       return {
-        title: "Queued for local runner",
-        body: "The session request is saved. Keep the local runner polling to create the editor, preview, and tools.",
+        title: "Queued for the dispatcher",
+        body: "The session request is saved. The in-cluster dispatcher creates the session pod on its next poll.",
         tone: "warning",
       }
     case "starting":
@@ -2481,20 +2446,20 @@ function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
       if (session.cleanedAt) {
         return {
           title: "Session stopped and cleaned",
-          body: "The operator stopped this session and the local runner has cleaned up its editor, preview, and tools resources.",
+          body: "The operator stopped this session and the dispatcher has deleted its session pod.",
           tone: "neutral",
         }
       }
       return {
         title: "Session stopped",
-        body: "The operator stopped this session. Local runner cleanup removes the editor, preview, and tools resources.",
+        body: "The operator stopped this session. The dispatcher deletes the session pod on its next poll.",
         tone: "neutral",
       }
     case "expired":
       if (session.cleanedAt) {
         return {
           title: "Session expired and cleaned",
-          body: "The TTL elapsed and the local runner has cleaned up this session's editor, preview, and tools resources.",
+          body: "The TTL elapsed and the dispatcher has deleted this session's pod.",
           tone: "neutral",
         }
       }
@@ -2506,7 +2471,7 @@ function sessionStateCopy(session: SessionSummary): EmptyStateCopy {
     case "errored":
       return {
         title: "Runner error",
-        body: "The runner could not complete this session. Check the event timeline and local runner logs for the failure.",
+        body: "The dispatcher could not complete this session. Check the event timeline and dispatcher logs (npm run cluster:logs) for the failure.",
         tone: "danger",
       }
     default:
@@ -2597,7 +2562,7 @@ function workspaceGuidanceState(
   if (["requested", "starting"].includes(session.status)) {
     return {
       title: "Workspace starting",
-      body: "The editor, preview, and tools links will appear after the local runner finishes setup.",
+      body: "The workspace and preview URLs will appear after the dispatcher reports the pod ready.",
       tone: "warning",
       icon: Clock3,
     }
@@ -2663,7 +2628,7 @@ function eventStateCopy(session: SessionSummary): EmptyStateCopy {
   if (["requested", "starting"].includes(session.status)) {
     return {
       title: "No runner events yet",
-      body: "Events will appear as the local runner claims and starts this session.",
+      body: "Events will appear as the dispatcher claims and starts this session.",
       tone: "warning",
     }
   }
@@ -2704,7 +2669,7 @@ function workspaceStateCopy(
     case "requested":
       return {
         title: "Workspace queued",
-        body: "The editor and preview will appear after the local runner picks up the requested session.",
+        body: "The workspace and preview URLs will appear after the dispatcher picks up the requested session.",
         tone: "warning",
       }
     case "starting":
@@ -2877,7 +2842,7 @@ function RunnerHealthPanel({
       <div className="panel-header">
         <div>
           <p className="eyebrow">Runner health</p>
-          <h3>Local runner</h3>
+          <h3>Dispatcher (kubernetes)</h3>
         </div>
         <span
           className={`status-pill ${
@@ -2890,10 +2855,10 @@ function RunnerHealthPanel({
 
       <p className="muted">
         {health.active
-          ? "The local runner is actively polling Convex for requested sessions."
+          ? "The dispatcher runs in the cluster (npm run cluster:up) and is polling Convex for requested sessions."
           : requestedCount > 0
-            ? "Requested sessions are queued until the local runner is polling."
-            : "Start the local runner before requesting a session to avoid queued work."}
+            ? "Requested sessions are queued until the dispatcher is polling. The dispatcher runs in the cluster (npm run cluster:up)."
+            : "The dispatcher runs in the cluster (npm run cluster:up); start it before requesting a session."}
       </p>
 
       <div className="runner-health-grid">
@@ -2971,7 +2936,7 @@ function RunnerContractPanel() {
           <Clock3 size={16} /> Enforce TTL and teardown
         </li>
         <li>
-          <CircleDashed size={16} /> Swap local runner for Kubernetes (Phase 3)
+          <CheckCircle2 size={16} /> Swap local runner for Kubernetes (Phase 3)
         </li>
       </ul>
     </article>

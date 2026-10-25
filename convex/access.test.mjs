@@ -31,6 +31,26 @@ test("local escape hatch is explicit and deployment controlled", async () => {
   else process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE = previous
 })
 
+test("local escape hatch is refused in the dev environment", async () => {
+  const previous = process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
+  const previousEnv = process.env.HOSTED_ENVIRONMENT
+  process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE = "true"
+  process.env.HOSTED_ENVIRONMENT = "dev"
+  await assert.rejects(
+    learnerOwnerKey({ auth: { getUserIdentity: async () => null } }),
+    /not allowed in the dev environment/,
+  )
+  // An authenticated identity is unaffected by the flag.
+  assert.equal(
+    await learnerOwnerKey({ auth: { getUserIdentity: async () => ({ tokenIdentifier: "issuer|a" }) } }),
+    "issuer|a",
+  )
+  if (previous === undefined) delete process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
+  else process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE = previous
+  if (previousEnv === undefined) delete process.env.HOSTED_ENVIRONMENT
+  else process.env.HOSTED_ENVIRONMENT = previousEnv
+})
+
 test("session ownership does not disclose another learner's session", async () => {
   const ctx = {
     auth: {

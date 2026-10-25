@@ -40,8 +40,9 @@ Clerk is the identity provider for hosted user accounts. Convex validates Clerk 
 5. Run `npx convex dev` so `convex/auth.config.ts`, the user table, and account functions are deployed.
 
 Also set `RUNNER_SHARED_SECRET` to the same long random value in Convex and in
-each runner environment (`local` now; the `dev` dispatcher in Phase 3+). For local development, place it in the
-ignored `.env.local`; both `npm run runner:local` and `npm run dev:all` load it
+the dispatcher/gateway deployment (the Helm chart's `runnerSecret`). For local
+development, place it in the ignored `.env.local`; `npm run cluster:up` (and
+`npm run dev:all`, which runs it) reads it from there into the chart's Secret
 without logging it. Runner-only lifecycle functions reject calls that do not
 supply this value. Set `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true`
 only on an isolated local Convex deployment. Remove it or set it to `false` on

@@ -22,7 +22,8 @@ Maintain exactly two environments.
 | Frontend | Vite dev server | S3 + CloudFront |
 | Control plane | `npx convex dev` deployment | Convex `prod:upbeat-crab-254` |
 | Identity | Clerk development instance, optional (`VITE_AUTH_MODE=disabled` allowed) | Same Clerk development instance, required |
-| Scenario bundles | Mounted from the repository | Digest-addressed tarballs in S3, approved in Convex |
+| Scenario bundles | Mounted from the repository (`BUNDLE_MODE=hostPath`: `scenarios/` is mounted into the kind node, `solution/` included) | Digest-addressed tarballs in S3 (`BUNDLE_MODE=s3`, Phase 5), approved in Convex, `solution/` excluded |
+| Runner | Dispatcher + gateway from the Helm chart on kind (`npm run cluster:up`); gateway on `127.0.0.1:8080`, plain http, `llp` cookie, dev page on | Same chart on EKS behind an ALB with TLS; `__Host-llp` cookie, dev page off |
 | Terraform | none | `infra/aws/environments/dev`, state key `learning-lab-platform/dev/terraform.tfstate` in the existing backend |
 | Deletion protection | n/a | off |
 
@@ -33,7 +34,9 @@ plan are parked, not deleted, and are referenced by nothing.
 
 ## Consequences
 
-- `HOSTED_ENVIRONMENT` accepts only `dev`.
+- `HOSTED_ENVIRONMENT` accepts `local` (the default; `npx convex dev`
+  deployments) or `dev`. `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true` is refused
+  when `HOSTED_ENVIRONMENT=dev`.
 - There is no promotion pipeline; `main` deploys to dev.
 - Adding a third environment later means adding a Terraform root, a Convex
   deployment, Helm values, and an entry in `hosted-environments.json`.

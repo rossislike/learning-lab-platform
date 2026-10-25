@@ -35,13 +35,10 @@ const approval = {
   schemaVersion: 2,
 }
 
-test("local session resolution does not consult hosted configuration or approval", async () => {
+test("local environment sessions carry no approval snapshot", async () => {
   const snapshot = await resolveScenarioSessionSnapshot({
-    runner: "local",
     labId: "lab-1",
-    configuredEnvironment: () => {
-      throw new Error("local sessions must not read HOSTED_ENVIRONMENT")
-    },
+    configuredEnvironment: () => "local",
     validateApproval: assertScenarioArtifactApproval,
     loadLab: async () => {
       throw new Error("local sessions must not load hosted lab state")
@@ -56,7 +53,6 @@ test("local session resolution does not consult hosted configuration or approval
 test("hosted session resolution fails closed without an active approval", async () => {
   await assert.rejects(
     resolveScenarioSessionSnapshot({
-      runner: "kubernetes",
       labId: "lab-1",
       configuredEnvironment: () => "dev",
       validateApproval: assertScenarioArtifactApproval,
@@ -84,7 +80,6 @@ test("hosted session resolution snapshots the complete approved contract", async
   }
   const mutableApproval = { ...approval, runtime: mutableRuntime }
   const snapshot = await resolveScenarioSessionSnapshot({
-    runner: "kubernetes",
     labId: "lab-1",
     configuredEnvironment: () => "dev",
     validateApproval: assertScenarioArtifactApproval,
@@ -106,7 +101,6 @@ test("hosted session resolution snapshots the complete approved contract", async
 test("hosted session resolution rejects approval lab mismatch", async () => {
   await assert.rejects(
     resolveScenarioSessionSnapshot({
-      runner: "kubernetes",
       labId: "lab-1",
       configuredEnvironment: () => "dev",
       validateApproval: assertScenarioArtifactApproval,
@@ -124,7 +118,6 @@ test("hosted session resolution rejects approval lab mismatch", async () => {
 test("hosted session resolution rejects approval environment mismatch", async () => {
   await assert.rejects(
     resolveScenarioSessionSnapshot({
-      runner: "kubernetes",
       labId: "lab-1",
       configuredEnvironment: () => "dev",
       validateApproval: assertScenarioArtifactApproval,

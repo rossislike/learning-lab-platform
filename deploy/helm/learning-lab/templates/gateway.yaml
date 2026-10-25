@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llp-gateway
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+    app.kubernetes.io/name: llp-gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llp-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: {{ .Values.images.platform }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [node, /app/runner/gateway/main.mjs]
+          ports:
+            - { name: http, containerPort: {{ .Values.gateway.port }} }
+          envFrom:
+            - secretRef: { name: learning-lab-platform }
+          env:
+            - { name: GATEWAY_PORT, value: {{ .Values.gateway.port | quote }} }
+            - { name: GATEWAY_HOST_SUFFIX, value: {{ .Values.gateway.hostSuffix | quote }} }
+            - { name: GATEWAY_APP_ORIGIN, value: {{ .Values.gateway.appOrigin | quote }} }
+            - { name: GATEWAY_SECURE_COOKIES, value: {{ .Values.gateway.secureCookies | quote }} }
+            - { name: GATEWAY_DEV_PAGE, value: {{ .Values.gateway.devPage | quote }} }
+            {{- if .Values.gateway.appUpstream }}
+            - { name: GATEWAY_APP_UPSTREAM, value: {{ .Values.gateway.appUpstream | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /__llp/health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /__llp/health, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llp-gateway
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+    app.kubernetes.io/name: llp-gateway
+spec:
+  type: {{ .Values.gateway.service.type }}
+  selector:
+    app.kubernetes.io/name: llp-gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.port }}
+      targetPort: http
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}

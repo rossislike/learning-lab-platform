@@ -1,6 +1,6 @@
 # ADR 0004: Secure Per-Session URL Access
 
-- Status: Accepted; amended 2026-10-24 (Phase 2, with ADR 0003's amendment): there are two endpoint scopes per session, not three — `workspace` (terminals, steps and the editor on the agent port; host `ws-{routeId}`) and `preview` (host `pv-{routeId}`). The bootstrap bundle therefore carries two codes; the `editor`/`tools` scopes and `ed-`/`tl-` hosts below are superseded. Everything else stands.
+- Status: Accepted; amended 2026-10-24 (Phase 2, with ADR 0003's amendment): there are two endpoint scopes per session, not three — `workspace` (terminals, steps and the editor on the agent port; host `ws-{routeId}`) and `preview` (host `pv-{routeId}`). The bootstrap bundle therefore carries two codes; the `editor`/`tools` scopes and `ed-`/`tl-` hosts below are superseded. Everything else stands. Amended 2026-10-25 (Phase 3, as built): on plain-http local development only (`GATEWAY_SECURE_COOKIES=false`) the cookie is named `llp` without the `Secure` attribute, since `__Host-` requires HTTPS; everywhere else it is `__Host-llp` as specified. The gateway's `/__llp/dev?code=` page (a code in a URL, which this ADR forbids) is a dev-only exception for terminal debugging: it exists only when `GATEWAY_DEV_PAGE=true`, which the gateway refuses at startup unless secure cookies are off, and it accepts the code only on a direct navigation (`Sec-Fetch-Site` absent, `none` or `same-site`).
 - Date: 2026-07-09
 - Decision owners: Learning Lab Platform maintainers
 

@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.sessionsNamespace }}
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+    learning-lab/role: sessions
+    pod-security.kubernetes.io/enforce: {{ .Values.sessions.podSecurityEnforce }}
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sessions
+  namespace: {{ .Values.sessionsNamespace }}
+spec:
+  hard:
+    pods: {{ .Values.sessions.maxPods | quote }}
+    {{- range $key, $value := .Values.sessions.quota }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+---
+# Only the gateway may reach session pods; nothing else in the cluster can,
+# including other sessions. (kind's default CNI does not enforce
+# NetworkPolicy; EKS with the VPC CNI network-policy feature does.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sessions-ingress-gateway-only
+  namespace: {{ .Values.sessionsNamespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: llp-gateway
+      ports:
+        - protocol: TCP
+          port: 1024
+          endPort: 65535
+---
+# Sessions may talk to the internet (package registries, Convex) but not to
+# the cluster or the node network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sessions-egress-internet-only
+  namespace: {{ .Values.sessionsNamespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10    # carrier-grade NAT; used by some clusters for pods/services
