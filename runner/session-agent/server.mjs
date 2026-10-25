@@ -289,7 +289,13 @@ export function createAgent({
         return json(res, body.phase === "ready" ? 200 : body.phase === "failed" ? 500 : 503, body)
       }
       if (pathname === "/state") {
-        return json(res, 200, { ...summary(), setupOutput: state.setup.output, steps: state.steps })
+        return json(res, 200, {
+          ...summary(),
+          setupOutput: state.setup.output,
+          editorOutput: state.editor.process?.lastOutput ?? "",
+          previewOutput: state.preview.process?.lastOutput ?? "",
+          steps: state.steps,
+        })
       }
       if (pathname === "/steps/setup") return json(res, 200, state.setup)
       const stepMatch = pathname.match(/^\/steps\/(\d+)\/(open|verify)$/)
