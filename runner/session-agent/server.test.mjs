@@ -77,7 +77,9 @@ test("agent runs setup, serves readiness, verifies steps through the terminal, a
     assert.equal(ready.failure, null)
     assert.equal(ready.scenario.slug, "first-commit")
     assert.equal(ready.scenario.stepCount, 3)
-    assert.deepEqual(ready.editor, { enabled: false, status: "disabled", internalPort: 3000, path: "/editor/" })
+    assert.equal(ready.editor.enabled, false)
+    assert.equal(ready.editor.status, "disabled")
+    assert.match(ready.editor.path, /^\/editor\?folder=/)
     assert.equal((await fetch(`${base}/steps/setup`).then((r) => r.json())).status, "passed")
     assert.equal((await fetch(`${base}/healthz`)).status, 200)
 

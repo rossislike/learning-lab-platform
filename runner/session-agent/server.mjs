@@ -7,7 +7,7 @@
 //   POST /steps/:i/open           run step i's setup script (once; re-runnable after a failure)
 //   POST /steps/:i/verify         run step i's verify script, report the result to Convex
 //   WS   /pty?id=<n>&cols=&rows=  terminal n (created on first use; reattach replays scrollback)
-//   ANY  /editor/*                OpenVSCode (served with --server-base-path /editor)
+//   ANY  /editor, /editor/*       OpenVSCode (served with --server-base-path /editor; workbench at /editor?folder=<cwd>)
 //   GET  /, /terminal.html        a minimal xterm.js page; served only when devPage is true
 //
 // Authentication is the gateway's job (ADR 0004); the agent port must only be
@@ -21,7 +21,7 @@
 // exits non-zero or the editor/preview process gives up.
 
 import { createServer } from "node:http"
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { ManagedProcess } from "./processes.mjs"
@@ -164,9 +164,14 @@ export function createAgent({
     }
   }
 
-  function startEditor() {
+  async function startEditor() {
     if (!state.editor.enabled) return
     const userData = resolve(baseEnvironment().HOME, ".openvscode")
+    // OpenVSCode does not create these recursively and logs ENOENT storms if
+    // they are missing.
+    for (const dir of ["server", "user/User", "extensions"]) {
+      await mkdir(resolve(userData, dir), { recursive: true }).catch(() => {})
+    }
     const editor = new ManagedProcess({
       name: "editor",
       command: openvscodeBin,
@@ -183,7 +188,8 @@ export function createAgent({
       cwd: scenario.cwd,
       env: scriptEnvironment(scenario),
       logger,
-      readyUrl: `http://127.0.0.1:${editorPort}/editor/`,
+      // With --server-base-path the workbench answers at exactly /editor.
+      readyUrl: `http://127.0.0.1:${editorPort}/editor`,
     })
     processes.push(editor)
     editor.start()
@@ -221,7 +227,12 @@ export function createAgent({
       failure,
       scenario: state.scenario,
       setup: { status: state.setup.status, durationMs: state.setup.durationMs },
-      editor: { enabled: state.editor.enabled, status: editorStatus, internalPort: state.editor.internalPort, path: "/editor/" },
+      editor: {
+        enabled: state.editor.enabled,
+        status: editorStatus,
+        internalPort: state.editor.internalPort,
+        path: `/editor?folder=${encodeURIComponent(scenario.cwd)}`,
+      },
       preview: { enabled: state.preview.enabled, status: previewStatus, port: state.preview.port },
       terminals: terminals.list(),
       uptimeMs: Date.now() - state.startedAt,
@@ -309,6 +320,9 @@ export function createAgent({
       }
       if (pathname === "/editor" || pathname.startsWith("/editor/")) {
         if (!state.editor.enabled) return json(res, 404, { error: "editor is not enabled for this scenario" })
+        // OpenVSCode serves the workbench at exactly /editor; accept the
+        // trailing-slash spelling too.
+        if (pathname === "/editor/") req.url = `/editor${url.search}`
         return proxyHttp(req, res, { port: editorPort })
       }
       if (devPage && (pathname === "/" || pathname === "/terminal.html")) {
@@ -387,7 +401,7 @@ export function createAgent({
   async function start() {
     await prepareWorkspace(scenario, { logger })
     state.workspaceReady = true
-    startEditor()
+    await startEditor()
     setupPromise = runSetup()
       .then(() => {
         if (state.setup.status !== "failed") startPreview()

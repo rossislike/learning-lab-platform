@@ -164,12 +164,17 @@ async function main(argv) {
     }
 
     if (manifest.kind === "react") {
-      const editor = await fetch(`${base}/editor/`, { redirect: "manual" });
-      if (editor.status >= 400) fail(`/editor/ returned ${editor.status}`);
+      const editorPath = ready.editor.path;
+      const editor = await fetch(`${base}${editorPath}`, { redirect: "manual" });
+      if (editor.status >= 400) fail(`${editorPath} returned ${editor.status}`);
+      const editorSlash = await fetch(`${base}/editor/`, { redirect: "manual" });
+      if (editorSlash.status >= 400) fail(`/editor/ returned ${editorSlash.status}`);
+      const html = await editor.text();
+      if (!/workbench|vscode/i.test(html)) fail(`${editorPath} did not serve the OpenVSCode workbench`);
       console.log(`${tag}: editor proxy ok (${editor.status})`);
       const preview = await fetch(`http://127.0.0.1:${previewPort}/`);
-      const html = await preview.text();
-      if (!preview.ok || !html.includes("<div id=\"root\">")) fail(`preview did not serve the Vite app (${preview.status})`);
+      const previewHtml = await preview.text();
+      if (!preview.ok || !previewHtml.includes("<div id=\"root\">")) fail(`preview did not serve the Vite app (${preview.status})`);
       console.log(`${tag}: preview ok on :${previewPort}`);
     }
 

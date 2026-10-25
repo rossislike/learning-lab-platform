@@ -21,7 +21,7 @@ OpenVSCode, and reports step results to Convex with a session-bound token.
 | `POST /steps/:i/open` | Runs step *i*'s setup script and returns `{ ran, ok, output }`. Runs once on success; a failed run can be retried. 409 while the same step's setup is already running. |
 | `POST /steps/:i/verify` | Runs step *i*'s verify script; returns `{ passed, output, durationMs, timedOut, reported }` after the result has been recorded via `steps.recordStepResult` (`reported` is `false` when Convex could not be reached or rejected the token). 409 while the same step is already being verified. Steps without `verify` return `{ passed: true, noVerify: true }` and are **not** recorded: the frontend advances them on NEXT via `steps.setCurrentStep`. |
 | `WS /pty?id=<n>&cols=&rows=` | Terminal *n* (`bash -l` in `workspace.cwd`). Text frames are keystrokes; `"\0" + JSON` is the control channel (`{type:"resize",cols,rows}`). Reconnecting to the same id replays the last 64 KB **as a binary frame**. |
-| `/editor/*` (HTTP + WS) | OpenVSCode, started with `--server-base-path /editor` when the scenario has an `editor` tab. |
+| `/editor`, `/editor/*` (HTTP + WS) | OpenVSCode, started with `--server-base-path /editor` when the scenario has an `editor` tab. The workbench is at exactly `/editor` (the agent also accepts `/editor/`); open `editor.path` from `/ready`, which carries `?folder=<cwd>`. |
 | `GET /`, `GET /terminal.html` | A minimal xterm.js development page. Served only when the agent starts **without** `SESSION_TOKEN` (standalone, `docker run`); 404 under the dispatcher. |
 
 The Vite preview (react scenarios) listens on `react.previewPort` inside the
@@ -66,7 +66,7 @@ What Phase 3 code may rely on:
 - **Routing:** the `workspace` endpoint is the agent port (7000): `/pty`,
   `/steps/*`, `/editor/*` with WebSocket upgrade. The `preview` endpoint is
   `preview.port` from `/ready` (`react.previewPort`, 5173) on the pod IP.
-  `editor.path` is `/editor/`; `editor.internalPort` is loopback-only inside
+  `editor.path` is `/editor?folder=<cwd>`; `editor.internalPort` is loopback-only inside
   the pod and is **not** routable.
 - **Terminals:** ids match `^[a-z0-9-]{1,16}$` (400 otherwise); at most 8
   live terminals per session (429 for a 9th new id; an existing id always

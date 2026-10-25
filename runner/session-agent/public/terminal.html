@@ -21,7 +21,7 @@
   <span id="status">connecting…</span>
   <button onclick="verify(prompt('Step number', '1'))">verify step</button>
   <a href="/state" target="_blank">state</a>
-  <a href="/editor/" target="_blank" id="editorLink" hidden>editor</a>
+  <a href="/editor" target="_blank" id="editorLink" hidden>editor</a>
   <span id="out"></span>
 </div>
 <div id="term"></div>
@@ -49,7 +49,7 @@
     const body = await res.json();
     document.getElementById("out").textContent = body.passed ? `step ${step}: passed` : `step ${step}: ${body.output || body.error}`;
   }
-  fetch("/ready").then((r) => r.json()).then((s) => { if (s.editor.enabled) document.getElementById("editorLink").hidden = false; });
+  fetch("/ready").then((r) => r.json()).then((s) => { if (s.editor.enabled) { const a = document.getElementById("editorLink"); a.href = s.editor.path; a.hidden = false; } });
 </script>
 </body>
 </html>
