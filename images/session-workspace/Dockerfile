@@ -54,6 +54,8 @@ RUN groupadd -g 1001 learner \
 
 COPY --from=agent-deps /opt/agent/node_modules /opt/agent/node_modules
 COPY runner/session-agent /opt/agent
+# Checkouts can carry restrictive modes (e.g. 0600); the agent runs as learner.
+RUN chmod -R a+rX /opt/agent
 
 ENV LAB_SCENARIO_DIR=/scenario \
     AGENT_PORT=7000 \
