@@ -14,6 +14,7 @@
     "scenarios:import": "node scripts/import-scenarios.mjs",
     "scenarios:check": "node scripts/import-scenarios.mjs --check",
     "scenarios:smoke": "node scripts/smoke-test-scenarios.mjs",
+    "test:web": "node --test src/lib/*.test.mjs",
     "test:runner": "node --test convex/*.test.mjs scripts/*.test.mjs runner/session-agent/*.test.mjs runner/dispatcher/*.test.mjs runner/gateway/*.test.mjs runner/shared/*.test.mjs",
     "infra:fmt": "terraform fmt -check -recursive infra/aws",
     "infra:validate": "terraform -chdir=infra/aws/account-security validate && terraform -chdir=infra/aws/bootstrap/terraform-backend validate",
@@ -32,11 +33,18 @@
   "dependencies": {
     "@clerk/react": "^6.12.2",
     "@vitejs/plugin-react": "^5.1.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "convex": "^1.33.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.11.1",
+    "react-router": "^7.18.4",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "vite": "^7.2.4"
   },
   "devDependencies": {

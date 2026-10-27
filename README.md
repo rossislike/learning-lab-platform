@@ -70,7 +70,7 @@ and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md)
 
 | Path | Purpose |
 |---|---|
-| `src/` | React frontend (being rewritten in Phase 4) |
+| `src/` | React frontend: areas → scenarios → scenario shell (`pages/`, `components/`, `lib/useScenarioSession.ts`) |
 | `convex/` | Control plane: schema, sessions, scenarios, progress, access |
 | `runner/` | `session-agent/` (inside each session pod), `dispatcher/` (Convex → pods), `gateway/` (ADR 0004 ingress), `shared/` |
 | `deploy/` | Helm chart (`helm/learning-lab`) and the kind cluster template |
@@ -94,18 +94,20 @@ npx convex env set ALLOW_UNAUTHENTICATED_LOCAL_MODE true
 npm run dev:all                      # convex dev + vite + `cluster up` (kind, images, Helm chart)
 ```
 
-Then open the dashboard at **http://app.lab.localhost:8080** (the gateway
-proxies the Vite dev server under the app host, which is the origin workspace
-endpoints trust; `http://localhost:5174` works for the dashboard alone),
-click `Seed scenarios`, pick a scenario, and `Request session`. Sessions run
-as pods on the kind cluster behind the gateway at `http://127.0.0.1:8080`;
-the current dashboard shows the endpoint URLs but cannot open them until the
-Phase 4 shell bootstraps access. `npm run gateway:smoke` proves the whole
-path from the command line.
+Then open **http://app.lab.localhost:8080**. The gateway proxies the Vite
+dev server under the app host, so the app and the session endpoints
+(`ws-<id>.lab.localhost`, `pv-<id>.lab.localhost`) are same-site and the
+workspace cookie set by `POST /__llp/bootstrap` is sent; `http://localhost:5174`
+renders the catalog but cannot open a workspace. Go to `/admin` once and click
+`Seed scenarios`, then pick an area and a scenario: the shell requests a
+session, waits for the pod, bootstraps access, and shows the terminal (and the
+editor/preview tabs for React scenarios). Sessions run as pods on the kind
+cluster behind the gateway at `http://127.0.0.1:8080`; `npm run gateway:smoke`
+proves the same path from the command line.
 
-Keep `VITE_PRODUCT_SURFACE=local`, `VITE_AUTH_MODE=disabled`,
-`VITE_SESSION_ACCESS_MODE=local-only`, and `VITE_COST_CONTROLS_MODE=local-limits`
-for local development. Account setup for configured auth is in
+Keep `VITE_PRODUCT_SURFACE=local` and `VITE_AUTH_MODE=disabled` for local
+development (`VITE_LEARNER_LABEL` names the local learner, default `learner`).
+Account setup for configured auth is in
 [`docs/user-accounts.md`](docs/user-accounts.md).
 
 Useful commands:
@@ -117,6 +119,7 @@ npm run scenarios:import      # re-import manifests after editing
 npm run scenarios:smoke -- --scenario first-commit
 npm run agent:integration     # drive the session image over Docker
 npm run test:runner           # unit tests for convex/, scripts/, runner/
+npm run test:web              # unit tests for the frontend's pure pieces (src/lib)
 npm run lint && npm run build
 ```
 

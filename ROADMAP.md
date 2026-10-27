@@ -21,7 +21,7 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phases 0–3 are complete and verified on kind. Phase 4 is next: the Killercoda-style frontend against the gateway (`workspaceAccess.issueBootstrap` → `POST /__llp/bootstrap` on each endpoint host → WebSocket `/pty`, iframes for `/editor` and the preview host), served at `app.lab.localhost:8080` so the session cookie is same-site.
+**You are here:** Phases 0–4 are complete: the Killercoda-style shell runs scenarios on kind from `http://app.lab.localhost:8080`. Phase 5 is next: the `dev` environment on EKS Auto Mode (Terraform `eks-platform` module, ECR, S3 scenario bundles, ALB ingress, Convex `upbeat-crab-254`, Clerk origins).
 
 ---
 
@@ -90,18 +90,24 @@ Exit: `npm run dev:all` brings up Convex, Vite, kind, dispatcher, gateway; a ses
 
 Deviations: no headless Service per session (the gateway proxies to the pod IP, which is stable for the pod's life); readiness comes from the kubelet condition rather than the dispatcher polling the agent; NetworkPolicies are declared but kind's default CNI does not enforce them (EKS does).
 
-## Phase 4 — Frontend rewrite 🔜
+## Phase 4 — Frontend rewrite ✅
 
 Exit: all Phase 1 scenarios run end-to-end on local/kind from the new UI.
 
-- [ ] New `src/` with React Router; delete `App.tsx`. Switch to Convex `useQuery` subscriptions.
-- [ ] `/` Areas grid with search; Playgrounds and Examples tiles first.
-- [ ] `/:area` scenario cards with completion check marks from progress records.
-- [ ] Session access: after `sessions.request`, poll until `running`, call `workspaceAccess.issueBootstrap`, `POST` each code to `<workspaceUrl>/__llp/bootstrap` and `<previewUrl>/__llp/bootstrap` with `credentials: "include"`, then open `/pty` (WebSocket, binary frames) and iframe `/editor?folder=…` and the preview origin. Locally the app must be served from the same site as the gateway (`app.lab.localhost:8080` via `GATEWAY_APP_UPSTREAM`) so the `SameSite=Lax` cookie is sent.
-- [ ] `/:area/:slug` scenario shell: left `InstructionPane` (title, step dots, markdown with `<details>` and run-in-terminal code blocks, `START`/`BACK`/`NEXT`, verify feedback), right `WorkspacePane` (tab strip `Terminal | Editor | Preview | +`, xterm.js over gateway WS, iframes for editor/preview, TTL countdown, stop).
-- [ ] Session states: initialising line in the terminal pane; errored/expired modal with retry.
-- [ ] `/admin`: sessions table, runner heartbeat, import scenarios (operator only).
-- [ ] Visual pass to match `docs/2026-10-22/*.png`: dark terminal pane, light instruction pane.
+- [x] New `src/` with React Router (`main.tsx` → `Layout` → `/`, `/:area`, `/:area/:slug`, `/admin`); `App.tsx`/`styles.css` deleted. All reads are Convex `useQuery` subscriptions, no polling of Convex.
+- [x] `/` Areas grid with search (kept in `?q=`); a Playgrounds tile first, which filters the catalog to the playground scenarios (`AreasPage`).
+- [x] `/:area` scenario cards with completion check marks from `progress.list` (`AreaPage`).
+- [x] Session access (`lib/useScenarioSession.ts`, `lib/gateway.ts`): opening a scenario calls `sessions.request` once; when the session is `running` the shell probes `<workspaceUrl>/ready`, and on 401/403 calls `workspaceAccess.issueBootstrap` and `POST`s each code to `<workspaceUrl>/__llp/bootstrap` and `<previewUrl>/__llp/bootstrap` with `credentials: "include"`; then it follows `/ready` until setup and preview have settled. The app is served through the gateway at `app.lab.localhost:8080` (`GATEWAY_APP_UPSTREAM`), so the app and the endpoint hosts are same-site and the `SameSite=Lax` cookie is sent; the gateway answers credentialed CORS for the app origin on the endpoint hosts (`c28f9ba`).
+- [x] `/:area/:slug` scenario shell (`ScenarioPage`): left `InstructionPane` (title, step dots, markdown with `<details>` and run-in-terminal code blocks, `START`/`BACK`/`NEXT`/`FINISH`, verify output under the step), right `WorkspacePane` (tab strip `Editor | Preview | Terminal N | +` from `manifest.tabs`, xterm.js over the gateway WebSocket with reconnect/resize/scrollback replay, iframes for `/editor?folder=…` and the preview origin gated on the agent reporting them running, TTL countdown, `Stop`).
+- [x] Session states (`lib/sessionState.ts`, pure and unit-tested): the page follows the newest session for the scenario whatever its status; it requests one automatically only on the first open when the learner has no session for that scenario at all (once per open), never after `Stop`. Status line in the workspace bar (requesting → starting → connecting → running setup → ready/preview starting); banners for a session active in another scenario (with `Stop that session`; the request follows once it is stopped), request errors (`Try again`), stopped/errored/expired sessions with the reason (`Start a new session`), workspace access failures (`Reconnect`), and failed step moves/setup/stop.
+- [x] `/admin`: seed scenarios, dispatcher heartbeat (`runners.latest`), sessions table with `Stop`.
+- [x] Review fixes (2026-10-27): scenario markdown is sanitized after `rehype-raw` (`rehype-sanitize`, GitHub schema; `<details>`, task lists and `language-*` survive) and only `bash|sh|shell|zsh` fences are runnable; `/ready` bodies are shape-checked (`parseReadyBody`) so a gateway `503 {"error"}` cannot crash the page, and an `ErrorBoundary` wraps the routes; the terminal keeps per-connection state (no stale socket handlers, `term.reset()` before the scrollback replay, input as binary frames so `\0` is never read as a control frame, gives up after repeated failures and asks the page to re-check access); access probes both the workspace and the preview host and bootstraps each independently, cannot stick in "connecting", re-bootstraps on 401/403 from verify, step setup, readiness or a failed terminal; `reported: false` from verify is shown to the learner; the scenario shell is keyed by route; editor/preview iframes are sandboxed with `referrerPolicy="no-referrer"`; with configured auth the routes wait for `useConvexAuth().isAuthenticated`. Tests: `npm run test:web` (`src/lib/*.test.mjs`: session state, `/ready` classification, gateway client, markdown sanitizing). Checked with `tsc -b`, `eslint`, the unit tests, and re-verified in a browser on kind (terminal, Stop → ended banner → new session, editor + preview tabs).
+- [x] Visual pass after `docs/2026-10-22/*.png`: black top bar, light catalog/instructions, dark workspace (`src/app.css`).
+- [x] Verified in a browser on kind 2026-10-27: terminal scenario (`git/first-commit`) and a React scenario (editor + preview tabs).
+
+Deviations: the Phase 0 product-surface gates (`VITE_SESSION_ACCESS_MODE`, `VITE_COST_CONTROLS_MODE`) are not wired into the new shell; they return with the hosted `dev` surface in Phase 5 (`docs/product-readiness.md` still describes the contract). Clerk is wired for `VITE_AUTH_MODE=configured` (`@clerk/react` 6: `useUser` gate, `SignInButton`, `UserButton`) but only exercised with auth disabled locally. New dependencies: `react-router@7`, `@xterm/xterm`, `@xterm/addon-fit`, `react-markdown`, `remark-gfm`, `rehype-raw`, `rehype-sanitize`. `lucide-react` and `react-resizable-panels` are no longer imported anywhere and can be dropped from `package.json` with the next `npm install`.
+
+Backend gaps found in the Phase 4 review, deferred to Phase 5 (Clerk roles, hosted surface): `/admin` is not operator-gated in the UI, and `labs.seedScenarios` has no auth check at all (any caller can re-seed the catalog); `sessions.list` and `progress.list` read the latest 100/200 rows across all owners and filter by owner afterwards, so a learner's own rows can fall out of the window once there are several users — a `listMine` on the `by_session_owner` index (and the progress equivalent) is needed before multi-user `dev`. The gateway sets `frame-ancestors` on the endpoint hosts but not on the app host it proxies (`GATEWAY_APP_UPSTREAM`), so the app itself can be framed; the hosted app (CloudFront) needs `frame-ancestors 'none'` in Phase 5.
 
 ## Phase 5 — `dev` environment on EKS ⏳
 

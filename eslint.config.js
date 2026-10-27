@@ -8,6 +8,7 @@ export default [
   {
     ignores: [
       "dist",
+      "build",
       "convex/_generated",
       "scenarios/**/workspace/**",
       "scenarios/**/solution/**",
@@ -42,6 +43,7 @@ export default [
     files: [
       "scripts/**/*.mjs",
       "runner/**/*.mjs",
+      "src/**/*.test.mjs",
       "infra/**/*.mjs",
       "*.config.js",
     ],
