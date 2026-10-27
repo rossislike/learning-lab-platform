@@ -84,6 +84,14 @@ export async function createKubernetesClient({ mode = "auto", namespace, config,
     } catch (error) {
       // The projected service-account token rotates; re-read it once and retry.
       if (error.status === 401 && (await refreshToken())) return await send(method, path, options)
+      // A 400 without a Kubernetes Status body (or a dropped socket) on an
+      // idempotent read is a connection-level hiccup, e.g. a keep-alive socket
+      // the API server closed; retry once on a fresh connection.
+      const connectionLevel = error.status === undefined || (error.status === 400 && error.body?.kind !== "Status")
+      if (method === "GET" && connectionLevel && !options.retried) {
+        agent?.destroy()
+        return await send(method, path, { ...options, retried: true })
+      }
       throw error
     }
   }
@@ -91,9 +99,12 @@ export async function createKubernetesClient({ mode = "auto", namespace, config,
   function send(method, path, { body, query } = {}) {
     const url = new URL(path, server)
     for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
-    const payload = body === undefined ? undefined : JSON.stringify(body)
+    const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body))
     const headers = { accept: "application/json" }
-    if (payload !== undefined) headers["content-type"] = "application/json"
+    if (payload !== undefined) {
+      headers["content-type"] = "application/json"
+      headers["content-length"] = String(payload.length)
+    }
     if (resolved.token) headers.authorization = `Bearer ${resolved.token}`
     const transport = server.protocol === "https:" ? httpsRequest : httpRequest
     return new Promise((resolve, reject) => {
@@ -109,7 +120,8 @@ export async function createKubernetesClient({ mode = "auto", namespace, config,
             parsed = { raw: data }
           }
           if ((res.statusCode ?? 500) >= 400) {
-            reject(new KubernetesError(parsed?.message ?? `${method} ${path} → ${res.statusCode}`, res.statusCode, parsed))
+            const detail = parsed?.message ?? (data ? data.slice(0, 300) : "(empty body)")
+            reject(new KubernetesError(`${method} ${path} → ${res.statusCode}: ${detail}`, res.statusCode, parsed))
           } else {
             resolve({ status: res.statusCode, body: parsed })
           }
