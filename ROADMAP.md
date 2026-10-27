@@ -14,14 +14,14 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 | 0 | Decide and clear the deck | ✅ Done 2026-10-22 |
 | 1 | Scenario manifest v2 + content | ✅ Done 2026-10-24 |
 | 2 | Session workspace image + agent | ✅ Done 2026-10-25 |
-| 3 | Dispatcher + gateway on kind | 🔧 Code complete 2026-10-25 — `cluster:up` + `gateway:smoke` run pending on your Mac |
+| 3 | Dispatcher + gateway on kind | ✅ Done 2026-10-27 |
 | 4 | Frontend rewrite (Killercoda shell) | 🔜 **Next** |
 | 5 | `dev` environment on EKS | ⏳ Not started (after 3) |
 | 6 | CI, TTL reaper, alarms | ⏳ Not started |
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phase 3 is code complete; run `npm run cluster:up && npm run gateway:smoke` on a machine with Docker/kind/helm to close it. Then Phase 4: the Killercoda-style frontend against the gateway (`workspaceAccess.issueBootstrap` → `POST /__llp/bootstrap` on each endpoint host → WebSocket `/pty`, iframes for `/editor` and the preview host).
+**You are here:** Phases 0–3 are complete and verified on kind. Phase 4 is next: the Killercoda-style frontend against the gateway (`workspaceAccess.issueBootstrap` → `POST /__llp/bootstrap` on each endpoint host → WebSocket `/pty`, iframes for `/editor` and the preview host), served at `app.lab.localhost:8080` so the session cookie is same-site.
 
 ---
 
@@ -73,7 +73,7 @@ Exit: `docker run` of the image with a mounted scenario serves a working termina
 
 Deviations: the legacy entrypoint was not salvaged literally — process supervision and readiness were rewritten in `processes.mjs`/`server.mjs` around the step model. The dispatcher (Phase 3) reads pod readiness from `GET /ready` and records endpoints in Convex; the agent itself only reports step results.
 
-## Phase 3 — Dispatcher and gateway on Kubernetes 🔧
+## Phase 3 — Dispatcher and gateway on Kubernetes ✅
 
 Exit: `npm run dev:all` brings up Convex, Vite, kind, dispatcher, gateway; a session pod starts from the UI and the old Docker runner is deleted.
 
@@ -85,8 +85,8 @@ Exit: `npm run dev:all` brings up Convex, Vite, kind, dispatcher, gateway; a ses
 - [x] `scripts/gateway-smoke.mjs` (`npm run gateway:smoke`): request → pod → running → bootstrap → gateway `/ready` + terminal + verify (result reported to Convex) → preview → stop → cleaned.
 - [x] Deleted the legacy local runner (`local-runner.mjs`, `workspace-server.mjs`, `session-gateway.mjs` stub, `session-runner.ts`, `startup-cancellation.mjs`, `learner-process-env.mjs`) and the `local` runner enum; the dashboard requests `kubernetes` sessions.
 - [x] Review fixes (2026-10-25): `runners.heartbeat` takes `runnerSecret` and a static contract test (`runner/shared/convex-contract.test.mjs`) checks every dispatcher/gateway call against `convex/`; routing metadata is written before the pod exists and back-filled from pod labels; running sessions whose pod is gone are errored; stop/expire/error revoke access grants; `podIp` validated (no loopback/link-local) on both sides; `workspace.cwd` restricted to `/workspace`/`/home/<user>`; gateway: per-route + global bootstrap limits, `Origin` on logout and state-changing requests, app upstream only under the app host with `Host` kept (Vite `allowedHosts`), grant-bound socket teardown with a 5 s re-validation sweep, caches bounded by expiry, dev page refused with secure cookies and `?code=` limited to direct navigations, bare `/__llp/health` on endpoint hosts, Convex error messages sanitized; `cluster.mjs` recovers pending Helm releases and uses `--set-string`; dashboard no longer probes or frames gateway URLs (Phase 4 shell does the bootstrap).
-- [ ] **Run on your Mac (needs Docker, kind, kubectl, helm, and a Convex dev deployment with `RUNNER_SHARED_SECRET` + `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true`):** `npx convex dev` (also confirms the `./sha256.ts` import bundles), then `npm run cluster:up && npm run gateway:smoke && npm run gateway:smoke -- --scenario welcome-message`.
-- [ ] If an existing Convex dev deployment holds sessions with `runner: "local"` or old `hostedScenario` shapes, clear the `sessions`, `progressRecords`, `sessionEvents`, `sessionSteps`, `runnerHeartbeats` tables before the schema push.
+- [x] Verified on a Mac 2026-10-27: `npx convex dev` pushed the schema (the `./sha256.ts` import bundles), `npm run cluster:up` built and installed everything on kind, and `npm run gateway:smoke` passed for `first-commit` (request → pod → running → bootstrap → gateway terminal → verify reported → stop → cleaned).
+- [x] Legacy `runner: "local"` rows had to be cleared before the schema push (done via the Convex dashboard); `labs.seedScenarios` re-seeded the v2 catalog.
 
 Deviations: no headless Service per session (the gateway proxies to the pod IP, which is stable for the pod's life); readiness comes from the kubelet condition rather than the dispatcher polling the agent; NetworkPolicies are declared but kind's default CNI does not enforce them (EKS does).
 
