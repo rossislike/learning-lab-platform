@@ -454,3 +454,36 @@ test("logout closes the grant's open WebSocket within a second", async () => {
     await new Promise((r) => upstreamServer.close(r))
   }
 })
+
+test("CORS: the app origin gets credentialed headers and a preflight; others get nothing", async () => {
+  const upstream = await echoUpstream()
+  const convex = fakeConvex()
+  convex.route.agentPort = upstream.port
+  const gw = await startGateway(convex)
+  try {
+    const preflight = await call(gw.base, "/__llp/bootstrap", {
+      method: "OPTIONS",
+      headers: { host: gw.wsHost, origin: APP_ORIGIN, "access-control-request-method": "POST", "access-control-request-headers": "content-type" },
+    })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers["access-control-allow-origin"], APP_ORIGIN)
+    assert.equal(preflight.headers["access-control-allow-credentials"], "true")
+    assert.match(preflight.headers["access-control-allow-methods"], /POST/)
+    assert.equal((await call(gw.base, "/ready", { method: "OPTIONS", headers: { host: gw.wsHost, origin: "http://evil.example" } })).status, 403)
+
+    const { response, cookie } = await bootstrap(gw)
+    assert.equal(response.headers["access-control-allow-origin"], APP_ORIGIN)
+    const proxied = await call(gw.base, "/state", { headers: { host: gw.wsHost, cookie, origin: APP_ORIGIN } })
+    assert.equal(proxied.status, 200)
+    assert.equal(proxied.headers["access-control-allow-origin"], APP_ORIGIN)
+    assert.equal(proxied.headers["access-control-allow-credentials"], "true")
+    assert.match(proxied.headers.vary, /Origin/)
+    const plain = await call(gw.base, "/state", { headers: { host: gw.wsHost, cookie } })
+    assert.equal(plain.headers["access-control-allow-origin"], undefined)
+    const denied = await call(gw.base, "/state", { headers: { host: gw.wsHost, cookie, origin: "http://evil.example" } })
+    assert.equal(denied.headers["access-control-allow-origin"], undefined)
+  } finally {
+    await gw.close()
+    await upstream.close()
+  }
+})

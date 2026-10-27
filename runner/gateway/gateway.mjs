@@ -430,6 +430,23 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     }
   }
 
+  /** Adds credentialed CORS headers for the app origin to every response on an endpoint host. */
+  function applyCors(req, res) {
+    if (req.headers.origin !== config.appOrigin) return
+    const writeHead = res.writeHead.bind(res)
+    res.writeHead = (status, headers = {}) => {
+      const merged = { ...headers }
+      // Upstream (pod) CORS decisions never reach the browser; ours do.
+      for (const name of Object.keys(merged)) {
+        if (/^access-control-allow-(origin|credentials)$/i.test(name)) delete merged[name]
+      }
+      merged["access-control-allow-origin"] = config.appOrigin
+      merged["access-control-allow-credentials"] = "true"
+      merged.vary = merged.vary ? `${merged.vary}, Origin` : "Origin"
+      return writeHead(status, merged)
+    }
+  }
+
   async function handleRequest(req, res) {
     stats.requests += 1
     let url
@@ -450,6 +467,20 @@ export function createGateway({ convex, config, logger = console, now = () => Da
         return proxyHttp(req, res, { host: config.appUpstream.host, port: config.appUpstream.port, rewriteRequestHeaders: appRewrite(req) })
       }
       return json(res, 404, { error: "unknown host" })
+    }
+    // CORS for the app origin only (ADR 0004: exact origins, credentials
+    // allowed, no wildcards). The frontend bootstraps, polls /ready and runs
+    // step verification on the ws- host from app.<suffix>.
+    applyCors(req, res)
+    if (req.method === "OPTIONS") {
+      if (req.headers.origin !== config.appOrigin) return json(res, 403, { error: "origin not allowed" })
+      res.writeHead(204, {
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": req.headers["access-control-request-headers"] ?? "content-type",
+        "access-control-max-age": "600",
+        "cache-control": "no-store",
+      })
+      return res.end()
     }
     try {
       if (url.pathname.startsWith("/__llp/")) {
