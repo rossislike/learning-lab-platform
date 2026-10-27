@@ -14,8 +14,20 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: llp-gateway
+      annotations:
+        checksum/secret: {{ include "learning-lab.secretChecksum" . }}
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
+      {{- if gt (int .Values.gateway.replicas) 1 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: llp-gateway
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -35,9 +47,18 @@ spec:
             - { name: GATEWAY_APP_ORIGIN, value: {{ .Values.gateway.appOrigin | quote }} }
             - { name: GATEWAY_SECURE_COOKIES, value: {{ .Values.gateway.secureCookies | quote }} }
             - { name: GATEWAY_DEV_PAGE, value: {{ .Values.gateway.devPage | quote }} }
+            - { name: GATEWAY_KEEPALIVE_TIMEOUT_MS, value: {{ .Values.gateway.keepAliveTimeoutMs | int | quote }} }
             {{- if .Values.gateway.appUpstream }}
             - { name: GATEWAY_APP_UPSTREAM, value: {{ .Values.gateway.appUpstream | quote }} }
             {{- end }}
+          {{- if gt (int .Values.gateway.preStopSeconds) 0 }}
+          # Kubelet sleeps (no shell needed) before SIGTERM so the ALB stops
+          # sending new requests first; the gateway then closes within 3 s.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ int .Values.gateway.preStopSeconds }}
+          {{- end }}
           readinessProbe:
             httpGet: { path: /__llp/health, port: http }
             periodSeconds: 5
@@ -49,6 +70,21 @@ spec:
             capabilities: { drop: [ALL] }
           resources:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
+{{- if gt (int .Values.gateway.replicas) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llp-gateway
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+    app.kubernetes.io/name: llp-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llp-gateway
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

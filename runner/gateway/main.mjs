@@ -6,6 +6,8 @@
 //   GATEWAY_SECURE_COOKIES  "false" for plain-http local development (cookie "llp" instead of "__Host-llp")
 //   GATEWAY_DEV_PAGE      "true" to serve /__llp/dev on workspace hosts
 //   GATEWAY_APP_UPSTREAM  optional host:port to proxy non-endpoint hosts to (the Vite dev server)
+//   GATEWAY_KEEPALIVE_TIMEOUT_MS  HTTP keep-alive timeout (default 65000). Behind a load
+//                         balancer it must exceed the LB idle timeout (dev: 3605000 > ALB 3600 s).
 
 import { createConvexHttp } from "../shared/convex-http.mjs"
 import { createGateway } from "./gateway.mjs"
@@ -41,6 +43,13 @@ async function main() {
   const convex = createConvexHttp({ convexUrl: required("CONVEX_URL"), runnerSecret: required("RUNNER_SHARED_SECRET") })
   delete process.env.RUNNER_SHARED_SECRET
   const gateway = createGateway({ convex, config, logger })
+  const keepAliveTimeout = Number(process.env.GATEWAY_KEEPALIVE_TIMEOUT_MS ?? 65_000)
+  if (!Number.isInteger(keepAliveTimeout) || keepAliveTimeout < 1000) throw new Error("GATEWAY_KEEPALIVE_TIMEOUT_MS must be an integer >= 1000")
+  // headersTimeout stays at the gateway's 30 s: since Node 18 it is measured
+  // from the first byte of each request, so idle keep-alive connections are
+  // not cut by it (the old "headersTimeout > keepAliveTimeout" advice predates
+  // that), and a long value would only weaken slow-header protection.
+  gateway.server.keepAliveTimeout = keepAliveTimeout
   await new Promise((resolve, reject) => {
     gateway.server.once("error", reject)
     gateway.server.listen(port, "0.0.0.0", () => resolve())
@@ -48,6 +57,9 @@ async function main() {
   logger.info(
     `[gateway] listening on :${port}; hosts ws-*/pv-*.${config.hostSuffix}; app origin ${config.appOrigin}; cookie ${gateway.cookieName}${config.appUpstream ? `; app upstream ${config.appUpstream.host}:${config.appUpstream.port}` : ""}`,
   )
+  // Kubernetes runs the Deployment's preStop sleep before SIGTERM, so by now
+  // the load balancer has stopped sending new requests; close and exit
+  // within 3 s, well inside terminationGracePeriodSeconds.
   const stop = (signal) => {
     logger.info(`[gateway] ${signal}; closing`)
     gateway.server.close(() => process.exit(0))

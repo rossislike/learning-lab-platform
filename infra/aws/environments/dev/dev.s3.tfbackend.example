@@ -1,0 +1,7 @@
+bucket              = "learning-lab-platform-production-tfstate-442359104502-us-east-2"
+key                 = "learning-lab-platform/dev/terraform.tfstate"
+region              = "us-east-2"
+allowed_account_ids = ["442359104502"]
+encrypt             = true
+kms_key_id          = "arn:aws:kms:us-east-2:442359104502:key/473fd4c0-6d38-4dc6-8a29-013b895a9eb2"
+use_lockfile        = true

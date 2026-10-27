@@ -1,0 +1,25 @@
+expected_aws_account_id = "442359104502"
+parent_domain           = "learning-lab-platform.rumothy.com"
+dns_zone_name           = "rumothy.com" # the account's public zone (aws route53 list-hosted-zones)
+
+# DNS zone: decide before the first apply. Pick exactly one.
+#
+# (a) An existing public Route 53 zone in this account holds parent_domain.
+#     By default the zone named parent_domain is looked up; set dns_zone_name
+#     when the zone is a parent of it (the rumothy.com zone, above).
+#
+# (b) No such zone: create one for dev.<parent_domain> and delegate it by
+#     hand. The full apply blocks on certificate validation until the
+#     delegation exists, so apply the zone alone first:
+#       terraform -chdir=infra/aws/environments/dev apply -var-file=dev.tfvars \
+#         -target=module.platform.aws_route53_zone.environment
+#       terraform -chdir=infra/aws/environments/dev output name_servers
+#       (add those NS records for dev.<parent_domain> at the parent, wait for them to resolve)
+#       npm run infra:dev:apply
+# create_dns_zone = true
+
+# Extra cluster admins (never the principal that applies; it is admin already):
+# cluster_admin_principal_arns = ["arn:aws:iam::442359104502:user/you"]
+
+# Narrow the public EKS API endpoint to the operator's addresses:
+# cluster_endpoint_public_access_cidrs = ["203.0.113.4/32"]

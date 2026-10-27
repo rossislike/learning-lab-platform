@@ -21,8 +21,10 @@ spec:
     {{- end }}
 ---
 # Only the gateway may reach session pods; nothing else in the cluster can,
-# including other sessions. (kind's default CNI does not enforce
-# NetworkPolicy; EKS with the VPC CNI network-policy feature does.)
+# including other sessions. Enforcement depends on the cluster: kind's
+# default CNI ignores NetworkPolicy; EKS Auto Mode enforces it only once the
+# kube-system/amazon-vpc-cni ConfigMap has enable-network-policy-controller
+# "true" (scripts/deploy-dev.mjs applies it before installing this chart).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -67,6 +69,18 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- with .Values.sessions.dnsServiceIp }}
+    # EKS Auto Mode: CoreDNS answers on the cluster DNS service IP, which sits
+    # in a private range the internet rule below excludes.
+    - to:
+        - ipBlock:
+            cidr: {{ printf "%s/32" . | quote }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

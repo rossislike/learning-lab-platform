@@ -64,7 +64,9 @@ their ECS-specific mechanics are replaced by ADR 0005.
 | Clerk | development instance, optional | development instance, required |
 
 Full detail in [`config/hosted-environments.json`](config/hosted-environments.json)
-and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md).
+and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md);
+setting up and deploying `dev` is [`docs/dev-environment.md`](docs/dev-environment.md)
+(`npm run infra:dev:apply`, then `npm run deploy:dev`).
 
 ## Repository layout
 
@@ -76,8 +78,8 @@ and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md)
 | `deploy/` | Helm chart (`helm/learning-lab`) and the kind cluster template |
 | `images/` | `session-workspace` (per-session: agent, OpenVSCode, Node, git) and `platform` (dispatcher + gateway) |
 | `scenarios/` | Scenario catalog (manifest v2): `<area>/area.json`, `<area>/<slug>/` with steps, scripts, and react workspaces |
-| `scripts/` | Import, smoke test, dev supervisor |
-| `infra/aws/` | Terraform: state backend, account security, (Phase 5) EKS platform + `dev` root |
+| `scripts/` | Import, smoke tests, dev supervisor, `deploy-dev.mjs`, `publish-scenarios.mjs` |
+| `infra/aws/` | Terraform: state backend, account security, `modules/eks-platform` + the `environments/dev` root |
 | `docs/` | Design, decisions, authoring guide, manual test scripts |
 
 ## Local setup
@@ -121,6 +123,8 @@ npm run agent:integration     # drive the session image over Docker
 npm run test:runner           # unit tests for convex/, scripts/, runner/
 npm run test:web              # unit tests for the frontend's pure pieces (src/lib)
 npm run lint && npm run build
+npm run infra:dev:plan        # Terraform for dev (docs/dev-environment.md)
+npm run deploy:dev            # images → convex → chart → dns → scenarios → frontend
 ```
 
 Scenario authoring: [`docs/scenario-authoring.md`](docs/scenario-authoring.md).

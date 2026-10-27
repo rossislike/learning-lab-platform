@@ -13,7 +13,8 @@
         "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
       },
       "convexDeployment": null,
-      "note": "Legacy Docker runner until Phase 3; then kubernetes on kind. Convex is a per-developer `npx convex dev` deployment."
+      "note": "Legacy Docker runner until Phase 3; then kubernetes on kind. Convex is a per-developer `npx convex dev` deployment.",
+      "bundleMode": "hostPath"
     },
     "dev": {
       "runner": "kubernetes",
@@ -26,7 +27,12 @@
         "instanceType": "development",
         "issuerDomain": "https://amazed-adder-35.clerk.accounts.dev"
       },
-      "convexDeployment": "prod:upbeat-crab-254"
+      "convexDeployment": "prod:upbeat-crab-254",
+      "parentDomain": "learning-lab-platform.rumothy.com",
+      "appUrl": "https://app.dev.learning-lab-platform.rumothy.com",
+      "sessionHostSuffix": "dev.learning-lab-platform.rumothy.com",
+      "terraformRoot": "infra/aws/environments/dev",
+      "bundleMode": "s3"
     }
   },
   "parked": {

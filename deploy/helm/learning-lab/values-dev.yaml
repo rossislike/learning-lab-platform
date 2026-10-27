@@ -1,0 +1,43 @@
+# dev environment (EKS Auto Mode). scripts/deploy-dev.mjs adds the values
+# that come from Terraform outputs and .env.dev: images (by digest),
+# convexUrl and runnerSecret (in a temporary 0600 values file),
+# gateway.hostSuffix, gateway.appOrigin, gateway.ingress.certificateArn,
+# bundle.s3Bucket, bundle.region, sessions.dnsServiceIp.
+
+images:
+  pullPolicy: IfNotPresent
+
+gateway:
+  replicas: 2
+  service:
+    type: ClusterIP
+  publicScheme: https
+  publicPort: 443
+  secureCookies: true
+  devPage: false
+  appUpstream: ""
+  keepAliveTimeoutMs: 3605000   # > ingress.idleTimeoutSeconds (3600 s)
+  preStopSeconds: 15
+  terminationGracePeriodSeconds: 30
+  ingress:
+    enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+dispatcher:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+bundle:
+  mode: s3
+
+sessions:
+  maxPods: 20
+  podSecurityEnforce: baseline
+  quota:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "40"
+    limits.memory: 48Gi

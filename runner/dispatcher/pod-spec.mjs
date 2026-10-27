@@ -25,9 +25,10 @@ export function podNameFor(sessionId) {
  *   agentToken: string,
  *   config: {
  *     namespace: string, image: string, imagePullPolicy?: string, agentPort?: number,
- *     convexUrl: string, bundle: { mode: "hostPath", hostRoot: string } | { mode: "s3" },
+ *     convexUrl: string, bundle: { mode: "hostPath", hostRoot: string } | { mode: "s3", initImage?: string },
  *     resources?: object, startupGraceSeconds?: number,
  *   },
+ *   bundleDownload?: { url: string, sha256: string },   // s3 mode: presigned GET of the approved bundle
  * }} input
  */
 const WORKSPACE_CWD = /^\/(workspace|home\/[a-z][a-z0-9_-]*)(\/[A-Za-z0-9._-]+)*\/?$/
@@ -45,14 +46,14 @@ export function workspaceMountPath(cwd) {
   return value.length > 1 ? value.replace(/\/+$/, "") : value
 }
 
-export function buildPodSpec({ session, lab, routeId, agentToken, config }) {
+export function buildPodSpec({ session, lab, routeId, agentToken, config, bundleDownload }) {
   const agentPort = config.agentPort ?? 7000
   const asRoot = lab.workspace?.user === "root"
   const workspacePath = workspaceMountPath(lab.workspace?.cwd)
   const uid = asRoot ? 0 : LEARNER_UID
   const previewPort = lab.kind === "react" ? lab.react?.previewPort : undefined
   const name = podNameFor(session._id)
-  const bundleVolume = bundleVolumeFor(lab, config.bundle)
+  const bundleVolume = bundleVolumeFor(lab, config.bundle, bundleDownload)
 
   const ports = [{ name: "agent", containerPort: agentPort }]
   if (previewPort) ports.push({ name: "preview", containerPort: previewPort })
@@ -71,6 +72,9 @@ export function buildPodSpec({ session, lab, routeId, agentToken, config }) {
       },
       annotations: {
         "learning-lab/expires-at": new Date(session.expiresAt).toISOString(),
+        // EKS Auto Mode (Karpenter) consolidates under-used nodes by evicting
+        // pods; a session pod is not restartable, so opt it out. Ignored on kind.
+        "karpenter.sh/do-not-disrupt": "true",
       },
     },
     spec: {
@@ -136,7 +140,31 @@ export function buildPodSpec({ session, lab, routeId, agentToken, config }) {
   }
 }
 
-function bundleVolumeFor(lab, bundle) {
+export const DEFAULT_BUNDLE_INIT_IMAGE = "public.ecr.aws/docker/library/busybox:1.36"
+const BUNDLE_DIGEST = /^[0-9a-f]{64}$/
+
+// Runs in the session pod before the workspace container: download the
+// approved bundle with the presigned URL (three attempts, 5 s apart), check
+// its digest, unpack it into the scenario volume. Busybox only (wget,
+// sha256sum, tar); the URL is a short-lived presign for one object, so a pod
+// reader learns nothing lasting. Busybox wget may not verify the TLS
+// certificate; integrity rests on the sha256 check against the digest
+// Convex approved, not on the transport.
+const BUNDLE_INIT_SCRIPT = [
+  "set -eu",
+  "attempt=1",
+  'until wget -q -T 60 -O /tmp/bundle.tar "$BUNDLE_URL"; do',
+  '  if [ "$attempt" -ge 3 ]; then echo "bundle download failed after $attempt attempts" >&2; exit 1; fi',
+  "  attempt=$((attempt + 1))",
+  "  rm -f /tmp/bundle.tar",
+  "  sleep 5",
+  "done",
+  'echo "$BUNDLE_SHA256  /tmp/bundle.tar" | sha256sum -c -s',
+  "tar -xf /tmp/bundle.tar -C /scenario",
+  "rm -f /tmp/bundle.tar",
+].join("\n")
+
+function bundleVolumeFor(lab, bundle, download) {
   if (!lab.sourceDir || /(^|\/)\.\.(\/|$)/.test(lab.sourceDir) || lab.sourceDir.startsWith("/")) {
     throw new Error(`scenario ${lab.slug} has no safe sourceDir`)
   }
@@ -149,9 +177,35 @@ function bundleVolumeFor(lab, bundle) {
     }
   }
   if (bundle?.mode === "s3") {
-    // Phase 5: an init container downloads the approved digest tarball with a
-    // presigned URL and extracts it into an emptyDir.
-    throw new Error("bundle mode s3 is not implemented yet (ROADMAP Phase 5)")
+    if (!download?.url || !BUNDLE_DIGEST.test(download.sha256 ?? "")) {
+      throw new Error(`scenario ${lab.slug}: s3 bundle mode needs a presigned download URL and sha256`)
+    }
+    if (!/^https:\/\//.test(download.url)) throw new Error(`scenario ${lab.slug}: bundle URL must be https`)
+    return {
+      volume: { name: "scenario", emptyDir: { sizeLimit: "256Mi" } },
+      initContainers: [
+        {
+          name: "bundle",
+          image: bundle.initImage ?? DEFAULT_BUNDLE_INIT_IMAGE,
+          imagePullPolicy: "IfNotPresent",
+          command: ["/bin/sh", "-c", BUNDLE_INIT_SCRIPT],
+          env: [
+            { name: "BUNDLE_URL", value: download.url },
+            { name: "BUNDLE_SHA256", value: download.sha256 },
+          ],
+          volumeMounts: [{ name: "scenario", mountPath: "/scenario" }],
+          securityContext: {
+            allowPrivilegeEscalation: false,
+            privileged: false,
+            capabilities: { drop: ["ALL"] },
+          },
+          resources: {
+            requests: { cpu: "50m", memory: "64Mi" },
+            limits: { cpu: "500m", memory: "256Mi" },
+          },
+        },
+      ],
+    }
   }
   throw new Error(`unknown bundle mode ${bundle?.mode}`)
 }

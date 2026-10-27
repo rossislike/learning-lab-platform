@@ -38,6 +38,21 @@ export function endpointUrls({ routeId, hostSuffix, scheme = "http", port, hasPr
   }
 }
 
+/** The one bundle problem retrying cannot fix: the session row has no approval. */
+export class MissingBundleApprovalError extends Error {}
+
+/**
+ * The scenario shape a pod is built from. In s3 mode the session carries the
+ * runtime contract that was approved with its bundle (hostedScenario.runtime:
+ * kind, workspace, tabs, react.previewPort), so the pod matches the bundle
+ * even if the live labs row has moved on since. slug and sourceDir still
+ * come from the labs row.
+ */
+export function scenarioRuntimeFor(session, lab, bundleMode) {
+  const runtime = bundleMode === "s3" ? session.hostedScenario?.runtime : undefined
+  return runtime ? { ...lab, ...runtime } : lab
+}
+
 export function createDispatcher({
   convex,
   k8s,
@@ -45,6 +60,7 @@ export function createDispatcher({
   logger = console,
   now = () => Date.now(),
   random = randomBytes,
+  presignBundle, // s3 bundle mode: async ({ key, sha256 }) => https URL
 }) {
   const runnerId = config.runnerId ?? `dispatcher-${hostname()}-${process.pid}`
   const pollMs = config.pollMs ?? 3000
@@ -81,10 +97,32 @@ export function createDispatcher({
     }
   }
 
+  async function bundleDownloadFor(session) {
+    if (config.bundle?.mode !== "s3") return undefined
+    const approved = session.hostedScenario
+    if (!approved?.artifactKey || !approved?.artifactSha256) {
+      throw new MissingBundleApprovalError("session has no approved scenario bundle (hostedScenario); publish and approve it first")
+    }
+    if (typeof presignBundle !== "function") throw new Error("s3 bundle mode needs a presignBundle function")
+    const url = await presignBundle({ key: approved.artifactKey, sha256: approved.artifactSha256 })
+    return { url, sha256: approved.artifactSha256 }
+  }
+
   async function launch(session, lab) {
     const routeId = session.routeId ?? randomRouteId(random)
+    let bundleDownload
+    try {
+      bundleDownload = await bundleDownloadFor(session)
+    } catch (error) {
+      // Only a missing approval is final. Credential or presign failures
+      // (Pod Identity agent restarting, a network blip, …) are thrown, logged
+      // by tick() and retried on the next tick, until the startup timeout.
+      if (error instanceof MissingBundleApprovalError) return markErrored(session, `Scenario bundle unavailable: ${error.message}`)
+      if (now() - session.updatedAt > startupTimeoutMs) return markErrored(session, `Scenario bundle unavailable: ${error.message}`)
+      throw error
+    }
     const { token } = await convex.mutation("sessions:issueAgentToken", { sessionId: session._id })
-    const spec = buildPodSpec({ session, lab, routeId, agentToken: token, config })
+    const spec = buildPodSpec({ session, lab, routeId, agentToken: token, config, bundleDownload })
     // Persist the routing metadata BEFORE the pod exists: a crash between
     // createPod and this write would otherwise leave a pod whose routeId
     // Convex never learned (the Ready branch also back-fills from the pod
@@ -99,9 +137,10 @@ export function createDispatcher({
     logger.info?.(`[dispatcher] ${session._id}: created pod ${spec.metadata.name} (route ${routeId})`)
   }
 
-  async function handleStartable({ session, lab }) {
-    if (!lab) return markErrored(session, "Scenario no longer exists")
-    if (!lab.sourceDir || lab.manifestVersion !== 2) return markErrored(session, "Scenario is not a v2 bundle")
+  async function handleStartable({ session, lab: labRow }) {
+    if (!labRow) return markErrored(session, "Scenario no longer exists")
+    if (!labRow.sourceDir || labRow.manifestVersion !== 2) return markErrored(session, "Scenario is not a v2 bundle")
+    const lab = scenarioRuntimeFor(session, labRow, config.bundle?.mode)
     if (session.status === "requested") {
       const began = await convex.mutation("sessions:markStarting", { sessionId: session._id })
       if (!began) return

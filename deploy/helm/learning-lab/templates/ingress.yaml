@@ -1,0 +1,55 @@
+{{- if .Values.gateway.ingress.enabled }}
+# Internet-facing ALB for the gateway (EKS Auto Mode's built-in load balancer
+# controller). One wildcard host covers the session endpoints
+# (ws-<route>.<hostSuffix>, pv-<route>.<hostSuffix>); the app itself is served
+# by CloudFront at app.<hostSuffix>.
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: {{ .Values.gateway.ingress.className }}
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+spec:
+  scheme: internet-facing
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: {{ .Values.gateway.ingress.className }}
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: {{ .Values.gateway.ingress.className }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llp-gateway
+  labels:
+    {{- include "learning-lab.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: {{ required "gateway.ingress.certificateArn is required" .Values.gateway.ingress.certificateArn | quote }}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/healthcheck-path: /__llp/health
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds={{ .Values.gateway.ingress.idleTimeoutSeconds }},routing.http.drop_invalid_header_fields.enabled=true
+spec:
+  ingressClassName: {{ .Values.gateway.ingress.className }}
+  rules:
+    - host: {{ printf "*.%s" .Values.gateway.hostSuffix | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llp-gateway
+                port:
+                  name: http
+{{- end }}

@@ -45,6 +45,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: llp-dispatcher
+      annotations:
+        checksum/secret: {{ include "learning-lab.secretChecksum" . }}
     spec:
       serviceAccountName: llp-dispatcher
       securityContext:
@@ -64,6 +66,13 @@ spec:
             - { name: SESSION_IMAGE_PULL_POLICY, value: {{ .Values.images.pullPolicy | quote }} }
             - { name: BUNDLE_MODE, value: {{ .Values.bundle.mode | quote }} }
             - { name: BUNDLE_HOST_ROOT, value: {{ .Values.bundle.hostRoot | quote }} }
+            {{- if eq .Values.bundle.mode "s3" }}
+            - { name: BUNDLE_S3_BUCKET, value: {{ required "bundle.s3Bucket is required in s3 mode" .Values.bundle.s3Bucket | quote }} }
+            - { name: AWS_REGION, value: {{ required "bundle.region is required in s3 mode" .Values.bundle.region | quote }} }
+            {{- if .Values.bundle.initImage }}
+            - { name: BUNDLE_INIT_IMAGE, value: {{ .Values.bundle.initImage | quote }} }
+            {{- end }}
+            {{- end }}
             - { name: GATEWAY_HOST_SUFFIX, value: {{ .Values.gateway.hostSuffix | quote }} }
             - { name: GATEWAY_PUBLIC_SCHEME, value: {{ .Values.gateway.publicScheme | quote }} }
             - { name: GATEWAY_PUBLIC_PORT, value: {{ .Values.gateway.publicPort | quote }} }

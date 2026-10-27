@@ -6,7 +6,8 @@ images:
   session: learning-lab/session-workspace:dev    # one pod per learner session
   pullPolicy: IfNotPresent
 
-# Required (set with --set or a values file; stored in a Secret).
+# Required (set with --set or a values file; stored in a Secret). Pods carry
+# a checksum of both, so changing either rolls the dispatcher and gateway.
 convexUrl: ""
 runnerSecret: ""
 
@@ -25,6 +26,19 @@ gateway:
   secureCookies: false   # true behind HTTPS (cookie becomes __Host-llp)
   devPage: true          # /__llp/dev on workspace hosts; off in dev
   appUpstream: ""        # e.g. host.docker.internal:5174 to serve the Vite app at app.<hostSuffix>
+  # Node's HTTP keep-alive timeout. Behind the ALB it must exceed the ALB idle
+  # timeout (ingress.idleTimeoutSeconds) or the ALB reuses connections the
+  # gateway already closed (sporadic 502s).
+  keepAliveTimeoutMs: 65000
+  # Rollouts: keep serving while the load balancer deregisters the pod.
+  # 0 disables the preStop sleep (kind has no load balancer).
+  preStopSeconds: 0
+  terminationGracePeriodSeconds: 30
+  ingress:
+    enabled: false       # dev: an internet-facing ALB (EKS Auto Mode built-in controller) for *.<hostSuffix>
+    className: llp-alb   # IngressClass + IngressClassParams created by the chart when enabled
+    certificateArn: ""   # ACM wildcard certificate for *.<hostSuffix> (terraform output alb_certificate_arn)
+    idleTimeoutSeconds: 3600   # keep WebSocket terminals open
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 500m, memory: 256Mi }
@@ -38,11 +52,19 @@ dispatcher:
     limits: { cpu: 500m, memory: 256Mi }
 
 bundle:
-  mode: hostPath         # local: scenarios/ mounted into the kind node at hostRoot
+  mode: hostPath         # local: scenarios/ mounted into the kind node at hostRoot; dev: s3
   hostRoot: /scenarios
+  s3Bucket: ""           # s3: approved bundles (terraform output bundles_bucket); the dispatcher presigns with Pod Identity
+  region: ""             # s3: bucket region
+  initImage: ""          # s3: busybox image for the download init container (default public.ecr.aws/docker/library/busybox:1.36)
 
 sessions:
   maxPods: 10
+  # Cluster DNS service IP (<service CIDR>.10). Empty on kind, where the
+  # kube-dns pod selector rule covers DNS. On EKS Auto Mode CoreDNS is not a
+  # k8s-app=kube-dns pod, so deploy-dev.mjs sets this from the Terraform
+  # output cluster_dns_ip and the egress policy allows it explicitly.
+  dnsServiceIp: ""
   # Pod Security Admission level for the sessions namespace. hostPath bundle
   # volumes (local) need "privileged"; dev (S3 init container) uses "baseline".
   podSecurityEnforce: privileged

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { createDispatcher, endpointUrls, randomRouteId } from "./dispatcher.mjs"
-import { buildPodSpec, podNameFor, workspaceMountPath, SESSION_ID_LABEL, SESSION_LABEL, SESSION_LABEL_VALUE } from "./pod-spec.mjs"
+import { buildPodSpec, DEFAULT_BUNDLE_INIT_IMAGE, podNameFor, workspaceMountPath, SESSION_ID_LABEL, SESSION_LABEL, SESSION_LABEL_VALUE } from "./pod-spec.mjs"
 import { podIsReady } from "./k8s.mjs"
 
 const quiet = { info() {}, warn() {}, error() {} }
@@ -183,8 +183,32 @@ test("pod spec: labels, security, env, bundle mount, ports, root opt-in", () => 
   assert.equal(rootSpec.spec.containers[0].ports.length, 1)
 
   assert.throws(() => buildPodSpec({ session, lab: { ...gitLab, sourceDir: "../etc" }, routeId: "r", agentToken: "t", config }), /safe sourceDir/)
-  assert.throws(() => buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: { ...config, bundle: { mode: "s3" } } }), /not implemented/)
   assert.equal(podNameFor("JD7_abc"), "llp-jd7abc")
+})
+
+test("pod spec: s3 bundle mode downloads the approved bundle in an init container", () => {
+  const session = { _id: "jd7abc", ttlSeconds: 3600, expiresAt: 2_000_000 }
+  const s3 = { ...config, bundle: { mode: "s3" } }
+  const sha256 = "a".repeat(64)
+  const url = "https://bucket.s3.us-east-2.amazonaws.com/scenarios/first-commit/bundles/sha256/aaa.tar?X-Amz-Signature=x"
+  const spec = buildPodSpec({ session, lab: gitLab, routeId: "r".repeat(24), agentToken: "t", config: s3, bundleDownload: { url, sha256 } })
+  assert.deepEqual(spec.spec.volumes[0], { name: "scenario", emptyDir: { sizeLimit: "256Mi" } })
+  const [init] = spec.spec.initContainers
+  assert.equal(init.image, DEFAULT_BUNDLE_INIT_IMAGE)
+  assert.deepEqual(init.env, [
+    { name: "BUNDLE_URL", value: url },
+    { name: "BUNDLE_SHA256", value: sha256 },
+  ])
+  assert.match(init.command[2], /sha256sum -c/)
+  assert.match(init.command[2], /tar -xf .* -C \/scenario/)
+  assert.deepEqual(init.securityContext.capabilities, { drop: ["ALL"] })
+  assert.equal(spec.spec.containers[0].volumeMounts[0].readOnly, true)
+  assert.equal(buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: { ...config, bundle: { mode: "s3", initImage: "x/busybox:1" } }, bundleDownload: { url, sha256 } }).spec.initContainers[0].image, "x/busybox:1")
+
+  assert.throws(() => buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: s3 }), /presigned download URL/)
+  assert.throws(() => buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: s3, bundleDownload: { url, sha256: "nope" } }), /presigned download URL/)
+  assert.throws(() => buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: s3, bundleDownload: { url: "http://x/y", sha256 } }), /must be https/)
+  assert.throws(() => buildPodSpec({ session, lab: gitLab, routeId: "r", agentToken: "t", config: { ...config, bundle: { mode: "nfs" } } }), /unknown bundle mode/)
 })
 
 test("workspace.cwd is only mounted under /workspace or /home/<user>", () => {
@@ -357,4 +381,144 @@ test("podIsReady needs both the Ready condition and an IP", () => {
   assert.equal(podIsReady({ status: { conditions: [{ type: "Ready", status: "True" }] } }), false)
   assert.equal(podIsReady({ status: { podIP: "1.1.1.1", conditions: [{ type: "Ready", status: "False" }] } }), false)
   assert.equal(podIsReady(null), false)
+})
+
+test("s3 bundle mode: launches with a presigned bundle, errors sessions without an approval", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const presigned = []
+  const dispatcher = createDispatcher({
+    convex,
+    k8s,
+    config: { ...config, bundle: { mode: "s3" } },
+    logger: { info() {}, warn() {}, error() {} },
+    presignBundle: async ({ key, sha256 }) => {
+      presigned.push({ key, sha256 })
+      return `https://bundles.s3.us-east-2.amazonaws.com/${key}?X-Amz-Signature=sig`
+    },
+  })
+  const sha256 = "b".repeat(64)
+  const approved = convex.addSession(gitLab, {
+    hostedScenario: { artifactKey: `scenarios/first-commit/bundles/sha256/${sha256}.tar`, artifactSha256: sha256 },
+  })
+  const unapproved = convex.addSession(reactLab)
+  await dispatcher.tick()
+
+  const pod = k8s.pods.get(`llp-${approved}`)
+  assert.ok(pod, "approved session got a pod")
+  assert.deepEqual(presigned, [{ key: `scenarios/first-commit/bundles/sha256/${sha256}.tar`, sha256 }])
+  assert.equal(pod.spec.initContainers[0].env[0].value, `https://bundles.s3.us-east-2.amazonaws.com/scenarios/first-commit/bundles/sha256/${sha256}.tar?X-Amz-Signature=sig`)
+  assert.equal(pod.spec.volumes[0].emptyDir.sizeLimit, "256Mi")
+
+  assert.equal(k8s.pods.has(`llp-${unapproved}`), false)
+  assert.equal(convex.get(unapproved).status, "errored")
+  assert.match(convex.get(unapproved).error, /no approved scenario bundle/)
+  assert.ok(!convex.calls.some(([path, args]) => path === "sessions:issueAgentToken" && args.sessionId === unapproved), "no agent token issued for an unlaunchable session")
+})
+
+test("s3 bundle mode: a transient presign failure is retried next tick, not errored", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const errors = []
+  let failures = 1
+  const dispatcher = createDispatcher({
+    convex,
+    k8s,
+    config: { ...config, bundle: { mode: "s3" } },
+    logger: { info() {}, warn() {}, error: (message) => errors.push(message) },
+    presignBundle: async ({ key }) => {
+      if (failures-- > 0) throw new Error("container credentials endpoint returned 500")
+      return `https://bundles.s3.us-east-2.amazonaws.com/${key}?X-Amz-Signature=sig`
+    },
+  })
+  const sha256 = "c".repeat(64)
+  const id = convex.addSession(gitLab, {
+    hostedScenario: { artifactKey: `scenarios/first-commit/bundles/sha256/${sha256}.tar`, artifactSha256: sha256 },
+  })
+  await dispatcher.tick()
+  assert.equal(convex.get(id).status, "starting", "still startable after a credential error")
+  assert.equal(k8s.pods.has(`llp-${id}`), false)
+  assert.ok(errors.some((message) => /credentials endpoint returned 500/.test(message)), "the failure is logged")
+
+  await dispatcher.tick()
+  assert.ok(k8s.pods.has(`llp-${id}`), "launched on the next tick")
+  assert.notEqual(convex.get(id).status, "errored")
+})
+
+test("s3 bundle mode: a presign failure past the startup timeout errors the session", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  let clock = 1000
+  convex.now = () => clock
+  const dispatcher = createDispatcher({
+    convex,
+    k8s,
+    config: { ...config, bundle: { mode: "s3" }, startupTimeoutMs: 60_000 },
+    logger: quiet,
+    now: () => clock,
+    presignBundle: async () => {
+      throw new Error("container credentials endpoint returned 500")
+    },
+  })
+  const sha256 = "d".repeat(64)
+  const id = convex.addSession(gitLab, {
+    hostedScenario: { artifactKey: `scenarios/first-commit/bundles/sha256/${sha256}.tar`, artifactSha256: sha256 },
+  })
+  await dispatcher.tick()
+  assert.equal(convex.get(id).status, "starting")
+  clock += 61_000
+  await dispatcher.tick()
+  assert.equal(convex.get(id).status, "errored")
+  assert.match(convex.get(id).error, /Scenario bundle unavailable: container credentials/)
+})
+
+test("s3 bundle mode: the pod follows the approved runtime contract, not the live labs row", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const dispatcher = createDispatcher({
+    convex,
+    k8s,
+    config: { ...config, bundle: { mode: "s3" } },
+    logger: quiet,
+    presignBundle: async ({ key }) => `https://bundles.s3.us-east-2.amazonaws.com/${key}?X-Amz-Signature=sig`,
+  })
+  const sha256 = "e".repeat(64)
+  // The labs row now says terminal-only; the approved bundle is the React one.
+  const id = convex.addSession(gitLab, {
+    hostedScenario: {
+      artifactKey: `scenarios/first-commit/bundles/sha256/${sha256}.tar`,
+      artifactSha256: sha256,
+      runtime: {
+        kind: "react",
+        ttlSeconds: 3600,
+        workspace: { cwd: "/home/learner/app", user: "learner" },
+        tabs: ["terminal", "preview"],
+        stepCount: 2,
+        react: { previewPort: 5174 },
+      },
+    },
+  })
+  await dispatcher.tick()
+  const pod = k8s.pods.get(`llp-${id}`)
+  assert.ok(pod)
+  assert.deepEqual(pod.spec.containers[0].ports.map((port) => port.containerPort), [7000, 5174])
+  assert.ok(pod.spec.containers[0].volumeMounts.some((mount) => mount.name === "workspace" && mount.mountPath === "/home/learner/app"))
+  assert.equal(pod.metadata.labels["learning-lab/scenario"], "first-commit", "slug still comes from the labs row")
+  assert.equal(convex.get(id).previewPort, 5174)
+
+  k8s.ready(`llp-${id}`)
+  await dispatcher.tick()
+  assert.equal(convex.get(id).status, "running")
+  assert.match(convex.get(id).previewUrl, /^http:\/\/pv-/)
+})
+
+test("hostPath mode ignores hostedScenario.runtime; pods opt out of Auto Mode consolidation", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: quiet })
+  const id = convex.addSession(gitLab, { hostedScenario: { runtime: { kind: "react", react: { previewPort: 5174 } } } })
+  await dispatcher.tick()
+  const pod = k8s.pods.get(`llp-${id}`)
+  assert.deepEqual(pod.spec.containers[0].ports.map((port) => port.containerPort), [7000])
+  assert.equal(pod.metadata.annotations["karpenter.sh/do-not-disrupt"], "true")
 })

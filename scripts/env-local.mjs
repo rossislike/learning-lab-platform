@@ -23,3 +23,21 @@ export async function readEnvLocalValue(name, url) {
     return undefined
   }
 }
+
+/** The ignored `.env.dev` the dev deploy scripts read (docs/dev-environment.md). */
+export const envDevUrl = new URL("../.env.dev", import.meta.url)
+
+/**
+ * Convex CLI target for the dev deployment. With CONVEX_DEPLOY_KEY (env or
+ * `.env.dev`) the CLI runs against exactly the deployment the key belongs to,
+ * so `--prod` is dropped; without one, `--prod` picks the prod deployment of
+ * the project in `.env.local`'s CONVEX_DEPLOYMENT.
+ */
+export async function convexTarget() {
+  const deployKey = process.env.CONVEX_DEPLOY_KEY ?? (await readEnvLocalValue("CONVEX_DEPLOY_KEY", envDevUrl))
+  return {
+    deployKey,
+    env: deployKey ? { CONVEX_DEPLOY_KEY: deployKey } : {},
+    args: (args) => (deployKey ? args.filter((arg) => arg !== "--prod") : args),
+  }
+}
