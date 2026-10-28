@@ -127,7 +127,7 @@ Exit: a React and a terminal scenario run end-to-end from a phone browser agains
 
 Deviations: no ECR interface endpoints yet (layers come through the S3 gateway endpoint, ECR API calls through NAT); the `*.dev` gateway record is written by the deploy script rather than Terraform (the ALB is created by the Ingress); frontend build-time config comes from `.env.dev` rather than Terraform; `account-security` keeps its ECS-era GuardDuty check until EKS Runtime Monitoring is turned on.
 
-## Phase 6 — CI, TTL reaper, alarms ✅ (code written; apply + first CI run pending)
+## Phase 6 — CI, TTL reaper, alarms ✅
 
 Exit: a push to `main` deploys to dev on its own; sessions cannot outlive their TTL when the dispatcher is down; an operator is paged when the dispatcher dies or sessions fail to launch.
 
