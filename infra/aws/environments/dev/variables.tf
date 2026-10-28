@@ -88,3 +88,9 @@ variable "terraform_state_kms_key_arn" {
   type    = string
   default = "arn:aws:kms:us-east-2:442359104502:key/473fd4c0-6d38-4dc6-8a29-013b895a9eb2"
 }
+
+variable "github_sub_claim_prefix" {
+  description = "OIDC subject prefix GitHub reports for the repository (gh api repos/<owner>/<repo>/actions/oidc/customization/sub → sub_claim_prefix)."
+  type        = string
+  default     = null
+}

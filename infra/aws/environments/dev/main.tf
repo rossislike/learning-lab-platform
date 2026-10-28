@@ -49,6 +49,7 @@ module "github_deploy" {
 
   name                        = local.name
   github_repository           = var.github_repository
+  github_sub_claim_prefix     = var.github_sub_claim_prefix
   ecr_repository_arns         = module.platform.ecr_repository_arns
   terraform_state_bucket      = var.terraform_state_bucket
   terraform_state_key         = var.terraform_state_key

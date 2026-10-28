@@ -35,3 +35,8 @@ alert_email = "you@example.com"
 # After the first deploy, enable the gateway 5xx alarm with the ALB id printed by
 # `npm run deploy:dev -- status` (looks like app/k8s-learning-llpgatew-…/…):
 # gateway_alb_arn_suffix = "app/k8s-learning-llpgatew-xxxx/yyyy"
+
+# GitHub OIDC subject prefix for the deploy role's trust policy. Repositories
+# with "immutable subjects" send an id-qualified form; copy it from:
+#   gh api repos/rossislike/learning-lab-platform/actions/oidc/customization/sub
+# github_sub_claim_prefix = "repo:rossislike@111800579/learning-lab-platform@1335221704"

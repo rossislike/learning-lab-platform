@@ -17,6 +17,12 @@ data "aws_iam_openid_connect_provider" "github" {
 
 locals {
   oidc_host = "token.actions.githubusercontent.com"
+  # Both subject forms are accepted: the classic `repo:<owner>/<repo>` and, when
+  # GitHub has enabled immutable subjects for the repository, the id-qualified
+  # prefix it reports (`repo:<owner>@<id>/<repo>@<id>`). Only the `dev`
+  # environment is trusted either way.
+  sub_prefixes = distinct(compact(["repo:${var.github_repository}", var.github_sub_claim_prefix]))
+  subjects     = [for prefix in local.sub_prefixes : "${prefix}:environment:${var.github_environment}"]
 }
 
 data "aws_iam_policy_document" "assume" {
@@ -37,7 +43,7 @@ data "aws_iam_policy_document" "assume" {
     condition {
       test     = "StringEquals"
       variable = "${local.oidc_host}:sub"
-      values   = ["repo:${var.github_repository}:environment:${var.github_environment}"]
+      values   = local.subjects
     }
   }
 }

@@ -64,3 +64,9 @@ variable "dns_zone_id" {
 variable "cluster_arn" {
   type = string
 }
+
+variable "github_sub_claim_prefix" {
+  description = "The repository's OIDC subject prefix as GitHub reports it (`gh api repos/<owner>/<repo>/actions/oidc/customization/sub` → sub_claim_prefix). Repositories with immutable subjects send `repo:<owner>@<id>/<repo>@<id>`; null means the plain `repo:<owner>/<repo>` form."
+  type        = string
+  default     = null
+}

@@ -279,6 +279,12 @@ environment named `dev`):
 | kind | name | value |
 |---|---|---|
 | variable | `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` |
+
+Before the apply, set `github_sub_claim_prefix` in `dev.tfvars` to what
+`gh api repos/<owner>/<repo>/actions/oidc/customization/sub` reports as
+`sub_claim_prefix` (GitHub's immutable subjects qualify the owner and
+repository with their ids; the trust policy accepts both forms).
+
 | variable | `VITE_CONVEX_URL` | `https://upbeat-crab-254.convex.cloud` |
 | variable | `VITE_CLERK_PUBLISHABLE_KEY` | the `amazed-adder-35` publishable key |
 | secret | `RUNNER_SHARED_SECRET` | same value as `.env.dev` |
