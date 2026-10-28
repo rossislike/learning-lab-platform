@@ -20,12 +20,13 @@ This Terraform root owns account-wide security controls for account
   itself (CloudTrail, alarms, log groups, SNS, EventBridge, WAF, ALB logging)
   to the topic
 - the single account-level GitHub Actions OIDC provider that delivery roles
-  (`modules/github-image-delivery`, Phase 6) trust
+  (`modules/github-deploy`, Phase 6) trust
 - deployment checks: the active account must match
   `expected_aws_account_id`, and the pre-existing GuardDuty detector must be
   enabled with Runtime Monitoring and its ECS Fargate agent management
   configuration turned on. The ECS Fargate check is a leftover from the
-  retired ECS plan (revisit for EKS in Phase 5).
+  retired ECS plan (to be replaced by the EKS runtime agent check; see
+  ROADMAP).
 
 This root does not manage the GuardDuty detector itself or the pre-existing
 `rumo-claims-trail`; it only validates the detector and routes its findings.
@@ -60,7 +61,14 @@ the alarms have `prevent_destroy = true`.
 
 The tracked `zz-learning-lab-alarms.auto.tfvars.json` is the single source for
 `enable_learning_lab_alarms`; do not set it in the ignored `terraform.tfvars`.
-It is currently `false`. Once `dev` is deployed (Phase 5), toggle it to `true`
-by hand, commit the change, and apply this root to create the twelve alarms.
-Because the alarms have `prevent_destroy = true`, flipping it back to `false`
-requires removing that lifecycle guard first.
+It is `true` since Phase 6 (enabled in config; the twelve alarms exist only
+once this root is applied again — apply pending). Because the alarms have
+`prevent_destroy = true`, flipping it back to `false` requires removing that
+lifecycle guard first.
+
+Expect noise while the dev environment is rolled out: the IAM, CloudWatch,
+SNS and security-group change alarms fire on the dev applies themselves
+(new roles, alarms and topic; the Ingress-managed ALB's security groups), and
+`AccessDenied` alarms on denied API calls from the new CI role while its
+permissions settle. Read those notifications against the apply that caused
+them rather than muting the topic.

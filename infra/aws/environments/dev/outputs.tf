@@ -57,3 +57,12 @@ output "name_servers" {
 output "dispatcher_role_arn" {
   value = module.platform.dispatcher_role_arn
 }
+
+output "alerts_topic_arn" {
+  value = module.platform.alerts_topic_arn
+}
+
+output "github_deploy_role_arn" {
+  description = "AWS_DEPLOY_ROLE_ARN repository variable for the GitHub Actions deploy workflow."
+  value       = module.github_deploy.role_arn
+}

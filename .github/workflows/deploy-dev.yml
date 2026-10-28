@@ -1,0 +1,96 @@
+# Deploy to dev: images → convex → chart → dns → scenarios → frontend, exactly
+# what `npm run deploy:dev` does on a laptop, with AWS access through the
+# GitHub OIDC role from infra/aws/modules/github-deploy. Called from ci.yml on
+# main, or by hand.
+#
+# Repository configuration (Settings → Secrets and variables → Actions):
+#   variables: AWS_DEPLOY_ROLE_ARN (terraform output github_deploy_role_arn),
+#              VITE_CONVEX_URL, VITE_CLERK_PUBLISHABLE_KEY
+#   secrets:   RUNNER_SHARED_SECRET, CONVEX_DEPLOY_KEY
+# plus a GitHub environment named `dev` whose deployment branches are
+# restricted to `main` (REQUIRED: the AWS role trusts only the `dev`
+# environment's OIDC subject, so that rule is what keeps other branches —
+# including a hand-run of this workflow on another ref — from deploying).
+name: deploy-dev
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "deploy:dev subcommand (chart alone deploys the images tagged with this commit in ECR)"
+        default: all
+        type: choice
+        options: [all, convex, chart, dns, scenarios, frontend, status]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    # Job-level so it also applies when ci.yml calls this workflow: one
+    # deploy at a time, queued rather than cancelled.
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    timeout-minutes: 45
+    environment: dev
+    env:
+      AWS_REGION: us-east-2
+      # amd64 only; values-dev.yaml pins every pod to amd64 nodes (nodeArch).
+      IMAGE_PLATFORMS: linux/amd64
+      # The commit SHA (shortened to 12 by deploy-dev.mjs), so runner-side
+      # file changes never make the tag "-dirty".
+      IMAGE_TAG: ${{ github.sha }}
+      # No buildx cache here on purpose: enabling type=gha from a `run` step
+      # needs a third-party action, and this job holds the AWS deploy role.
+      VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      RUNNER_SHARED_SECRET: ${{ secrets.RUNNER_SHARED_SECRET }}
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.1
+      - uses: docker/setup-buildx-action@v3
+      - name: Terraform outputs (read-only; infra applies stay manual)
+        run: |
+          node -e '
+            const c = require("./config/aws-terraform-backends.json");
+            const lines = [
+              `bucket              = "${c.bucket}"`,
+              `key                 = "${c.roots.dev.key}"`,
+              `region              = "${c.region}"`,
+              `allowed_account_ids = ["${c.accountId}"]`,
+              `encrypt             = true`,
+              `kms_key_id          = "${c.kmsKeyId}"`,
+              `use_lockfile        = true`,
+            ];
+            require("fs").writeFileSync("infra/aws/environments/dev/dev.s3.tfbackend", lines.join("\n") + "\n");
+          '
+          npm run infra:dev:init -- -input=false -lockfile=readonly
+          terraform -chdir=infra/aws/environments/dev output -json >/dev/null
+      - name: Deploy
+        env:
+          # Via env, never interpolated into the script (no injection).
+          STEP: ${{ inputs.step || 'all' }}
+        run: npm run deploy:dev -- "$STEP"

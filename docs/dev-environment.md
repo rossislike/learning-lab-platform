@@ -60,7 +60,14 @@ idle connections for an hour (WebSocket terminals).
 
    Commit `infra/aws/environments/dev/.terraform.lock.hcl` after the first
    `infra:dev:init` so every machine uses the same provider build (as
-   `account-security` does).
+   `account-security` does). Record the checksums for both the laptop and
+   the CI runners first, or CI's `init -lockfile=readonly` has only the
+   registry hashes to go on:
+
+   ```bash
+   terraform -chdir=infra/aws/environments/dev providers lock \
+     -platform=linux_amd64 -platform=darwin_arm64
+   ```
 
 2. **Convex.** The dev deployment is the project's `prod` deployment
    (`upbeat-crab-254`). Pin it: create a **production deploy key** for it in
@@ -119,15 +126,41 @@ idle connections for an hour (WebSocket terminals).
    ```
 
    `IMAGE_PLATFORMS=linux/amd64 npm run deploy:dev -- images` builds one
-   platform (faster; Auto Mode's `general-purpose` pool may schedule on
-   either architecture, so only use a single platform if you know the nodes).
+   platform (faster). dev pins every pod — gateway, dispatcher, reaper and
+   session pods — to `kubernetes.io/arch: amd64` (`nodeArch` in
+   `values-dev.yaml`; the dispatcher passes it to session pods as
+   `SESSION_NODE_ARCH`), because CI pushes amd64-only images, so amd64 is all
+   dev needs; the arm64 half of a local multi-arch push is unused there.
+
+## Operators
+
+`/admin` (sessions of every learner, Stop, Seed scenarios) is for operators.
+The role is a field on the `users` row and is granted from the CLI after the
+person has signed in once:
+
+```bash
+npx convex env get HOSTED_ENVIRONMENT --prod       # sanity: dev
+npx convex run users:grantOperator '{"email":"you@example.com"}' --prod
+npx convex run users:grantOperator '{"email":"you@example.com","revoke":true}' --prod
+```
+
+As elsewhere, `--prod` picks the prod deployment of the project in
+`.env.local`; with `CONVEX_DEPLOY_KEY` exported, drop `--prod` (the key pins
+the deployment). If more than one account carries the email the mutation
+refuses; pass `{"clerkSubject":"user_…"}` (Clerk dashboard → Users → user ID)
+instead. Operators can see and stop every session and read its events; they
+get no workspace or step access to another learner's session.
+
+Locally with auth disabled everyone is an operator. Learner queries
+(`sessions.list`, `progress.list`) are owner-indexed; `sessions.listAll` and
+`labs.seedScenarios` require the role.
 
 ## Deploying
 
 ```bash
 npm run deploy:dev                # images → convex → chart → dns → scenarios → frontend
 npm run deploy:dev -- images      # multi-arch build + push to ECR, digests recorded in build/dev-images.json
-npm run deploy:dev -- convex      # HOSTED_ENVIRONMENT + RUNNER_SHARED_SECRET, convex deploy --yes, labs:seedScenarios
+npm run deploy:dev -- convex      # HOSTED_ENVIRONMENT + RUNNER_SHARED_SECRET, convex deploy --yes, labs:seedCatalogInternal
 npm run deploy:dev -- chart       # network-policy switch, then helm upgrade with values-dev.yaml + Terraform outputs
 npm run deploy:dev -- dns         # *.dev.<domain> CNAME → the Ingress ALB (after the first chart install)
 npm run deploy:dev -- scenarios   # bundles → S3 by digest → scenarioArtifacts:approve
@@ -137,13 +170,16 @@ npm run deploy:dev -- teardown    # before infra:dev:destroy (see Operating)
 ```
 
 Every step reads `terraform output -json` from the dev root, so nothing
-environment-specific is written into the repository. `main` deploys to dev;
-there is no promotion pipeline (CI arrives in Phase 6). Convex goes first in
+environment-specific is written into the repository. `main` deploys to dev
+(CI, below); there is no promotion pipeline. Convex goes first in
 `all` so the deployment already holds the runner secret the new pods use.
 
-Image tags are the commit SHA; a dirty working tree gets
-`<sha>-dirty-<unix time>` so a tag never names two builds (the chart always
-deploys by digest). ECR keeps the 10 newest tagged images per repository
+Image tags are the commit SHA (`IMAGE_TAG` overrides it; CI sets it to the
+commit); a dirty working tree gets `<sha>-dirty-<unix time>` so a tag never
+names two builds (the chart always deploys by digest). `chart` deploys the
+digests `images` recorded in `build/dev-images.json`; without that file (a
+fresh machine or runner) it looks up the images tagged `IMAGE_TAG`, or the
+clean `HEAD` commit, in ECR. ECR keeps the 10 newest tagged images per repository
 and expires untagged ones after 7 days (the per-platform children of a
 multi-arch image are untagged but protected while their index exists).
 
@@ -206,6 +242,104 @@ is only reclaimed after the pod ends; `activeDeadlineSeconds` bounds that).
   adopt objects it did not create.
 - Convex environment variables and Clerk settings are set by hand (above).
 
+## CI: main deploys to dev
+
+`.github/workflows/ci.yml` runs on every pull request and push: lint, types,
+unit tests, catalog check, a production frontend build, Terraform
+`fmt`/`validate` for every root, `helm lint`/`template`, and the session-image
+integration test (the image is built on the runner and the agent is driven
+over Docker). On `main`, when all of that passes, `deploy-dev.yml` runs
+`npm run deploy:dev` with AWS access through the GitHub OIDC role
+(`infra/aws/modules/github-deploy`; it can read the dev Terraform state but
+never apply it). Images are built for `linux/amd64` in CI, tagged with the
+commit SHA, with the BuildKit layer cache in the GitHub Actions cache.
+
+- Pull-request runs hold no secrets: no Convex deploy key, no AWS role.
+  `convex/_generated` is committed for that reason (`convex codegen` needs a
+  deployment); `npx convex dev` keeps it current locally — commit its changes.
+- Pushes to `main` that only touch `docs/**`, top-level `*.md` or
+  `infra/**/*.md` skip CI and the deploy (every deploy rebuilds the images,
+  which rolls the gateway and drops open terminals). Scenario Markdown is
+  not skipped.
+- The deploy job talks to the EKS API over its **public endpoint** from
+  GitHub-hosted runners, whose addresses change: keep
+  `cluster_endpoint_public_access_cidrs` at its default, or CI deploys fail.
+- The role's EKS access entry (cluster admin) is created by the dev apply;
+  IAM and EKS access entries are eventually consistent, so a CI run started
+  seconds after that apply can fail with `Unauthorized` — re-run it.
+- The role decrypts the state object with the state bucket's KMS key, which
+  works only if that key's policy delegates to IAM (the default key policy,
+  which `bootstrap/terraform-backend` uses). Check once:
+  `aws kms get-key-policy --key-id <terraform_state_kms_key_arn> --policy-name default`
+  shows the `arn:aws:iam::442359104502:root` statement.
+
+One-time GitHub setup (Settings → Secrets and variables → Actions, and an
+environment named `dev`):
+
+| kind | name | value |
+|---|---|---|
+| variable | `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` |
+| variable | `VITE_CONVEX_URL` | `https://upbeat-crab-254.convex.cloud` |
+| variable | `VITE_CLERK_PUBLISHABLE_KEY` | the `amazed-adder-35` publishable key |
+| secret | `RUNNER_SHARED_SECRET` | same value as `.env.dev` |
+| secret | `CONVEX_DEPLOY_KEY` | a production deploy key for `upbeat-crab-254` |
+
+**Required:** in the `dev` environment set *Deployment branches and tags* to
+**Selected branches → `main`**. The AWS role trusts only the `dev`
+environment's OIDC subject (`repo:<owner/name>:environment:dev`; a job that
+names an environment never gets the branch subject), so this rule is the
+only thing that stops another branch from deploying.
+
+`deploy-dev.yml` can also be run by hand (*Run workflow*) with one
+subcommand (`all`, `convex`, `chart`, `dns`, `scenarios`, `frontend`,
+`status`); the environment rule above applies to those runs too. `chart` on
+its own deploys the images CI pushed for that commit. Infrastructure changes
+(`infra:dev:apply`) stay a manual, local step; the workflow only reads the
+state.
+
+## Alarms
+
+The dispatcher publishes `LearningLab/Dispatcher` metrics (Heartbeat,
+ActiveSessions, LaunchFailures, LostPods, PodsLaunched) through its Pod
+Identity role. LaunchFailures counts sessions that failed to start; LostPods
+counts running sessions whose pod disappeared (not alarmed).
+`modules/eks-platform/monitoring.tf` turns them into alarms on the
+`learning-lab-dev-alerts` SNS topic (subscribe with `alert_email` in
+`dev.tfvars` — required, or the alarms reach nobody; confirm the email once):
+dispatcher heartbeat missing for 10 min, ≥ 3 launch failures in 15 min,
+gateway ALB 5xx (once `gateway_alb_arn_suffix` is set from
+`deploy:dev status`), and an AWS Budgets daily cost guard
+(`daily_cost_budget_usd`, default $10, on actual spend; AWS does not support
+forecasted alerts on daily budgets).
+
+Order matters on the first rollout: the heartbeat alarm treats missing data
+as breaching, so it goes to ALARM (and emails) right after `infra:dev:apply`
+and stays there until a chart with metrics enabled is deployed and the
+dispatcher has published for a few minutes; it then sends OK. Apply, then
+deploy promptly (or expect that one alarm).
+
+`account-security` has its CloudTrail security alarms enabled in config
+(`enable_learning_lab_alarms=true`; apply that root once). Expect them to
+fire during the rollout itself — IAM, CloudWatch, SNS and security-group
+change alarms on the dev apply and on the security groups the ALB
+controller manages, and denied-API-call alarms while the CI role is new.
+
+## TTL safety nets
+
+The dispatcher expires sessions and deletes pods as part of its tick. Two
+independent backstops cover the dispatcher being down: a Convex cron
+(`convex/crons.ts` → `sessions.sweep`, every 5 min) expires sessions past
+their TTL and errors sessions stuck in `requested`/`starting` while no
+heartbeat has arrived, and the in-cluster `llp-reaper` CronJob
+(`runner/dispatcher/reaper.mjs`, every 5 min, no Convex access; its own
+`llp-reaper` Role can only get/list/delete pods in `sessions`) deletes pods
+past their `learning-lab/expires-at` annotation or left in Failed/Succeeded.
+Past-TTL sessions are found per live status (never through a global expiry
+index that ended sessions would crowd out). A `starting` session whose pod
+was removed (e.g. by the reaper after it failed) is errored once the startup
+timeout has passed instead of being relaunched. `kubectl -n learning-lab get
+jobs -l app.kubernetes.io/name=llp-reaper` lists the reaper runs.
+
 ## Operating
 
 - `npm run deploy:dev -- status` — pods in both namespaces, the Ingress, dispatcher log tail.
@@ -236,8 +370,5 @@ is only reclaimed after the pod ends; `activeDeadlineSeconds` bounds that).
 
 ## Known gaps (tracked in ROADMAP)
 
-- No CI; images are built on the deploying machine.
-- No TTL reaper beyond the dispatcher and `activeDeadlineSeconds`; no alarms (Phase 6).
 - Image layers come from S3 through the gateway endpoint, but ECR API calls (`ecr.api`, `ecr.dkr`) go through the NAT gateways; interface endpoints would cut that once traffic warrants it.
-- Phase 4 security gaps now reachable from the internet (ROADMAP Phase 5): `labs.seedScenarios` has no auth check, `/admin` is not operator-gated, `sessions.list`/`progress.list` read a global window.
 - `account-security` still checks the GuardDuty ECS Fargate agent setting (ECS leftover); replace it with the EKS runtime agent check once GuardDuty EKS Runtime Monitoring is enabled for this cluster.

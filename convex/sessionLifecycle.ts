@@ -58,3 +58,22 @@ export function canExpire(status: SessionLifecycleStatus) {
 export function canMarkCleaned(status: SessionLifecycleStatus) {
   return CLEANUP_SESSION_STATUSES.has(status)
 }
+
+/**
+ * Statuses a session can be expired from (the TTL still applies). Queries for
+ * past-TTL sessions go per status through `by_status` so they never scan the
+ * unbounded history of ended sessions: a global `by_expires_at` window would
+ * fill up with stopped/expired/errored rows (their expiresAt is in the past
+ * too) and hide a live session once ~100 sessions have finished.
+ */
+export const EXPIRABLE_SESSION_STATUSES: SessionLifecycleStatus[] = [...ACTIVE_SESSION_STATUSES].filter(canExpire)
+
+/** Past-TTL sessions that may still be expired, oldest expiry first. */
+export function selectExpiredSessions<T extends { status: SessionLifecycleStatus; expiresAt: number }>(
+  sessions: T[],
+  cutoff: number,
+): T[] {
+  return sessions
+    .filter((session) => session.expiresAt < cutoff && canExpire(session.status))
+    .sort((a, b) => a.expiresAt - b.expiresAt)
+}

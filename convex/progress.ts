@@ -6,8 +6,12 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const ownerKey = await learnerOwnerKey(ctx);
-    const records = await ctx.db.query("progressRecords").order("desc").take(200);
-    return ownerKey === null ? records : records.filter((record) => record.sessionOwnerKey === ownerKey);
+    if (ownerKey === null) return await ctx.db.query("progressRecords").order("desc").take(200);
+    return await ctx.db
+      .query("progressRecords")
+      .withIndex("by_session_owner", (q) => q.eq("sessionOwnerKey", ownerKey))
+      .order("desc")
+      .take(200);
   },
 });
 

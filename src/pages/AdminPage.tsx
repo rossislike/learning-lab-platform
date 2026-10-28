@@ -5,7 +5,26 @@ import { ACTIVE_STATUSES } from "../lib/format";
 import { useNow } from "../lib/useNow";
 
 export function AdminPage() {
-  const sessions = useQuery(api.sessions.list);
+  const viewer = useQuery(api.users.viewer);
+  if (viewer === undefined) return <p className="muted">Loading…</p>;
+  if (!viewer.operator) {
+    return (
+      <section className="notice">
+        <h1>Operators only</h1>
+        <p>
+          This page administers the deployment. Grant the role from the CLI:{" "}
+          <code>npx convex run users:grantOperator &apos;{"{"}&quot;email&quot;:&quot;you@example.com&quot;{"}"}&apos; --prod</code>{" "}
+          (drop <code>--prod</code> when <code>CONVEX_DEPLOY_KEY</code> is exported; pass{" "}
+          <code>clerkSubject</code> instead of <code>email</code> if several accounts share it).
+        </p>
+      </section>
+    );
+  }
+  return <AdminDashboard />;
+}
+
+function AdminDashboard() {
+  const sessions = useQuery(api.sessions.listAll);
   const labs = useQuery(api.labs.list);
   const heartbeat = useQuery(api.runners.latest, { runner: "kubernetes" });
   const seed = useMutation(api.labs.seedScenarios);

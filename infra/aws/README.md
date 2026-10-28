@@ -6,8 +6,8 @@ region `us-east-2`. The Kubernetes execution model is ADR 0005.
 | Root / module | Status | Purpose |
 |---|---|---|
 | [`bootstrap/terraform-backend`](bootstrap/terraform-backend/README.md) | deployed | Private, versioned, KMS-encrypted state bucket with native S3 locking. State keys are listed in [`config/aws-terraform-backends.json`](../../config/aws-terraform-backends.json). |
-| [`account-security`](account-security/README.md) | deployed | CloudTrail, GuardDuty, account-level metric filters. Project alarms are off (`enable_learning_lab_alarms=false`) until dev is up. |
-| `modules/github-image-delivery` | written, not applied | GitHub OIDC provider + least-privilege roles for CI pushes to ECR. Reused in Phase 6. |
+| [`account-security`](account-security/README.md) | deployed | CloudTrail, GuardDuty, account-level metric filters and the matching CloudWatch alarms (`enable_learning_lab_alarms=true` since Phase 6: enabled in config, apply pending). |
+| `modules/github-deploy` | written (Phase 6, apply pending) | GitHub Actions deploy role for dev: ECR push, read-only Terraform state, bundle/frontend buckets, CloudFront invalidation, the `*.dev` Route 53 record, `eks:DescribeCluster` (+ a cluster-admin access entry from the dev root). Trusts only the `dev` GitHub environment (OIDC subject `…:environment:dev`; its deployment-branch rule must allow `main` only) via the account-level OIDC provider. |
 | `modules/eks-platform` | written (Phase 5) | VPC (2 AZ, NAT per AZ, S3 gateway endpoint), EKS Auto Mode cluster (Kubernetes 1.34, standard support only, `general-purpose` + `system` pools, control-plane logs; outputs the service CIDR for the sessions DNS egress rule), ECR repositories, ACM wildcard certificates (`us-east-2` for the ALB, `us-east-1` for CloudFront) validated in Route 53, scenario-bundle bucket, EKS Pod Identity role for the dispatcher (`s3:GetObject` on `scenarios/*/bundles/sha256/*` only), S3 + CloudFront (OAC) frontend with `app.<env>.<domain>` alias records. |
 | `environments/dev` | written (Phase 5) | The single hosted root. State key `learning-lab-platform/dev/terraform.tfstate`. Deletion protection off. `npm run infra:dev:init|plan|apply|destroy` (`create_dns_zone` needs a targeted zone apply first; run `npm run deploy:dev -- teardown` before destroy); runbook in [`docs/dev-environment.md`](../../docs/dev-environment.md). Commit its `.terraform.lock.hcl` after the first init. |
 
@@ -15,8 +15,8 @@ Kubernetes manifests are not Terraform: the dispatcher, gateway, namespaces,
 RBAC, quotas, and network policies ship as a Helm chart in
 `deploy/helm/learning-lab` (Phase 3) and are applied to kind and EKS alike.
 
-Note: `modules/github-image-delivery` and the bootstrap `environment` variable
-still carry `staging`/`production` enums; they are updated in Phase 5/6.
+Note: the bootstrap `environment` variable still carries the old
+`staging`/`production` enum; it is only used for the state bucket name.
 
 ```bash
 npm run infra:fmt

@@ -102,3 +102,21 @@ variable "cluster_log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "alert_email" {
+  description = "Email subscribed to the environment alerts topic (alarms, budget). Null for topic only."
+  type        = string
+  default     = null
+}
+
+variable "daily_cost_budget_usd" {
+  description = "Daily account spend (USD) above which the budget notifies the alerts topic."
+  type        = number
+  default     = 10
+}
+
+variable "gateway_alb_arn_suffix" {
+  description = "LoadBalancer dimension of the Ingress ALB (app/k8s-…/…), from `npm run deploy:dev -- status`; enables the gateway 5xx alarm."
+  type        = string
+  default     = null
+}

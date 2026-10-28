@@ -1,4 +1,6 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+import { currentUser, isOperator } from "./access";
 
 function accountFields(identity: {
   subject: string;
@@ -67,5 +69,59 @@ export const current = query({
         q.eq("tokenIdentifier", identity.tokenIdentifier)
       )
       .unique();
+  },
+});
+
+/** What the app needs about the viewer: the account row and whether it administers the deployment. */
+export const viewer = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const user = identity ? await currentUser(ctx) : null;
+    let operator = false;
+    try {
+      operator = await isOperator(ctx);
+    } catch {
+      // Not authenticated outside local mode: a plain learner view.
+      operator = false;
+    }
+    return { user, operator };
+  },
+});
+
+/**
+ * Grant or revoke the operator role. CLI only (internal):
+ *   npx convex run users:grantOperator '{"email":"you@example.com"}' --prod
+ *   npx convex run users:grantOperator '{"email":"…","revoke":true}' --prod
+ *   npx convex run users:grantOperator '{"clerkSubject":"user_…"}' --prod
+ * (`--prod` → drop it when CONVEX_DEPLOY_KEY is exported.) The account must
+ * have signed in once (users.syncCurrent creates the row); an email shared by
+ * several accounts is refused, use clerkSubject then.
+ */
+export const grantOperator = internalMutation({
+  args: { email: v.optional(v.string()), clerkSubject: v.optional(v.string()), revoke: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    if (!args.email && !args.clerkSubject) throw new Error("email or clerkSubject is required");
+    const uniqueByEmail = async () => {
+      const email = args.email!.toLowerCase();
+      const matches = (await ctx.db.query("users").collect()).filter(
+        (candidate) => candidate.email?.toLowerCase() === email
+      );
+      if (matches.length > 1) {
+        throw new Error(
+          `${matches.length} accounts share this email; pass clerkSubject instead (Clerk dashboard → Users → user ID)`
+        );
+      }
+      return matches[0] ?? null;
+    };
+    const user = args.clerkSubject
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_clerk_subject", (q) => q.eq("clerkSubject", args.clerkSubject!))
+          .unique()
+      : await uniqueByEmail();
+    if (!user) throw new Error("No account matches; the user must sign in once first");
+    await ctx.db.patch(user._id, { role: args.revoke ? undefined : "operator", updatedAt: Date.now() });
+    return { userId: user._id, displayName: user.displayName, operator: !args.revoke };
   },
 });

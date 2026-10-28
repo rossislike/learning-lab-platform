@@ -21,5 +21,17 @@ dns_zone_name           = "rumothy.com" # the account's public zone (aws route53
 # Extra cluster admins (never the principal that applies; it is admin already):
 # cluster_admin_principal_arns = ["arn:aws:iam::442359104502:user/you"]
 
-# Narrow the public EKS API endpoint to the operator's addresses:
+# Narrow the public EKS API endpoint to the operator's addresses. Careful:
+# the CI deploy job (GitHub-hosted runners, changing IPs) talks to this
+# endpoint too, so narrowing it breaks `main` → dev deploys unless you use
+# self-hosted runners with known addresses.
 # cluster_endpoint_public_access_cidrs = ["203.0.113.4/32"]
+
+# Required for paging: alarms and the daily budget notify the alerts topic and
+# only reach a person through this subscription (confirm the SNS email once).
+# Without it the topic has no subscriber and every alarm is silent.
+alert_email = "you@example.com"
+# daily_cost_budget_usd = 10
+# After the first deploy, enable the gateway 5xx alarm with the ALB id printed by
+# `npm run deploy:dev -- status` (looks like app/k8s-learning-llpgatew-…/…):
+# gateway_alb_arn_suffix = "app/k8s-learning-llpgatew-xxxx/yyyy"

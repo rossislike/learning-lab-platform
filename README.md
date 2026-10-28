@@ -96,6 +96,10 @@ npx convex env set ALLOW_UNAUTHENTICATED_LOCAL_MODE true
 npm run dev:all                      # convex dev + vite + `cluster up` (kind, images, Helm chart)
 ```
 
+`convex/_generated` is committed: `npx convex dev` regenerates it whenever
+`convex/` changes, so commit its changes with the functions that caused them
+(CI type-checks against the committed copy and never runs codegen).
+
 Then open **http://app.lab.localhost:8080**. The gateway proxies the Vite
 dev server under the app host, so the app and the session endpoints
 (`ws-<id>.lab.localhost`, `pv-<id>.lab.localhost`) are same-site and the
@@ -128,6 +132,15 @@ npm run deploy:dev            # images → convex → chart → dns → scenario
 ```
 
 Scenario authoring: [`docs/scenario-authoring.md`](docs/scenario-authoring.md).
+
+## CI and deploys
+
+Every pull request runs lint, types, unit tests, Terraform/Helm checks and the
+session-image integration test (`.github/workflows/ci.yml`). A push to `main`
+that passes deploys to dev (`deploy-dev.yml` → `npm run deploy:dev`) through a
+GitHub OIDC role; infrastructure (`npm run infra:dev:apply`) stays manual.
+Details and the one-time repository variables/secrets:
+[`docs/dev-environment.md`](docs/dev-environment.md#ci-main-deploys-to-dev).
 
 ## Troubleshooting
 

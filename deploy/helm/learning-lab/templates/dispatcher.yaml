@@ -49,6 +49,7 @@ spec:
         checksum/secret: {{ include "learning-lab.secretChecksum" . }}
     spec:
       serviceAccountName: llp-dispatcher
+      {{- include "learning-lab.nodeSelector" . | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -79,6 +80,16 @@ spec:
             - { name: DISPATCHER_POLL_MS, value: {{ .Values.dispatcher.pollMs | quote }} }
             - { name: DISPATCHER_STARTUP_TIMEOUT_MS, value: {{ .Values.dispatcher.startupTimeoutMs | quote }} }
             - { name: KUBERNETES_MODE, value: in-cluster }
+            {{- if .Values.nodeArch }}
+            - { name: SESSION_NODE_ARCH, value: {{ .Values.nodeArch | quote }} }
+            {{- end }}
+            {{- if .Values.dispatcher.metricsNamespace }}
+            - { name: METRICS_NAMESPACE, value: {{ .Values.dispatcher.metricsNamespace | quote }} }
+            - { name: METRICS_ENVIRONMENT, value: {{ required "dispatcher.metricsEnvironment is required when dispatcher.metricsNamespace is set" .Values.dispatcher.metricsEnvironment | quote }} }
+            {{- if ne .Values.bundle.mode "s3" }}
+            - { name: AWS_REGION, value: {{ required "bundle.region (AWS_REGION) is required for metrics" .Values.bundle.region | quote }} }
+            {{- end }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: [ALL] }

@@ -1,4 +1,6 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import { requireOperator } from "./access";
 import { v } from "convex/values";
 import { areaSeedData, scenarioSeedData } from "./scenarioSeedData";
 
@@ -53,9 +55,7 @@ export const get = query({
  * (`npm run scenarios:import`). Scenarios that are no longer in the seed are
  * archived rather than deleted so existing sessions keep a valid labId.
  */
-export const seedScenarios = mutation({
-  args: {},
-  handler: async (ctx) => {
+async function seedCatalog(ctx: MutationCtx) {
     const timestamp = now();
     const ids: string[] = [];
 
@@ -107,5 +107,19 @@ export const seedScenarios = mutation({
     }
 
     return ids;
+}
+
+/** Seed/refresh the catalog from the imported manifests — operators only (the admin page). */
+export const seedScenarios = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+    return await seedCatalog(ctx);
   },
+});
+
+/** The same seed for the deploy script (`npx convex run labs:seedCatalogInternal`), which has no learner identity. */
+export const seedCatalogInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => seedCatalog(ctx),
 });

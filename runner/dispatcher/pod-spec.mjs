@@ -84,6 +84,9 @@ export function buildPodSpec({ session, lab, routeId, agentToken, config, bundle
       terminationGracePeriodSeconds: 10,
       // Kubelet kills the pod at TTL even if the dispatcher is down.
       activeDeadlineSeconds: session.ttlSeconds + (config.startupGraceSeconds ?? 600),
+      // dev publishes amd64-only images (CI), so session pods are pinned to
+      // that architecture there (SESSION_NODE_ARCH); unset locally (kind).
+      ...(config.nodeArch ? { nodeSelector: { "kubernetes.io/arch": config.nodeArch } } : {}),
       securityContext: {
         runAsUser: uid,
         runAsGroup: uid,

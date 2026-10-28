@@ -80,6 +80,7 @@ export function createDispatcher({
   now = () => Date.now(),
   random = randomBytes,
   presignBundle, // s3 bundle mode: async ({ key, sha256 }) => https URL
+  metrics, // optional: createMetricsPublisher() — Heartbeat, ActiveSessions, LaunchFailures, LostPods, PodsLaunched
 }) {
   const runnerId = config.runnerId ?? `dispatcher-${hostname()}-${process.pid}`
   const pollMs = config.pollMs ?? 3000
@@ -99,10 +100,17 @@ export function createDispatcher({
     return stats.leaseHeld
   }
 
-  async function markErrored(session, message) {
-    stats.errored += 1
+  /**
+   * `metric` names the CloudWatch counter: LaunchFailures for the startup
+   * path (alarmed on), LostPods for running sessions whose pod disappeared
+   * (reconcilePods). Counted only once Convex accepted the transition.
+   */
+  async function markErrored(session, message, metric = "LaunchFailures") {
     logger.error?.(`[dispatcher] ${session._id}: ${message}`)
-    await convex.mutation("sessions:markErrored", { sessionId: session._id, message })
+    const changed = await convex.mutation("sessions:markErrored", { sessionId: session._id, message })
+    if (changed === false) return
+    stats.errored += 1
+    metrics?.count(metric)
   }
 
   function metadataFor(session, lab, routeId, podName) {
@@ -153,6 +161,7 @@ export function createDispatcher({
       if (error.status !== 409) throw error // 409 = already exists (lost race with ourselves)
     }
     stats.launched += 1
+    metrics?.count("PodsLaunched")
     logger.info?.(`[dispatcher] ${session._id}: created pod ${spec.metadata.name} (route ${routeId})`)
   }
 
@@ -160,13 +169,22 @@ export function createDispatcher({
     if (!labRow) return markErrored(session, "Scenario no longer exists")
     if (!labRow.sourceDir || labRow.manifestVersion !== 2) return markErrored(session, "Scenario is not a v2 bundle")
     const lab = scenarioRuntimeFor(session, labRow, config.bundle?.mode)
+    const wasStarting = session.status === "starting"
     if (session.status === "requested") {
       const began = await convex.mutation("sessions:markStarting", { sessionId: session._id })
       if (!began) return
     }
     const podName = session.podName ?? podNameFor(session._id)
     const pod = await k8s.getPod(podName)
-    if (!pod) return launch(session, lab)
+    if (!pod) {
+      // A pod was created for this start (podName persisted) but is gone, e.g.
+      // the reaper removed it after it failed: past the startup timeout, give
+      // up instead of relaunching it forever.
+      if (wasStarting && session.podName && now() - session.updatedAt > startupTimeoutMs) {
+        return markErrored(session, `Session pod ${podName} disappeared and the session did not start within ${Math.round(startupTimeoutMs / 1000)} s`)
+      }
+      return launch(session, lab)
+    }
 
     const phase = podPhase(pod)
     if (phase === "Failed" || phase === "Succeeded") {
@@ -231,7 +249,7 @@ export function createDispatcher({
       if (pod && phase !== "Failed" && phase !== "Succeeded") continue
       try {
         if (pod) await k8s.deletePod(podName)
-        await markErrored({ _id: entry.sessionId }, `Session pod ${podName} is gone${phase ? ` (${phase.toLowerCase()})` : ""}`)
+        await markErrored({ _id: entry.sessionId }, `Session pod ${podName} is gone${phase ? ` (${phase.toLowerCase()})` : ""}`, "LostPods")
       } catch (error) {
         logger.error?.(`[dispatcher] lost pod ${podName}: ${error.stack ?? error}`)
       }
@@ -250,9 +268,21 @@ export function createDispatcher({
 
   async function tick() {
     stats.ticks += 1
+    try {
+      return await tickBody()
+    } finally {
+      // Also after a failed tick, so LaunchFailures/LostPods counted before
+      // the failure still reach CloudWatch (flush never throws).
+      await metrics?.flush()
+    }
+  }
+
+  async function tickBody() {
     await heartbeat()
+    metrics?.count("Heartbeat")
     if (!(await holdsLease())) return { skipped: "lease" }
     const work = await convex.query("sessions:listForDispatcher")
+    metrics?.gauge("ActiveSessions", work.active.length)
     for (const entry of work.startable) {
       try {
         await handleStartable(entry)

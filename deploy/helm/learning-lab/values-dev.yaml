@@ -7,6 +7,9 @@
 images:
   pullPolicy: IfNotPresent
 
+# CI builds linux/amd64 images only; keep every pod on amd64 nodes.
+nodeArch: amd64
+
 gateway:
   replicas: 2
   service:
@@ -26,6 +29,8 @@ gateway:
     limits: { cpu: "1", memory: 512Mi }
 
 dispatcher:
+  metricsNamespace: LearningLab/Dispatcher
+  metricsEnvironment: dev
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: "1", memory: 512Mi }

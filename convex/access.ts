@@ -22,10 +22,46 @@ export async function learnerOwnerKey(ctx: Ctx) {
   throw new Error("Authentication required");
 }
 
-export async function requireSessionOwner(ctx: Ctx, session: Doc<"sessions"> | null) {
+/** The signed-in learner's account row, or null (anonymous local mode, or not synced yet). */
+export async function currentUser(ctx: Ctx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  return await ctx.db
+    .query("users")
+    .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+    .unique();
+}
+
+/**
+ * Operators administer the deployment (seed the catalog, see and stop every
+ * session). The role lives on the users row and is granted from the CLI
+ * (`users:grantOperator`). In anonymous local mode everyone is an operator.
+ */
+export async function isOperator(ctx: Ctx) {
+  const ownerKey = await learnerOwnerKey(ctx);
+  if (ownerKey === null) return true;
+  const user = await currentUser(ctx);
+  return user?.role === "operator";
+}
+
+export async function requireOperator(ctx: Ctx) {
+  if (!(await isOperator(ctx))) throw new Error("Operator role required");
+}
+
+/**
+ * The session's owner (or, with `allowOperator`, an operator); anyone else
+ * gets "not found". Operator access is opt-in per call site and limited to
+ * administration (stop, read status/events): operators must never get
+ * workspace access to, or act as, a learner in someone else's session.
+ */
+export async function requireSessionOwner(
+  ctx: Ctx,
+  session: Doc<"sessions"> | null,
+  { allowOperator = false }: { allowOperator?: boolean } = {},
+) {
   if (!session) throw new Error("Session not found");
   const ownerKey = await learnerOwnerKey(ctx);
-  if (ownerKey !== null && session.sessionOwnerKey !== ownerKey) {
+  if (ownerKey !== null && session.sessionOwnerKey !== ownerKey && !(allowOperator && (await isOperator(ctx)))) {
     throw new Error("Session not found");
   }
   return session;

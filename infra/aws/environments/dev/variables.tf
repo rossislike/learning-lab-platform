@@ -48,3 +48,43 @@ variable "cluster_admin_principal_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "alert_email" {
+  description = "Email for alarm and budget notifications (confirm the SNS subscription once)."
+  type        = string
+  default     = null
+}
+
+variable "daily_cost_budget_usd" {
+  type    = number
+  default = 10
+}
+
+variable "gateway_alb_arn_suffix" {
+  description = "From `npm run deploy:dev -- status` after the first chart install; enables the gateway 5xx alarm."
+  type        = string
+  default     = null
+}
+
+variable "github_repository" {
+  description = "Repository whose `dev` GitHub environment (deployment branches: main only) deploys to dev through GitHub Actions (OIDC)."
+  type        = string
+  default     = "rossislike/learning-lab-platform"
+}
+
+# The backend this root is initialised with (config/aws-terraform-backends.json);
+# the GitHub deploy role reads the state to get the outputs.
+variable "terraform_state_bucket" {
+  type    = string
+  default = "learning-lab-platform-production-tfstate-442359104502-us-east-2"
+}
+
+variable "terraform_state_key" {
+  type    = string
+  default = "learning-lab-platform/dev/terraform.tfstate"
+}
+
+variable "terraform_state_kms_key_arn" {
+  type    = string
+  default = "arn:aws:kms:us-east-2:442359104502:key/473fd4c0-6d38-4dc6-8a29-013b895a9eb2"
+}

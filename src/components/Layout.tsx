@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { SignInButton, UserButton, useUser } from "@clerk/react";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { authConfigured, env } from "../lib/env";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -54,6 +54,13 @@ function SignedInOutlet() {
   return <Outlet />;
 }
 
+/** Operators only: the role comes from Convex (users.viewer), never from the client. */
+function AdminLink() {
+  const viewer = useQuery(api.users.viewer);
+  if (!viewer?.operator) return null;
+  return <NavLink to="/admin" className="nav-link">Admin</NavLink>;
+}
+
 export function Layout() {
   const { pathname } = useLocation();
   return (
@@ -65,7 +72,7 @@ export function Layout() {
         </Link>
         <nav className="topnav">
           <NavLink to="/" end className="nav-link">Areas</NavLink>
-          <NavLink to="/admin" className="nav-link">Admin</NavLink>
+          <AdminLink />
           {authConfigured ? <AccountControls /> : <span className="nav-muted">{env.defaultLearnerLabel}</span>}
         </nav>
       </header>

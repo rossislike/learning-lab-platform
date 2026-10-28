@@ -70,3 +70,19 @@ output "name_servers" {
 output "dispatcher_role_arn" {
   value = aws_iam_role.dispatcher.arn
 }
+
+output "alerts_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
+
+output "bundles_bucket_arn" {
+  value = aws_s3_bucket.bundles.arn
+}
+
+output "frontend_bucket_arn" {
+  value = aws_s3_bucket.frontend.arn
+}
+
+output "cloudfront_distribution_arn" {
+  value = aws_cloudfront_distribution.frontend.arn
+}

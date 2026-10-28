@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
@@ -7,7 +7,7 @@ import {
   configuredHostedEnvironment,
 } from "./scenarioArtifactPolicy";
 import { resolveScenarioSessionSnapshot } from "./scenarioSessionPolicy";
-import { hashAgentToken, learnerOwnerKey, requireRunnerSecret, requireSessionOwner } from "./access";
+import { hashAgentToken, learnerOwnerKey, requireOperator, requireRunnerSecret, requireSessionOwner } from "./access";
 import { isAllowedPodIp, ROUTE_ID_PATTERN } from "./accessPolicy";
 import {
   ACTIVE_SESSION_STATUSES,
@@ -18,7 +18,9 @@ import {
   canRequestStop,
   canUpdateRunnerMetadata,
   canUseWorkspace,
+  EXPIRABLE_SESSION_STATUSES,
   isActiveSessionStatus,
+  selectExpiredSessions,
   type SessionLifecycleStatus,
 } from "./sessionLifecycle";
 
@@ -85,15 +87,30 @@ async function revokeActiveGrants(
   return revoked;
 }
 
+/** The viewer's own sessions, newest first (owner-indexed; anonymous local mode sees all). */
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const ownerKey = await learnerOwnerKey(ctx);
-    const sessions = await ctx.db.query("sessions").order("desc").take(100);
-    return sessions
-      .filter((session) => ownerKey === null || session.sessionOwnerKey === ownerKey)
-      .filter((session) => !session.removedFromListAt)
-      .slice(0, 50);
+    const sessions =
+      ownerKey === null
+        ? await ctx.db.query("sessions").order("desc").take(100)
+        : await ctx.db
+            .query("sessions")
+            .withIndex("by_session_owner", (q) => q.eq("sessionOwnerKey", ownerKey))
+            .order("desc")
+            .take(100);
+    return sessions.filter((session) => !session.removedFromListAt).slice(0, 50);
+  },
+});
+
+/** Every learner's recent sessions — operators only (the admin page). */
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+    const sessions = await ctx.db.query("sessions").order("desc").take(200);
+    return sessions.filter((session) => !session.removedFromListAt);
   },
 });
 
@@ -137,13 +154,11 @@ export const listForDispatcher = query({
     const active = (
       await Promise.all([...ACTIVE_SESSION_STATUSES].map((status) => byStatus(status)))
     ).flat();
-    const expired = (
-      await ctx.db
-        .query("sessions")
-        .withIndex("by_expires_at", (q) => q.lt("expiresAt", timestamp))
-        .order("asc")
-        .take(100)
-    ).filter((session) => canExpire(session.status));
+    // Derived from the complete `active` list rather than a by_expires_at
+    // window: ended sessions keep their (past) expiresAt forever, so a
+    // `take(100)` over that index fills up with terminal rows once ~100
+    // sessions have finished and hides live past-TTL ones.
+    const expired = selectExpiredSessions(active, timestamp).slice(0, 100);
     const cleanup = cleanupLists
       .flat()
       .filter((session) => !session.cleanedAt && canMarkCleaned(session.status))
@@ -169,7 +184,7 @@ export const listForDispatcher = query({
 export const listEvents = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
-    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
+    await requireSessionOwner(ctx, await ctx.db.get(args.sessionId), { allowOperator: true });
     return await ctx.db
       .query("sessionEvents")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
@@ -181,7 +196,7 @@ export const listEvents = query({
 export const getWithEvents = query({
   args: { sessionId: v.id("sessions") },
   handler: async (ctx, args) => {
-    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
+    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId), { allowOperator: true });
     const events = await ctx.db
       .query("sessionEvents")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
@@ -604,7 +619,8 @@ export const recordCheck = mutation({
 export const stop = mutation({
   args: { sessionId: v.id("sessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId));
+    // Operators may stop any session (admin page).
+    const session = await requireSessionOwner(ctx, await ctx.db.get(args.sessionId), { allowOperator: true });
     if (!canRequestStop(session.status)) return;
     if (session.status === "stopping") return;
     const timestamp = now();
@@ -648,35 +664,101 @@ export const removeFromList = mutation({
   },
 });
 
+async function expireSession(ctx: MutationCtx, session: Doc<"sessions">, reason: string, timestamp: number) {
+  if (!canExpire(session.status)) return false;
+  await ctx.db.patch(session._id, {
+    status: "expired",
+    stoppedAt: session.stoppedAt ?? timestamp,
+    stopReason: reason,
+    agentTokenHash: undefined,
+    agentTokenExpiresAt: undefined,
+    updatedAt: timestamp,
+  });
+  await revokeActiveGrants(ctx, session._id, "expired", timestamp);
+  await patchProgressRecord(ctx, session._id, { status: "expired", summary: reason, updatedAt: timestamp });
+  await ctx.db.insert("sessionEvents", { sessionId: session._id, level: "warn", message: reason, createdAt: timestamp });
+  return true;
+}
+
 export const markExpired = mutation({
   args: { runnerSecret: v.string(), sessionId: v.id("sessions"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
     requireRunnerSecret(args.runnerSecret);
-    const timestamp = now();
     const session = await ctx.db.get(args.sessionId);
     if (!session) throw new Error("Session not found");
-    if (!canExpire(session.status)) return false;
-    await ctx.db.patch(args.sessionId, {
-      status: "expired",
-      stoppedAt: session.stoppedAt ?? timestamp,
-      stopReason: args.reason ?? "Session TTL expired",
-      agentTokenHash: undefined,
-      agentTokenExpiresAt: undefined,
-      updatedAt: timestamp,
-    });
-    await revokeActiveGrants(ctx, args.sessionId, "expired", timestamp);
-    await patchProgressRecord(ctx, args.sessionId, {
-      status: "expired",
-      summary: args.reason ?? "Session TTL expired",
-      updatedAt: timestamp,
-    });
-    await ctx.db.insert("sessionEvents", {
-      sessionId: args.sessionId,
-      level: "warn",
-      message: args.reason ?? "Session TTL expired",
-      createdAt: timestamp,
-    });
-    return true;
+    return await expireSession(ctx, session, args.reason ?? "Session TTL expired", now());
+  },
+});
+
+/**
+ * Safety net behind the dispatcher (ROADMAP Phase 6, scheduled from
+ * crons.ts): sessions past their TTL that the dispatcher has not expired
+ * within `graceMs`, and sessions stuck in requested/starting for longer than
+ * `startupTimeoutMs` while no dispatcher has reported a heartbeat for
+ * `staleHeartbeatMs`. Pods are the kubelet's and the in-cluster reaper's
+ * business (activeDeadlineSeconds, runner/dispatcher/reaper.mjs); this only
+ * keeps Convex honest so learners see an ended session instead of a stale one.
+ */
+export const sweep = internalMutation({
+  args: {
+    graceMs: v.optional(v.number()),
+    startupTimeoutMs: v.optional(v.number()),
+    staleHeartbeatMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const timestamp = now();
+    const graceMs = args.graceMs ?? 2 * 60 * 1000;
+    const startupTimeoutMs = args.startupTimeoutMs ?? 15 * 60 * 1000;
+    const staleHeartbeatMs = args.staleHeartbeatMs ?? 2 * 60 * 1000;
+
+    // Per expirable status (bounded by MAX_ACTIVE_SESSIONS), not a global
+    // by_expires_at window that terminal sessions would fill up; see
+    // EXPIRABLE_SESSION_STATUSES.
+    const candidates = (
+      await Promise.all(
+        EXPIRABLE_SESSION_STATUSES.map((status) =>
+          ctx.db
+            .query("sessions")
+            .withIndex("by_status", (q) => q.eq("status", status))
+            .take(500)
+        )
+      )
+    ).flat();
+    const overdue = selectExpiredSessions(candidates, timestamp - graceMs).slice(0, 100);
+    let expired = 0;
+    for (const session of overdue) {
+      if (await expireSession(ctx, session, "Session TTL expired (swept: the dispatcher did not expire it in time)", timestamp)) expired += 1;
+    }
+
+    const heartbeats = await ctx.db
+      .query("runnerHeartbeats")
+      .withIndex("by_runner", (q) => q.eq("runner", "kubernetes"))
+      .collect();
+    const lastSeenAt = Math.max(0, ...heartbeats.map((heartbeat) => heartbeat.lastSeenAt));
+    const dispatcherStale = timestamp - lastSeenAt > staleHeartbeatMs;
+    let stuck = 0;
+    if (dispatcherStale) {
+      for (const status of ["requested", "starting"] as const) {
+        const sessions = await ctx.db
+          .query("sessions")
+          .withIndex("by_status", (q) => q.eq("status", status))
+          .order("asc")
+          .take(100);
+        for (const session of sessions) {
+          if (timestamp - session.updatedAt < startupTimeoutMs) continue;
+          const message =
+            lastSeenAt > 0
+              ? `Session did not start: no dispatcher heartbeat for ${Math.round((timestamp - lastSeenAt) / 60000)} min`
+              : "Session did not start: no dispatcher has ever reported a heartbeat";
+          await ctx.db.patch(session._id, { status: "errored", lastCheckSummary: message, updatedAt: timestamp });
+          await revokeActiveGrants(ctx, session._id, "errored", timestamp);
+          await patchProgressRecord(ctx, session._id, { status: "errored", summary: message, updatedAt: timestamp });
+          await ctx.db.insert("sessionEvents", { sessionId: session._id, level: "error", message, createdAt: timestamp });
+          stuck += 1;
+        }
+      }
+    }
+    return { expired, stuck, dispatcherStale };
   },
 });
 

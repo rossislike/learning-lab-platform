@@ -53,7 +53,7 @@ function fakeConvex({ leaseHeld = true } = {}) {
         ttlSeconds: 3600,
         createdAt: 1000,
         updatedAt: 1000,
-        expiresAt: 1000 + 3600_000,
+        expiresAt: Date.now() + 3600_000,
         ...overrides,
       })
       return id
@@ -89,6 +89,7 @@ function fakeConvex({ leaseHeld = true } = {}) {
           Object.assign(session, args)
           return true
         case "sessions:markErrored":
+          if (["stopping", "stopped", "expired"].includes(session.status)) return false
           session.status = "errored"
           session.error = args.message
           return true
@@ -109,9 +110,15 @@ function fakeConvex({ leaseHeld = true } = {}) {
       if (path !== "sessions:listForDispatcher") throw new Error(`unexpected query ${path}`)
       const all = [...sessions.values()]
       const active = all.filter((s) => ["requested", "starting", "running", "checking", "passed", "failed", "stopping"].includes(s.status))
+      // Mirrors convex/sessions.ts: past-TTL sessions come from the complete
+      // active list (selectExpiredSessions), not a by_expires_at window.
+      const timestamp = api.now()
       return {
         startable: all.filter((s) => ["requested", "starting"].includes(s.status)).map((session) => ({ session, lab: labs.get(session.labId) ?? null })),
-        expired: all.filter((s) => s.expiresAt < 0 && !["stopping", "stopped", "expired", "errored"].includes(s.status)),
+        expired: active
+          .filter((s) => s.expiresAt < timestamp && s.status !== "stopping")
+          .sort((a, b) => a.expiresAt - b.expiresAt)
+          .slice(0, 100),
         cleanup: all.filter((s) => !s.cleanedAt && ["stopping", "stopped", "expired", "errored"].includes(s.status)),
         active: active.map((s) => ({ sessionId: s._id, status: s.status, podName: s.podName ?? null })),
       }
@@ -176,6 +183,9 @@ test("pod spec: labels, security, env, bundle mount, ports, root opt-in", () => 
   assert.equal(env.CONVEX_URL, config.convexUrl)
   assert.deepEqual(spec.spec.volumes[0].hostPath, { path: "/scenarios/react/welcome-message", type: "Directory" })
   assert.equal(container.readinessProbe.httpGet.path, "/ready")
+  assert.equal(spec.spec.nodeSelector, undefined, "no node pinning unless configured")
+  const pinned = buildPodSpec({ session, lab: reactLab, routeId: "r".repeat(24), agentToken: "tok", config: { ...config, nodeArch: "amd64" } })
+  assert.deepEqual(pinned.spec.nodeSelector, { "kubernetes.io/arch": "amd64" })
 
   const rootSpec = buildPodSpec({ session, lab: { ...gitLab, workspace: { cwd: "/workspace", user: "root" } }, routeId: "r".repeat(24), agentToken: "tok", config })
   assert.equal(rootSpec.spec.securityContext.runAsUser, 0)
@@ -315,7 +325,7 @@ test("a running session whose pod vanished or finished is errored", async () => 
   const gone = convex.addSession(gitLab, { status: "running", podName: "llp-gone", routeId: "r".repeat(24) })
   const finished = convex.addSession(gitLab, { status: "checking", podName: "llp-finished", routeId: "s".repeat(24) })
   const healthy = convex.addSession(gitLab, { status: "passed", podName: "llp-healthy", routeId: "t".repeat(24) })
-  const starting = convex.addSession(gitLab, { status: "starting", podName: "llp-starting", routeId: "u".repeat(24) })
+  const starting = convex.addSession(gitLab, { status: "starting", podName: "llp-starting", routeId: "u".repeat(24), updatedAt: Date.now() })
   for (const name of ["llp-finished", "llp-healthy"]) {
     await k8s.createPod({ metadata: { name, labels: { [SESSION_LABEL]: SESSION_LABEL_VALUE, [SESSION_ID_LABEL]: name === "llp-healthy" ? healthy : finished } }, spec: {} })
     k8s.ready(name)
@@ -540,4 +550,81 @@ test("podFailureDetail names the container that died", () => {
     " (workspace exited 137: OOMKilled)",
   )
   assert.equal(podFailureDetail({ status: { reason: "Evicted" } }), " (Evicted)")
+})
+
+test("metrics: heartbeat per tick, active gauge, launch failures counted, flushed at the end of a tick", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const counts = []
+  const gauges = []
+  let flushes = 0
+  const metrics = { count: (name, value = 1) => counts.push([name, value]), gauge: (name, value) => gauges.push([name, value]), flush: async () => (flushes += 1) }
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: { info() {}, warn() {}, error() {} }, metrics })
+  convex.addSession(gitLab)
+  convex.addSession({ _id: "lab-missing", slug: "gone" })
+  await dispatcher.tick()
+  assert.ok(counts.some(([name]) => name === "Heartbeat"))
+  assert.ok(counts.some(([name]) => name === "PodsLaunched"))
+  assert.ok(counts.some(([name]) => name === "LaunchFailures"), "the session without a scenario is a launch failure")
+  assert.ok(!counts.some(([name]) => name === "LostPods"))
+  assert.deepEqual(gauges[0], ["ActiveSessions", 2])
+  assert.equal(flushes, 1)
+})
+
+test("metrics: lost pods are LostPods, not LaunchFailures; a refused markErrored counts nothing; flush runs after a failed tick", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const counts = []
+  let flushes = 0
+  const metrics = { count: (name, value = 1) => counts.push([name, value]), gauge() {}, flush: async () => (flushes += 1) }
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: quiet, metrics })
+  convex.addSession(gitLab, { status: "running", podName: "llp-lost", routeId: "r".repeat(24) })
+  await dispatcher.tick()
+  assert.deepEqual(counts.filter(([name]) => name !== "Heartbeat"), [["LostPods", 1]])
+  assert.equal(dispatcher.stats.errored, 1)
+
+  const failing = createDispatcher({
+    convex: { ...convex, mutation: async () => { throw new Error("convex down") } },
+    k8s,
+    config,
+    logger: quiet,
+    metrics,
+  })
+  await assert.rejects(failing.tick(), /convex down/)
+  assert.equal(flushes, 2)
+})
+
+test("a starting session whose pod vanished past the startup timeout is errored, not relaunched", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  let clock = 100_000
+  convex.now = () => clock
+  const dispatcher = createDispatcher({ convex, k8s, config: { ...config, startupTimeoutMs: 5000 }, logger: quiet, now: () => clock })
+  const id = convex.addSession(gitLab)
+  await dispatcher.tick()
+  assert.ok(k8s.pods.has(`llp-${id}`))
+  // The pod failed and something else (the in-cluster reaper) deleted it.
+  k8s.pods.delete(`llp-${id}`)
+  await dispatcher.tick() // within the timeout: relaunched
+  assert.ok(k8s.pods.has(`llp-${id}`))
+  k8s.pods.delete(`llp-${id}`)
+  clock += 6000
+  await dispatcher.tick()
+  assert.equal(convex.get(id).status, "errored")
+  assert.match(convex.get(id).error, /disappeared and the session did not start within 5 s/)
+  assert.ok(!k8s.pods.has(`llp-${id}`))
+})
+
+test("expired: past-TTL live sessions are expired even behind many ended sessions", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  for (let i = 0; i < 150; i += 1) {
+    convex.addSession(gitLab, { status: ["stopped", "expired", "errored"][i % 3], expiresAt: i, cleanedAt: 1 })
+  }
+  const live = convex.addSession(gitLab, { status: "running", podName: "llp-live", routeId: "l".repeat(24), expiresAt: Date.now() - 1000 })
+  await k8s.createPod({ metadata: { name: "llp-live", labels: { [SESSION_LABEL]: SESSION_LABEL_VALUE, [SESSION_ID_LABEL]: live } }, spec: {} })
+  k8s.ready("llp-live")
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: quiet })
+  await dispatcher.tick()
+  assert.equal(convex.get(live).status, "expired")
 })

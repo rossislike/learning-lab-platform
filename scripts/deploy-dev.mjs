@@ -6,6 +6,7 @@
 //   npm run deploy:dev -- images       # build + push both images to ECR (IMAGE_PLATFORMS, default linux/amd64,linux/arm64)
 //   npm run deploy:dev -- convex       # convex deploy to the dev deployment + seed the catalog
 //   npm run deploy:dev -- chart        # network-policy switch + helm upgrade on the EKS cluster with the pushed digests
+//                                      # (build/dev-images.json, else the images tagged IMAGE_TAG / the clean HEAD in ECR)
 //   npm run deploy:dev -- dns          # point *.dev.<domain> at the Ingress load balancer
 //   npm run deploy:dev -- scenarios    # publish + approve scenario bundles
 //   npm run deploy:dev -- frontend     # vite build → S3 sync → CloudFront invalidation
@@ -18,6 +19,10 @@
 //   VITE_CLERK_PUBLISHABLE_KEY=pk_test_…
 //   RUNNER_SHARED_SECRET=…            (deploy:dev convex writes it to the Convex deployment)
 //   CONVEX_DEPLOY_KEY=prod:upbeat-crab-254|…   (optional, recommended: pins every Convex CLI call to that deployment)
+//
+// Environment: IMAGE_TAG (image tag; CI passes the commit SHA, a full SHA is
+// shortened to 12), IMAGE_PLATFORMS, BUILDX_CACHE (e.g. type=gha in CI: adds
+// --cache-from/--cache-to …,mode=max to both image builds).
 //
 // Requires: aws (logged in to account 442359104502), docker buildx with a
 // multi-platform builder, kubectl, helm, terraform (applied), and the Convex
@@ -86,17 +91,38 @@ async function settings() {
 }
 
 const REQUIRED_SETTINGS = {
-  convexUrl: "VITE_CONVEX_URL is required (.env.dev)",
-  clerkKey: "VITE_CLERK_PUBLISHABLE_KEY is required for the dev frontend (.env.dev)",
-  runnerSecret: "RUNNER_SHARED_SECRET is required (.env.dev); deploy:dev convex writes it to the Convex deployment",
+  convexUrl: "VITE_CONVEX_URL is required (.env.dev, or CI variables/secrets)",
+  clerkKey: "VITE_CLERK_PUBLISHABLE_KEY is required for the dev frontend (.env.dev, or CI variables/secrets)",
+  runnerSecret: "RUNNER_SHARED_SECRET is required (.env.dev, or CI variables/secrets); deploy:dev convex writes it to the Convex deployment",
 };
 
 function requireSettings(config, ...names) {
   for (const name of names) if (!config[name]) fail(REQUIRED_SETTINGS[name]);
 }
 
-/** Commit SHA; a dirty tree gets a unique `-dirty-<time>` suffix so a tag never names two different builds. */
+/** IMAGE_TAG as given (a full 40-hex commit SHA is shortened to 12 like `git rev-parse --short=12`). */
+export function normalizeImageTag(value) {
+  const tag = String(value).trim();
+  const short = /^[0-9a-f]{40}$/.test(tag) ? tag.slice(0, 12) : tag;
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(short)) fail(`IMAGE_TAG ${JSON.stringify(value)} is not a valid image tag`);
+  return short;
+}
+
+/** `--cache-from/--cache-to` for one image when BUILDX_CACHE is set (gha caches get a per-image scope). */
+export function buildxCacheArgs(cache, scope) {
+  if (!cache) return [];
+  const ref = cache.startsWith("type=gha") && !/(^|,)scope=/.test(cache) ? `${cache},scope=${scope}` : cache;
+  return ["--cache-from", ref, "--cache-to", `${ref},mode=max`];
+}
+
+/**
+ * IMAGE_TAG when set (CI: the commit SHA — terraform init or npm may touch
+ * tracked files on a runner, which must not make every CI tag "dirty");
+ * otherwise the commit SHA, and a dirty tree gets a unique `-dirty-<time>`
+ * suffix so a tag never names two different builds.
+ */
 async function imageTag() {
+  if (process.env.IMAGE_TAG) return normalizeImageTag(process.env.IMAGE_TAG);
   const { stdout } = await run("git", ["rev-parse", "--short=12", "HEAD"], { capture: true });
   const { stdout: changes } = await run("git", ["status", "--porcelain"], { capture: true });
   const sha = stdout.trim();
@@ -104,11 +130,12 @@ async function imageTag() {
 }
 
 async function imageDigest(repository, tag, region) {
-  const { stdout } = await run(
+  const { code, stdout } = await run(
     "aws",
     ["ecr", "describe-images", "--repository-name", repository, "--image-ids", `imageTag=${tag}`, "--region", region, "--query", "imageDetails[0].imageDigest", "--output", "text"],
-    { capture: true },
+    { capture: true, allowFailure: true },
   );
+  if (code !== 0) fail(`no image ${repository}:${tag} in ECR (run npm run deploy:dev -- images, or set IMAGE_TAG to a pushed tag)`);
   const digest = stdout.trim();
   if (!/^sha256:[0-9a-f]{64}$/.test(digest)) fail(`could not read the digest of ${repository}:${tag}`);
   return digest;
@@ -125,8 +152,13 @@ async function images({ outputs }) {
 
   const sessionRef = `${outputs.ecr_repository_urls["session-workspace"]}:${tag}`;
   const platformRef = `${outputs.ecr_repository_urls.platform}:${tag}`;
+  // build.sh reads BUILDX_CACHE itself (scope session-workspace).
   await run("bash", ["images/session-workspace/build.sh", "--push", sessionRef], { env: { PLATFORMS: platforms } });
-  await run("docker", ["buildx", "build", "--platform", platforms, "-f", "images/platform/Dockerfile", "-t", platformRef, "--push", "."]);
+  await run("docker", [
+    "buildx", "build", "--platform", platforms, "-f", "images/platform/Dockerfile", "-t", platformRef,
+    ...buildxCacheArgs(process.env.BUILDX_CACHE, "platform"),
+    "--push", ".",
+  ]);
 
   const record = {
     tag,
@@ -141,12 +173,28 @@ async function images({ outputs }) {
   return record;
 }
 
-async function readImageRecord() {
+/**
+ * The digests `images` recorded, or — on a fresh machine or CI runner, e.g.
+ * `deploy:dev chart` on its own — the images tagged IMAGE_TAG (or the clean
+ * HEAD commit) in ECR.
+ */
+async function readImageRecord({ outputs }) {
   try {
     return JSON.parse(await readFile(IMAGE_RECORD, "utf8"));
   } catch {
-    fail("no pushed images recorded; run npm run deploy:dev -- images first");
+    // fall back to ECR below
   }
+  const tag = await imageTag();
+  if (tag.includes("-dirty-")) {
+    fail("no pushed images recorded (build/dev-images.json) and the working tree is dirty; run npm run deploy:dev -- images first, or set IMAGE_TAG to a pushed tag");
+  }
+  const region = outputs.aws_region;
+  console.log(`[deploy-dev] no build/dev-images.json; deploying the images tagged ${tag} in ECR`);
+  return {
+    tag,
+    session: `${outputs.ecr_repository_urls["session-workspace"]}@${await imageDigest("learning-lab/session-workspace", tag, region)}`,
+    platform: `${outputs.ecr_repository_urls.platform}@${await imageDigest("learning-lab/platform", tag, region)}`,
+  };
 }
 
 async function kubeconfig({ outputs }) {
@@ -193,7 +241,7 @@ async function withSecretValues(values, callback) {
 async function chart(config) {
   requireSettings(config, "convexUrl", "runnerSecret");
   const { outputs, convexUrl, runnerSecret } = config;
-  const record = await readImageRecord();
+  const record = await readImageRecord(config);
   await kubeconfig(config);
   await enableNetworkPolicies();
   await withSecretValues({ convexUrl, runnerSecret }, (secretsFile) =>
@@ -269,7 +317,7 @@ async function convex(config) {
   console.log(`[deploy-dev] convex target: ${deployment}; expected ${convexUrl}`);
   // A deployment that says it is something other than dev is the wrong one.
   const before = await convexEnvGet(target, "HOSTED_ENVIRONMENT");
-  if (before && before !== "dev") fail(`the Convex target has HOSTED_ENVIRONMENT=${before}, not dev; set CONVEX_DEPLOY_KEY in .env.dev to pin the dev deployment`);
+  if (before && before !== "dev") fail(`the Convex target has HOSTED_ENVIRONMENT=${before}, not dev; set CONVEX_DEPLOY_KEY (.env.dev, or the CI secret) to pin the dev deployment`);
 
   const options = { env: target.env, redact: [runnerSecret, target.deployKey] };
   await run("npx", target.args(["convex", "env", "set", "HOSTED_ENVIRONMENT", "dev", "--prod"]), options);
@@ -278,7 +326,7 @@ async function convex(config) {
   await run("npx", ["convex", "deploy", "--yes"], options);
   const after = await convexEnvGet(target, "HOSTED_ENVIRONMENT");
   if (after !== "dev") fail(`HOSTED_ENVIRONMENT on the Convex target reads ${JSON.stringify(after)} after the deploy, expected "dev"`);
-  await run("npx", target.args(["convex", "run", "labs:seedScenarios", "--prod"]), options);
+  await run("npx", target.args(["convex", "run", "labs:seedCatalogInternal", "--prod"]), options);
   console.log(`[deploy-dev] convex deployed (${deployment}) and catalog seeded`);
 }
 
@@ -316,6 +364,19 @@ async function status(config) {
   await run("kubectl", ["--context", KUBE_CONTEXT, "get", "pods", "-n", SESSIONS_NAMESPACE, "-o", "wide"], { allowFailure: true });
   await run("kubectl", ["--context", KUBE_CONTEXT, "-n", NAMESPACE, "get", "ingress"], { allowFailure: true });
   await run("kubectl", ["--context", KUBE_CONTEXT, "-n", NAMESPACE, "logs", "deployment/llp-dispatcher", "--tail=10"], { allowFailure: true });
+  await run("kubectl", ["--context", KUBE_CONTEXT, "-n", NAMESPACE, "get", "cronjob,job", "-l", "app.kubernetes.io/name=llp-reaper"], { allowFailure: true });
+  const hostname = await ingressHostname(config);
+  if (hostname) {
+    // The CloudWatch LoadBalancer dimension (app/<name>/<id>) for the gateway 5xx alarm.
+    const { stdout } = await run(
+      "aws",
+      ["elbv2", "describe-load-balancers", "--region", outputs.aws_region, "--query", `LoadBalancers[?DNSName=='${hostname}'].LoadBalancerArn`, "--output", "text"],
+      { capture: true, allowFailure: true },
+    );
+    const arn = stdout.trim();
+    const suffix = arn.includes(":loadbalancer/") ? arn.slice(arn.indexOf(":loadbalancer/") + ":loadbalancer/".length) : null;
+    if (suffix) console.log(`[deploy-dev] gateway ALB ${suffix} (set gateway_alb_arn_suffix in dev.tfvars for the 5xx alarm)`);
+  }
   console.log(`[deploy-dev] app ${outputs.app_url}; sessions *.${outputs.environment_domain}`);
 }
 

@@ -97,3 +97,23 @@ handles retries idempotently, and cascades or anonymizes records transactionally
 Clerk remains the source of truth for credentials, verification, sessions, and account-management UI. Convex is the source of truth for learning data and its relationship to the authenticated subject. Do not store Clerk secret keys in Vite variables or Convex documents.
 
 Organizations, enrollment, and role-based authorization are separate roadmap tasks.
+
+## Operators
+
+Administrative pages and mutations (`/admin`, `labs.seedScenarios`,
+`sessions.listAll`, stopping another learner's session) require the
+`operator` role on the `users` row. Grant it from the CLI once the account
+has signed in (`users.syncCurrent` creates the row):
+
+```sh
+npx convex run users:grantOperator '{"email":"you@example.com"}'          # local dev deployment
+npx convex run users:grantOperator '{"email":"you@example.com"}' --prod   # dev (upbeat-crab-254)
+```
+
+With `CONVEX_DEPLOY_KEY` exported (the dev deploy key), drop `--prod`: the key
+already pins the deployment. When several accounts share the email the
+mutation refuses; pass `{"clerkSubject":"user_…"}` (the Clerk user ID) instead.
+Operators can stop any session and read its status and events, but never get
+workspace or step access to another learner's session.
+
+With `ALLOW_UNAUTHENTICATED_LOCAL_MODE=true` (local only) every visitor is an operator.

@@ -42,6 +42,9 @@ export default defineSchema({
     displayName: v.string(),
     email: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    // Operators see every session and can seed the catalog; granted with
+    // `npx convex run users:grantOperator` (never from the app).
+    role: v.optional(v.literal("operator")),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastSeenAt: v.number(),

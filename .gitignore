@@ -5,7 +5,6 @@ build
 .env.dev
 .env
 .DS_Store
-convex/_generated
 *.tsbuildinfo
 vite.config.d.ts
 **/.vitest-report.json

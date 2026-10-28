@@ -13,6 +13,11 @@ runnerSecret: ""
 
 sessionsNamespace: sessions
 
+# Pin the gateway, dispatcher, reaper and session pods to one CPU
+# architecture (kubernetes.io/arch). Empty = schedule anywhere (kind). dev
+# sets amd64 because CI pushes amd64-only images.
+nodeArch: ""
+
 gateway:
   replicas: 1
   port: 8080
@@ -44,12 +49,20 @@ gateway:
     limits: { cpu: 500m, memory: 256Mi }
 
 dispatcher:
+  metricsNamespace: ""   # dev: CloudWatch namespace (LearningLab/Dispatcher); empty = no metrics
+  metricsEnvironment: ""   # Environment dimension; required when metricsNamespace is set (dev: dev)
   replicas: 1
   pollMs: 3000
   startupTimeoutMs: 600000
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 500m, memory: 256Mi }
+
+reaper:
+  enabled: true          # CronJob deleting session pods past expiry / left finished (runner/dispatcher/reaper.mjs)
+  schedule: "*/5 * * * *"
+  expiredGraceSeconds: 600
+  finishedGraceSeconds: 300
 
 bundle:
   mode: hostPath         # local: scenarios/ mounted into the kind node at hostRoot; dev: s3

@@ -1,0 +1,126 @@
+# CI (ROADMAP Phase 6): every pull request and push runs the checks; a push to
+# main that passes them deploys to dev (ADR 0007: main deploys to dev).
+# Pull-request runs never see a deploy key or AWS role: secrets are only used
+# by deploy-dev.yml, which runs in the `dev` environment.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    # A docs-only push neither needs the checks nor a redeploy (every deploy
+    # rebuilds the images, which rolls the gateway and drops open terminals).
+    # Not a blanket **/*.md: scenario steps (scenarios/**/*.md) are content
+    # that must deploy. Pull requests still run everything.
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!*.md"
+      - "!infra/**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: lint, types, tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # convex/_generated is committed (`npx convex dev` keeps it current);
+      # `convex codegen` would need a deployment, i.e. a key PR CI must not hold.
+      - name: Session agent lockfile is consistent
+        run: npm ci --prefix runner/session-agent --ignore-scripts
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm run test:runner
+      - run: npm run test:web
+      - name: Scenario catalog is imported
+        run: npm run scenarios:check
+      - name: Frontend builds
+        run: npx vite build --mode production
+        env:
+          VITE_CONVEX_URL: https://example.convex.cloud
+          VITE_AUTH_MODE: configured
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_ci
+
+  infra:
+    name: terraform + helm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.4"
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: terraform fmt -check -recursive infra/aws
+      - name: terraform validate (every root, offline)
+        run: |
+          for root in infra/aws/bootstrap/terraform-backend infra/aws/account-security infra/aws/environments/dev; do
+            terraform -chdir="$root" init -backend=false -input=false >/dev/null
+            terraform -chdir="$root" validate
+          done
+      - name: helm lint (kind and dev values)
+        run: |
+          helm lint deploy/helm/learning-lab --set convexUrl=https://x.convex.cloud --set runnerSecret=x
+          helm lint deploy/helm/learning-lab -f deploy/helm/learning-lab/values-dev.yaml \
+            --set convexUrl=https://x.convex.cloud --set runnerSecret=x \
+            --set gateway.ingress.certificateArn=arn:aws:acm:us-east-2:1:certificate/x \
+            --set bundle.s3Bucket=b --set bundle.region=us-east-2 --set sessions.dnsServiceIp=172.20.0.10
+      - name: helm template renders (dev values)
+        run: |
+          helm template learning-lab deploy/helm/learning-lab -f deploy/helm/learning-lab/values-dev.yaml \
+            --set convexUrl=https://x.convex.cloud --set runnerSecret=x \
+            --set gateway.ingress.certificateArn=arn:aws:acm:us-east-2:1:certificate/x \
+            --set bundle.s3Bucket=b --set bundle.region=us-east-2 --set sessions.dnsServiceIp=172.20.0.10 >/dev/null
+
+  session-image:
+    name: session image integration test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the session-workspace image (amd64, loaded locally)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/session-workspace/Dockerfile
+          load: true
+          tags: learning-lab/session-workspace:dev
+          cache-from: type=gha,scope=session-workspace
+          cache-to: type=gha,scope=session-workspace,mode=max
+      - name: Drive the agent (terminal scenario)
+        run: npm run agent:integration -- --scenario first-commit
+      - name: Drive the agent (react scenario, editor + preview)
+        run: npm run agent:integration -- --scenario welcome-message
+
+  deploy-dev:
+    name: deploy to dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [checks, infra, session-image]
+    # A called workflow can only get the permissions its caller grants; the
+    # workflow-level default above is contents: read.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-dev.yml
+    secrets: inherit

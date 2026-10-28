@@ -3,11 +3,33 @@ import process from "node:process"
 import test from "node:test"
 import {
   hashAgentToken,
+  isOperator,
   learnerOwnerKey,
+  requireOperator,
   requireRunnerSecret,
   requireSessionAgent,
   requireSessionOwner,
 } from "./access.ts"
+
+/** ctx with one users row looked up by tokenIdentifier. */
+function ctxFor(tokenIdentifier, user) {
+  return {
+    auth: { getUserIdentity: async () => (tokenIdentifier ? { tokenIdentifier } : null) },
+    db: {
+      query: (table) => {
+        assert.equal(table, "users")
+        return {
+          withIndex: (index, build) => {
+            assert.equal(index, "by_token_identifier")
+            const q = { eq: (field, value) => ({ field, value }) }
+            const { value } = build(q)
+            return { unique: async () => (user && user.tokenIdentifier === value ? user : null) }
+          },
+        }
+      },
+    },
+  }
+}
 
 test("learner access requires authentication by default", async () => {
   const previous = process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
@@ -52,15 +74,45 @@ test("local escape hatch is refused in the dev environment", async () => {
 })
 
 test("session ownership does not disclose another learner's session", async () => {
-  const ctx = {
-    auth: {
-      getUserIdentity: async () => ({ tokenIdentifier: "issuer|learner-a" }),
-    },
-  }
+  const ctx = ctxFor("issuer|learner-a", { tokenIdentifier: "issuer|learner-a" })
   await assert.rejects(
     requireSessionOwner(ctx, { sessionOwnerKey: "issuer|learner-b" }),
     /Session not found/,
   )
+})
+
+test("operators: role on the users row, everyone in anonymous local mode, nobody else", async () => {
+  const previous = process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
+  delete process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
+
+  const learner = ctxFor("issuer|learner-a", { tokenIdentifier: "issuer|learner-a" })
+  assert.equal(await isOperator(learner), false)
+  await assert.rejects(requireOperator(learner), /Operator role required/)
+
+  const operator = ctxFor("issuer|op", { tokenIdentifier: "issuer|op", role: "operator" })
+  assert.equal(await isOperator(operator), true)
+  await assert.doesNotReject(requireOperator(operator))
+  // Operators may administer other learners' sessions (admin Stop, status)
+  // only where the call site opts in; workspace/step access stays owner-only.
+  assert.deepEqual(
+    await requireSessionOwner(operator, { sessionOwnerKey: "issuer|learner-b" }, { allowOperator: true }),
+    { sessionOwnerKey: "issuer|learner-b" },
+  )
+  await assert.rejects(requireSessionOwner(operator, { sessionOwnerKey: "issuer|learner-b" }), /Session not found/)
+  await assert.rejects(
+    requireSessionOwner(learner, { sessionOwnerKey: "issuer|learner-b" }, { allowOperator: true }),
+    /Session not found/,
+  )
+
+  const unsynced = ctxFor("issuer|new", null)
+  assert.equal(await isOperator(unsynced), false)
+
+  await assert.rejects(isOperator(ctxFor(null, null)), /Authentication required/)
+  process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE = "true"
+  assert.equal(await isOperator(ctxFor(null, null)), true)
+
+  if (previous === undefined) delete process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE
+  else process.env.ALLOW_UNAUTHENTICATED_LOCAL_MODE = previous
 })
 
 test("runner functions require the configured shared secret", () => {
