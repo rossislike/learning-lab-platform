@@ -7,7 +7,7 @@
 //   BUNDLE_MODE=hostPath|s3                local: scenarios mounted on the node; dev: approved bundles in S3
 //   BUNDLE_HOST_ROOT=/scenarios            hostPath: node path of the scenarios/ directory
 //   BUNDLE_S3_BUCKET, AWS_REGION           s3: bucket of the approved bundles (presigned with Pod Identity creds)
-//   BUNDLE_INIT_IMAGE                      s3: busybox image for the download init container
+//   BUNDLE_INIT_IMAGE                      s3: image for the download init container (default: the session image)
 //   GATEWAY_HOST_SUFFIX, GATEWAY_PUBLIC_SCHEME, GATEWAY_PUBLIC_PORT
 //   DISPATCHER_POLL_MS (3000), DISPATCHER_STARTUP_TIMEOUT_MS (600000)
 //   KUBERNETES_MODE auto|in-cluster|kubeconfig

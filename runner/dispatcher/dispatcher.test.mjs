@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { createDispatcher, endpointUrls, randomRouteId } from "./dispatcher.mjs"
-import { buildPodSpec, DEFAULT_BUNDLE_INIT_IMAGE, podNameFor, workspaceMountPath, SESSION_ID_LABEL, SESSION_LABEL, SESSION_LABEL_VALUE } from "./pod-spec.mjs"
+import { createDispatcher, endpointUrls, podFailureDetail, randomRouteId } from "./dispatcher.mjs"
+import { buildPodSpec, podNameFor, workspaceMountPath, SESSION_ID_LABEL, SESSION_LABEL, SESSION_LABEL_VALUE } from "./pod-spec.mjs"
 import { podIsReady } from "./k8s.mjs"
 
 const quiet = { info() {}, warn() {}, error() {} }
@@ -194,7 +194,8 @@ test("pod spec: s3 bundle mode downloads the approved bundle in an init containe
   const spec = buildPodSpec({ session, lab: gitLab, routeId: "r".repeat(24), agentToken: "t", config: s3, bundleDownload: { url, sha256 } })
   assert.deepEqual(spec.spec.volumes[0], { name: "scenario", emptyDir: { sizeLimit: "256Mi" } })
   const [init] = spec.spec.initContainers
-  assert.equal(init.image, DEFAULT_BUNDLE_INIT_IMAGE)
+  assert.equal(init.image, config.image, "init container defaults to the session image (curl + CA certs)")
+  assert.match(init.command[2], /curl -fsS --proto =https/)
   assert.deepEqual(init.env, [
     { name: "BUNDLE_URL", value: url },
     { name: "BUNDLE_SHA256", value: sha256 },
@@ -521,4 +522,22 @@ test("hostPath mode ignores hostedScenario.runtime; pods opt out of Auto Mode co
   const pod = k8s.pods.get(`llp-${id}`)
   assert.deepEqual(pod.spec.containers[0].ports.map((port) => port.containerPort), [7000])
   assert.equal(pod.metadata.annotations["karpenter.sh/do-not-disrupt"], "true")
+})
+
+test("podFailureDetail names the container that died", () => {
+  assert.equal(podFailureDetail({ status: { phase: "Failed" } }), "")
+  assert.equal(
+    podFailureDetail({
+      status: {
+        initContainerStatuses: [{ name: "bundle", state: { terminated: { exitCode: 1, reason: "Error" } } }],
+        containerStatuses: [{ name: "workspace", state: { waiting: {} } }],
+      },
+    }),
+    " (bundle exited 1)",
+  )
+  assert.equal(
+    podFailureDetail({ status: { containerStatuses: [{ name: "workspace", lastState: { terminated: { exitCode: 137, reason: "OOMKilled" } } }] } }),
+    " (workspace exited 137: OOMKilled)",
+  )
+  assert.equal(podFailureDetail({ status: { reason: "Evicted" } }), " (Evicted)")
 })

@@ -1,3 +1,4 @@
+import { stripAnsi } from "../lib/text";
 import { Markdown } from "./Markdown";
 import type { Lab, StepFeedback } from "../lib/useScenarioSession";
 
@@ -75,7 +76,7 @@ export function InstructionPane({
           <div className={`verify ${feedback.result.passed ? "verify-pass" : "verify-fail"}`}>
             <strong>{feedback.result.passed ? "Check passed" : "Not yet"}</strong>
             {feedback.note ? <p>{feedback.note}</p> : null}
-            {feedback.result.output ? <pre>{feedback.result.output}</pre> : null}
+            {feedback.result.output ? <pre>{stripAnsi(feedback.result.output)}</pre> : null}
           </div>
         ) : null}
       </div>

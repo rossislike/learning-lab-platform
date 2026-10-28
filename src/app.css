@@ -184,6 +184,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .terminal[hidden] { display: none; }
 .frame-wrap { position: absolute; inset: 0; }
 .frame-wrap[hidden] { display: none; }
+/* The editor keeps its layout while another tab is showing: VS Code web never
+   recovers from being loaded inside a display:none frame (blank workbench). */
+.frame-wrap.frame-wrap-editor[hidden] { display: block; visibility: hidden; pointer-events: none; }
 .frame { width: 100%; height: 100%; border: 0; background: #1e1e1e; }
 .frame-light { background: #fff; }
 .workspace-placeholder { position: absolute; inset: 0; padding: 12px; }

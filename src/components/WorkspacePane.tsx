@@ -126,14 +126,17 @@ export function WorkspacePane({
           </div>
         ) : null}
         {tabs.includes("editor") ? (
-          <div className="frame-wrap" hidden={activeId !== "editor"}>
+          <div className="frame-wrap frame-wrap-editor" hidden={activeId !== "editor"} aria-hidden={activeId !== "editor"}>
             {workspaceUrl && connect && editorReady && agent ? (
               <iframe
                 className="frame"
                 title="Editor"
                 src={editorUrl(workspaceUrl, agent.editor.path)}
                 allow="clipboard-read; clipboard-write"
-                sandbox={FRAME_SANDBOX}
+                // No sandbox: VS Code web does not start in a sandboxed frame
+                // (verified on dev: blank workbench, "Missing proxy instance
+                // MainThreadUrls"). The editor is the platform's own component
+                // on the cookie-protected ws- host, unlike the preview below.
                 referrerPolicy="no-referrer"
               />
             ) : (

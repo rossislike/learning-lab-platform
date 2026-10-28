@@ -179,6 +179,10 @@ export function createAgent({
         "--host", "127.0.0.1",
         "--port", String(editorPort),
         "--without-connection-token",
+        // The scenario folder is trusted: no "Do you trust the authors?"
+        // prompt inside the iframe. (A product.json configurationDefaults
+        // entry is not forwarded to the web client; this server flag is.)
+        "--disable-workspace-trust",
         "--server-base-path", "/editor",
         "--server-data-dir", resolve(userData, "server"),
         "--user-data-dir", resolve(userData, "user"),

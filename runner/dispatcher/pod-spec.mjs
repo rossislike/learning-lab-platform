@@ -53,7 +53,7 @@ export function buildPodSpec({ session, lab, routeId, agentToken, config, bundle
   const uid = asRoot ? 0 : LEARNER_UID
   const previewPort = lab.kind === "react" ? lab.react?.previewPort : undefined
   const name = podNameFor(session._id)
-  const bundleVolume = bundleVolumeFor(lab, config.bundle, bundleDownload)
+  const bundleVolume = bundleVolumeFor(lab, config.bundle, bundleDownload, config.image)
 
   const ports = [{ name: "agent", containerPort: agentPort }]
   if (previewPort) ports.push({ name: "preview", containerPort: previewPort })
@@ -140,31 +140,40 @@ export function buildPodSpec({ session, lab, routeId, agentToken, config, bundle
   }
 }
 
-export const DEFAULT_BUNDLE_INIT_IMAGE = "public.ecr.aws/docker/library/busybox:1.36"
 const BUNDLE_DIGEST = /^[0-9a-f]{64}$/
 
 // Runs in the session pod before the workspace container: download the
 // approved bundle with the presigned URL (three attempts, 5 s apart), check
-// its digest, unpack it into the scenario volume. Busybox only (wget,
-// sha256sum, tar); the URL is a short-lived presign for one object, so a pod
-// reader learns nothing lasting. Busybox wget may not verify the TLS
-// certificate; integrity rests on the sha256 check against the digest
-// Convex approved, not on the transport.
+// its digest, unpack it into the scenario volume. By default it runs in the
+// session image itself (curl with CA certificates, coreutils, GNU tar), which
+// the node has to pull anyway; `bundle.initImage` can point at a smaller
+// image with the same tools. Busybox is NOT suitable: its wget cannot
+// complete a TLS handshake with S3. The URL is a short-lived presign for one
+// object, so a pod reader learns nothing lasting; integrity rests on the
+// sha256 check against the digest Convex approved.
 const BUNDLE_INIT_SCRIPT = [
   "set -eu",
   "attempt=1",
-  'until wget -q -T 60 -O /tmp/bundle.tar "$BUNDLE_URL"; do',
+  "download() {",
+  "  if command -v curl >/dev/null 2>&1; then",
+  '    curl -fsS --proto =https --tlsv1.2 --max-time 120 --retry 3 --retry-delay 5 -o /tmp/bundle.tar "$BUNDLE_URL"',
+  "  else",
+  '    wget -q -T 60 -O /tmp/bundle.tar "$BUNDLE_URL"',
+  "  fi",
+  "}",
+  "until download; do",
   '  if [ "$attempt" -ge 3 ]; then echo "bundle download failed after $attempt attempts" >&2; exit 1; fi',
   "  attempt=$((attempt + 1))",
   "  rm -f /tmp/bundle.tar",
   "  sleep 5",
   "done",
-  'echo "$BUNDLE_SHA256  /tmp/bundle.tar" | sha256sum -c -s',
+  // GNU coreutils has --status, busybox has -s; redirecting is portable.
+  'echo "$BUNDLE_SHA256  /tmp/bundle.tar" | sha256sum -c >/dev/null',
   "tar -xf /tmp/bundle.tar -C /scenario",
   "rm -f /tmp/bundle.tar",
 ].join("\n")
 
-function bundleVolumeFor(lab, bundle, download) {
+function bundleVolumeFor(lab, bundle, download, image) {
   if (!lab.sourceDir || /(^|\/)\.\.(\/|$)/.test(lab.sourceDir) || lab.sourceDir.startsWith("/")) {
     throw new Error(`scenario ${lab.slug} has no safe sourceDir`)
   }
@@ -186,7 +195,7 @@ function bundleVolumeFor(lab, bundle, download) {
       initContainers: [
         {
           name: "bundle",
-          image: bundle.initImage ?? DEFAULT_BUNDLE_INIT_IMAGE,
+          image: bundle.initImage ?? image,
           imagePullPolicy: "IfNotPresent",
           command: ["/bin/sh", "-c", BUNDLE_INIT_SCRIPT],
           env: [

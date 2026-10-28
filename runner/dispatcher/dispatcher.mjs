@@ -53,6 +53,25 @@ export function scenarioRuntimeFor(session, lab, bundleMode) {
   return runtime ? { ...lab, ...runtime } : lab
 }
 
+/**
+ * " (bundle exited 1: Error)" — which container terminated and how, from the
+ * pod status, so a failed session explains itself without racing `kubectl
+ * logs` against the cleanup.
+ */
+export function podFailureDetail(pod) {
+  const statuses = [...(pod?.status?.initContainerStatuses ?? []), ...(pod?.status?.containerStatuses ?? [])]
+  const parts = []
+  for (const status of statuses) {
+    const terminated = status.state?.terminated ?? status.lastState?.terminated
+    if (!terminated || terminated.exitCode === 0) continue
+    const reason = terminated.reason && terminated.reason !== "Error" ? `: ${terminated.reason}` : ""
+    const message = terminated.message ? ` — ${String(terminated.message).trim().slice(0, 200)}` : ""
+    parts.push(`${status.name} exited ${terminated.exitCode}${reason}${message}`)
+  }
+  if (parts.length === 0 && pod?.status?.reason) parts.push(pod.status.reason)
+  return parts.length > 0 ? ` (${parts.join("; ")})` : ""
+}
+
 export function createDispatcher({
   convex,
   k8s,
@@ -152,7 +171,7 @@ export function createDispatcher({
     const phase = podPhase(pod)
     if (phase === "Failed" || phase === "Succeeded") {
       await k8s.deletePod(podName)
-      return markErrored(session, `Session pod ${phase.toLowerCase()} before it became ready`)
+      return markErrored(session, `Session pod ${phase.toLowerCase()} before it became ready${podFailureDetail(pod)}`)
     }
     if (now() - session.updatedAt > startupTimeoutMs) {
       await k8s.deletePod(podName)

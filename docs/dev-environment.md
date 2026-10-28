@@ -170,11 +170,12 @@ dev the dispatcher runs with `BUNDLE_MODE=s3`: `sessions.request` records the
 active approval (`hostedScenario`: key + sha256) on the session; the
 dispatcher presigns a 15-minute GET URL for that key with its Pod Identity
 credentials (`runner/shared/aws-sigv4.mjs`, no SDK) and the pod's `bundle`
-init container (busybox from the public ECR mirror, pinned by tag only)
-downloads it (three attempts), checks the digest, and unpacks it into the
-`/scenario` volume. Integrity rests on that digest check, not on TLS (busybox
-`wget` may not verify certificates). Session pods never hold AWS
-credentials. The dispatcher's role can only `s3:GetObject` the
+init container (the session image itself: `curl` with CA certificates,
+`sha256sum`, GNU `tar`; override with `bundle.initImage`) downloads it with
+TLS verification (three attempts), checks the digest, and unpacks it into the
+`/scenario` volume. Busybox was tried first and cannot complete a TLS
+handshake with S3 ("connection reset by peer"), which failed every session
+on the first deploy. Session pods never hold AWS credentials. The dispatcher's role can only `s3:GetObject` the
 `scenarios/*/bundles/sha256/*` keys; credential or presign failures are
 logged and retried on the next tick until the startup timeout, rather than
 failing the session at once. In s3 mode the pod is shaped by the runtime
@@ -237,7 +238,6 @@ is only reclaimed after the pod ends; `activeDeadlineSeconds` bounds that).
 
 - No CI; images are built on the deploying machine.
 - No TTL reaper beyond the dispatcher and `activeDeadlineSeconds`; no alarms (Phase 6).
-- Image layers come from S3 through the gateway endpoint, but ECR API calls (`ecr.api`, `ecr.dkr`) and the public-ECR busybox pull go through the NAT gateways; interface endpoints would cut that once traffic warrants it.
-- The bundle init image is `public.ecr.aws/docker/library/busybox:1.36`, pinned by tag; pin it by digest (`bundle.initImage`) once the digest has been looked up.
+- Image layers come from S3 through the gateway endpoint, but ECR API calls (`ecr.api`, `ecr.dkr`) go through the NAT gateways; interface endpoints would cut that once traffic warrants it.
 - Phase 4 security gaps now reachable from the internet (ROADMAP Phase 5): `labs.seedScenarios` has no auth check, `/admin` is not operator-gated, `sessions.list`/`progress.list` read a global window.
 - `account-security` still checks the GuardDuty ECS Fargate agent setting (ECS leftover); replace it with the EKS runtime agent check once GuardDuty EKS Runtime Monitoring is enabled for this cluster.
