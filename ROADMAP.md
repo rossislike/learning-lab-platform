@@ -21,7 +21,7 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phases 0–5 are complete: `dev` runs on EKS Auto Mode at `https://app.dev.learning-lab-platform.rumothy.com` with terminal and React scenarios verified end to end (phone check still open). Next: Phase 6 — CI (build/push by digest, deploy on `main`), the in-cluster TTL reaper, alarms — plus the deferred security items (operator-gated `/admin` and `seedScenarios`, owner-indexed `listMine` queries).
+**You are here:** Phases 0–5 are complete: `dev` runs on EKS Auto Mode at `https://app.dev.learning-lab-platform.rumothy.com` with terminal and React scenarios verified end to end, including from a phone. Next: Phase 6 — CI (build/push by digest, deploy on `main`), the in-cluster TTL reaper, alarms — plus the deferred security items (operator-gated `/admin` and `seedScenarios`, owner-indexed `listMine` queries).
 
 ---
 
@@ -109,7 +109,7 @@ Deviations: the Phase 0 product-surface gates (`VITE_SESSION_ACCESS_MODE`, `VITE
 
 Backend gaps found in the Phase 4 review, deferred to Phase 5 (Clerk roles, hosted surface): `/admin` is not operator-gated in the UI, and `labs.seedScenarios` has no auth check at all (any caller can re-seed the catalog); `sessions.list` and `progress.list` read the latest 100/200 rows across all owners and filter by owner afterwards, so a learner's own rows can fall out of the window once there are several users — a `listMine` on the `by_session_owner` index (and the progress equivalent) is needed before multi-user `dev`. The gateway sets `frame-ancestors` on the endpoint hosts but not on the app host it proxies (`GATEWAY_APP_UPSTREAM`), so the app itself can be framed; the hosted app (CloudFront) needs `frame-ancestors 'none'` in Phase 5.
 
-## Phase 5 — `dev` environment on EKS ✅ (phone check pending)
+## Phase 5 — `dev` environment on EKS ✅
 
 Exit: a React and a terminal scenario run end-to-end from a phone browser against `app.dev.learning-lab-platform.rumothy.com`.
 
@@ -123,7 +123,7 @@ Exit: a React and a terminal scenario run end-to-end from a phone browser agains
 - [x] Applied on the account 2026-10-27/28: `npm run infra:dev:apply` (59 resources; `rumothy.com` zone, 1.34 Auto Mode), Convex env on `upbeat-crab-254` (`CLERK_JWT_ISSUER_DOMAIN`, `HOSTED_ENVIRONMENT=dev`, `RUNNER_SHARED_SECRET`, deploy key in `.env.dev`), legacy rows cleared, `npm run deploy:dev` end to end.
 - [x] First-deploy fixes (2026-10-28): `.env.dev` must point `VITE_CONVEX_URL` at `upbeat-crab-254` (a copy of `.env.local` built the frontend and the chart against the local dev deployment); the Clerk publishable key must belong to the instance Convex trusts (`amazed-adder-35`, not the parked production app's dev instance); busybox cannot complete a TLS handshake with S3, so the bundle init container runs in the session image with `curl` (and GNU `sha256sum` has no `-s`); the dispatcher now records which container died and its exit code in the session error; the editor iframe keeps its layout while hidden (`visibility`, not `display:none` — VS Code web never recovers from a zero-size start) and is not sandboxed (VS Code web does not start in a sandboxed frame); OpenVSCode runs with `--disable-workspace-trust` (a `product.json` `configurationDefaults` entry is not forwarded to the web client); verify output is shown without ANSI codes.
 - [x] Verified on dev from a desktop browser 2026-10-28: sign-in, `git/first-commit` terminal (DNS, internet egress, in-cluster gateway blocked by the network policy, bundle unpacked), `react/welcome-message` end to end (START → failing check with test output → edit → FINISH passed → finish page), Stop → ended banner → new session (~40 s to Ready on a warm node).
-- [ ] Verified from a phone browser.
+- [x] Verified from a phone browser 2026-10-28.
 
 Deviations: no ECR interface endpoints yet (layers come through the S3 gateway endpoint, ECR API calls through NAT); the `*.dev` gateway record is written by the deploy script rather than Terraform (the ALB is created by the Ingress); frontend build-time config comes from `.env.dev` rather than Terraform; `account-security` keeps its ECS-era GuardDuty check until EKS Runtime Monitoring is turned on.
 
