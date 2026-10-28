@@ -13,9 +13,9 @@ export function AdminPage() {
         <h1>Operators only</h1>
         <p>
           This page administers the deployment. Grant the role from the CLI:{" "}
-          <code>npx convex run users:grantOperator &apos;{"{"}&quot;email&quot;:&quot;you@example.com&quot;{"}"}&apos; --prod</code>{" "}
-          (drop <code>--prod</code> when <code>CONVEX_DEPLOY_KEY</code> is exported; pass{" "}
-          <code>clerkSubject</code> instead of <code>email</code> if several accounts share it).
+          <code>CONVEX_DEPLOY_KEY=… npx convex run users:grantOperator &apos;{"{"}&quot;email&quot;:&quot;you@example.com&quot;{"}"}&apos;</code>{" "}
+          (the deploy key pins the deployment; pass <code>clerkSubject</code> instead of <code>email</code> if several
+          accounts share it — see <code>docs/user-accounts.md</code>).
         </p>
       </section>
     );
@@ -33,7 +33,7 @@ function AdminDashboard() {
   const now = useNow(5_000);
 
   const labTitle = new Map((labs ?? []).map((lab) => [String(lab._id), lab.title]));
-  const heartbeatAge = heartbeat ? now - heartbeat.lastSeenAt : null;
+  const heartbeatAge = heartbeat ? Math.max(0, now - heartbeat.lastSeenAt) : null;
   const dispatcherHealthy = heartbeatAge !== null && heartbeatAge < 30_000;
 
   return (

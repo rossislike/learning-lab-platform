@@ -91,9 +91,10 @@ export const viewer = query({
 
 /**
  * Grant or revoke the operator role. CLI only (internal):
- *   npx convex run users:grantOperator '{"email":"you@example.com"}' --prod
- *   npx convex run users:grantOperator '{"email":"…","revoke":true}' --prod
- *   npx convex run users:grantOperator '{"clerkSubject":"user_…"}' --prod
+ *   CONVEX_DEPLOY_KEY=… npx convex run users:grantOperator '{"email":"you@example.com"}'
+ *   CONVEX_DEPLOY_KEY=… npx convex run users:grantOperator '{"email":"…","revoke":true}'
+ *   CONVEX_DEPLOY_KEY=… npx convex run users:grantOperator '{"clerkSubject":"user_…"}'
+ * (the key pins the dev deployment; locally, without a key, the dev deployment of .env.local is used)
  * (`--prod` → drop it when CONVEX_DEPLOY_KEY is exported.) The account must
  * have signed in once (users.syncCurrent creates the row); an email shared by
  * several accounts is refused, use clerkSubject then.

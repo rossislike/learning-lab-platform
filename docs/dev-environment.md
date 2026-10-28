@@ -139,14 +139,15 @@ The role is a field on the `users` row and is granted from the CLI after the
 person has signed in once:
 
 ```bash
-npx convex env get HOSTED_ENVIRONMENT --prod       # sanity: dev
-npx convex run users:grantOperator '{"email":"you@example.com"}' --prod
-npx convex run users:grantOperator '{"email":"you@example.com","revoke":true}' --prod
+# The deploy key from .env.dev pins the target; `--prod` would pick the prod
+# deployment of whatever project .env.local points at (not upbeat-crab-254).
+export CONVEX_DEPLOY_KEY="$(grep '^CONVEX_DEPLOY_KEY=' .env.dev | cut -d= -f2- | tr -d "'\"")"
+npx convex env get HOSTED_ENVIRONMENT                # sanity: dev
+npx convex run users:grantOperator '{"email":"you@example.com"}'
+npx convex run users:grantOperator '{"email":"you@example.com","revoke":true}'
 ```
 
-As elsewhere, `--prod` picks the prod deployment of the project in
-`.env.local`; with `CONVEX_DEPLOY_KEY` exported, drop `--prod` (the key pins
-the deployment). If more than one account carries the email the mutation
+If more than one account carries the email the mutation
 refuses; pass `{"clerkSubject":"user_…"}` (Clerk dashboard → Users → user ID)
 instead. Operators can see and stop every session and read its events; they
 get no workspace or step access to another learner's session.

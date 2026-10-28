@@ -106,12 +106,12 @@ Administrative pages and mutations (`/admin`, `labs.seedScenarios`,
 has signed in (`users.syncCurrent` creates the row):
 
 ```sh
-npx convex run users:grantOperator '{"email":"you@example.com"}'          # local dev deployment
-npx convex run users:grantOperator '{"email":"you@example.com"}' --prod   # dev (upbeat-crab-254)
+npx convex run users:grantOperator '{"email":"you@example.com"}'                      # local dev deployment
+CONVEX_DEPLOY_KEY='prod:upbeat-crab-254|…' npx convex run users:grantOperator '{"email":"you@example.com"}'   # dev
 ```
 
-With `CONVEX_DEPLOY_KEY` exported (the dev deploy key), drop `--prod`: the key
-already pins the deployment. When several accounts share the email the
+The deploy key pins the dev deployment; `--prod` would target the prod
+deployment of the project in `.env.local`, which is not `upbeat-crab-254`. When several accounts share the email the
 mutation refuses; pass `{"clerkSubject":"user_…"}` (the Clerk user ID) instead.
 Operators can stop any session and read its status and events, but never get
 workspace or step access to another learner's session.
