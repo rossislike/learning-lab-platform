@@ -628,3 +628,65 @@ test("expired: past-TTL live sessions are expired even behind many ended session
   await dispatcher.tick()
   assert.equal(convex.get(live).status, "expired")
 })
+
+test("expired: a failed markExpired is logged by message and the tick carries on", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const id = convex.addSession(gitLab, { status: "running", podName: "llp-exp", routeId: "e".repeat(24), expiresAt: Date.now() - 1000 })
+  const stopping = convex.addSession(gitLab, { status: "stopping", podName: "llp-stop" })
+  const mutation = convex.mutation
+  convex.mutation = async (path, args) => {
+    if (path === "sessions:markExpired") throw new Error("expire refused")
+    return mutation(path, args)
+  }
+  const errors = []
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: { ...quiet, error: (message) => errors.push(message) } })
+  assert.deepEqual(await dispatcher.tick(), { skipped: null })
+  assert.ok(errors.includes(`[dispatcher] expire ${id}: expire refused`), "logs the message, not the stack")
+  assert.equal(convex.get(stopping).status, "stopped", "cleanup still runs after the failed expire")
+})
+
+test("metrics are optional: a missing or null publisher is a no-op", async () => {
+  for (const metrics of [undefined, null]) {
+    const convex = fakeConvex()
+    const k8s = fakeK8s()
+    convex.addSession(gitLab)
+    convex.addSession({ _id: "lab-missing", slug: "gone" })
+    const dispatcher = createDispatcher({ convex, k8s, config, logger: quiet, metrics })
+    assert.deepEqual(await dispatcher.tick(), { skipped: null })
+    assert.equal(dispatcher.stats.launched, 1)
+    assert.equal(dispatcher.stats.errored, 1)
+  }
+})
+
+test("a pod that already exists when createPod runs (409) is counted as launched", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  const id = convex.addSession(gitLab)
+  const getPod = k8s.getPod
+  // Lost a race: the pod appears between getPod and createPod.
+  k8s.getPod = async () => null
+  await k8s.createPod({ metadata: { name: `llp-${id}`, labels: { [SESSION_LABEL]: SESSION_LABEL_VALUE, [SESSION_ID_LABEL]: id } }, spec: {} })
+  const errors = []
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: { ...quiet, error: (message) => errors.push(message) } })
+  await dispatcher.tick()
+  k8s.getPod = getPod
+  assert.equal(dispatcher.stats.launched, 1)
+  assert.equal(convex.get(id).status, "starting")
+  assert.deepEqual(errors, [])
+})
+
+test("orphans: a session pod younger than the grace period is kept", async () => {
+  const convex = fakeConvex()
+  const k8s = fakeK8s()
+  await k8s.createPod({ metadata: { name: "llp-young", labels: { [SESSION_LABEL]: SESSION_LABEL_VALUE, [SESSION_ID_LABEL]: "unlisted" } }, spec: {} })
+  await k8s.createPod({ metadata: { name: "llp-old", labels: { [SESSION_LABEL]: SESSION_LABEL_VALUE, [SESSION_ID_LABEL]: "gone" } }, spec: {} })
+  const clock = Date.now()
+  k8s.pods.get("llp-young").metadata.creationTimestamp = new Date(clock - 59_000).toISOString()
+  k8s.pods.get("llp-old").metadata.creationTimestamp = new Date(clock - 61_000).toISOString()
+  const dispatcher = createDispatcher({ convex, k8s, config, logger: quiet, now: () => clock })
+  await dispatcher.tick()
+  assert.ok(k8s.pods.has("llp-young"))
+  assert.ok(!k8s.pods.has("llp-old"))
+  assert.equal(dispatcher.stats.orphansDeleted, 1)
+})
