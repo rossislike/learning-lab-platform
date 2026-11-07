@@ -487,3 +487,122 @@ test("CORS: the app origin gets credentialed headers and a preflight; others get
     await upstream.close()
   }
 })
+
+/** Sends a WebSocket upgrade over a raw socket and resolves with the gateway's status line. */
+async function upgradeStatusLine(gw, { host = gw.wsHost, path = "/terminal", headers = {} } = {}) {
+  const { connect } = await import("node:net")
+  const extra = Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join("")
+  return new Promise((resolveLine, reject) => {
+    const socket = connect(gw.port, "127.0.0.1")
+    let data = ""
+    socket.on("connect", () =>
+      socket.write(
+        `GET ${path} HTTP/1.1\r\nHost: ${host}\r\n${extra}` +
+          "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+      ),
+    )
+    socket.on("data", (chunk) => (data += chunk))
+    socket.on("close", () => resolveLine(data.split("\r\n")[0]))
+    socket.on("error", reject)
+  })
+}
+
+test("a 503 for a session that is not running keeps retry-after and does not count as denied", async () => {
+  const gw = await startGateway(fakeConvex({ usable: false }))
+  try {
+    const { cookie } = await bootstrap(gw)
+    const response = await call(gw.base, "/ready", { headers: { host: gw.wsHost, cookie } })
+    assert.equal(response.status, 503)
+    assert.equal(response.headers["retry-after"], "3")
+    assert.deepEqual(response.json(), { error: "session is not running" })
+    assert.equal(gw.gateway.stats.denied, 0)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("a foreign-origin preflight is refused with 403 and does not count as denied", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    const response = await call(gw.base, "/ready", { method: "OPTIONS", headers: { host: gw.wsHost, origin: "http://evil.example" } })
+    assert.equal(response.status, 403)
+    assert.equal(gw.gateway.stats.denied, 0)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("an upgrade from a foreign origin is refused with 403 Origin Not Allowed", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    const { cookie } = await bootstrap(gw)
+    const line = await upgradeStatusLine(gw, { headers: { cookie, origin: "http://evil.example" } })
+    assert.equal(line, "HTTP/1.1 403 Origin Not Allowed")
+    assert.equal(gw.gateway.stats.denied, 1)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("an upgrade without a cookie is refused with 401 Unauthorized", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    assert.equal(await upgradeStatusLine(gw), "HTTP/1.1 401 Unauthorized")
+    assert.equal(gw.gateway.stats.denied, 1)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("an upgrade with a grant for the other scope is refused with 403 Forbidden", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    const { cookie } = await bootstrap(gw)
+    assert.equal(await upgradeStatusLine(gw, { host: gw.pvHost, headers: { cookie } }), "HTTP/1.1 403 Forbidden")
+    assert.equal(gw.gateway.stats.denied, 1)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("an upgrade to a session that is not running is refused with 503 Session Not Running", async () => {
+  const gw = await startGateway(fakeConvex({ usable: false }))
+  try {
+    const { cookie } = await bootstrap(gw)
+    assert.equal(await upgradeStatusLine(gw, { headers: { cookie } }), "HTTP/1.1 503 Session Not Running")
+    assert.equal(gw.gateway.stats.denied, 0)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("an upgrade to a reserved path is refused with 404 Not Found", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    assert.equal(await upgradeStatusLine(gw, { path: "/__llp/x" }), "HTTP/1.1 404 Not Found")
+  } finally {
+    await gw.close()
+  }
+})
+
+test("the dev page without a code and with a bad cookie answers 401 and does not count as denied", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    const response = await call(gw.base, "/__llp/dev", { headers: { host: gw.wsHost, cookie: "llp=bad" } })
+    assert.equal(response.status, 401)
+    assert.equal(gw.gateway.stats.denied, 0)
+  } finally {
+    await gw.close()
+  }
+})
+
+test("a cross-site dev-page code counts as denied", async () => {
+  const gw = await startGateway(fakeConvex())
+  try {
+    const response = await call(gw.base, `/__llp/dev?code=${CODE}`, { headers: { host: gw.wsHost, "sec-fetch-site": "cross-site" } })
+    assert.equal(response.status, 403)
+    assert.equal(gw.gateway.stats.denied, 1)
+  } finally {
+    await gw.close()
+  }
+})

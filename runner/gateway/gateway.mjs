@@ -36,7 +36,22 @@ const BOOTSTRAP_BODY_LIMIT = 4096
 const BOOTSTRAP_FAILURE_LIMIT = 20 // per route per minute (addresses are shared behind NAT/ALB)
 const BOOTSTRAP_GLOBAL_FAILURE_LIMIT = 200 // across all routes per minute
 const GRANT_SWEEP_MS = 5000
+const DENIED_GRANT_CACHE_TTL_MS = 1000
+const BOOTSTRAP_FAILURE_WINDOW_MS = 60_000
+const BOOTSTRAP_FAILURE_MAP_MAX = 10_000
+const GLOBAL_FAILURE_KEY = "*"
+const HEADERS_TIMEOUT_MS = 30_000
+const REQUEST_TIMEOUT_MS = 600_000
+const PREFLIGHT_MAX_AGE_SECONDS = "600"
+const NOT_RUNNING_RETRY_AFTER_SECONDS = "3"
+const RESERVED_PREFIX = "/__llp/"
+const HEALTH_PATH = "/__llp/health"
+const BOOTSTRAP_PATH = "/__llp/bootstrap"
+const LOGOUT_PATH = "/__llp/logout"
+const DEV_PATH = "/__llp/dev"
+const PLATFORM_HEADER_PREFIX = "x-llp-"
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
+const SAME_SITE_NAVIGATION = new Set(["none", "same-site", "same-origin"])
 const ROUTE_ID = /^[a-z0-9]{20,32}$/
 const GRANT_ID = /^[a-z0-9]{10,64}$/
 const VERIFIER = /^[0-9a-f]{64}$/
@@ -148,17 +163,26 @@ function readJsonBody(req, limit) {
   })
 }
 
+function parseRequestUrl(req) {
+  try {
+    return new URL(req.url, "http://gateway")
+  } catch {
+    return null
+  }
+}
+
 export function createGateway({ convex, config, logger = console, now = () => Date.now() }) {
   if (config.devPage && config.secureCookies !== false) {
     throw new Error(
       "GATEWAY_DEV_PAGE=true is only allowed with GATEWAY_SECURE_COOKIES=false (plain-http local development): /__llp/dev?code= puts bootstrap codes in URLs, which ADR 0004 forbids outside local",
     )
   }
+  const scheme = config.secureCookies === false ? "http" : "https"
   const cookieName = config.cookieName ?? (config.secureCookies === false ? "llp" : "__Host-llp")
   const appHost = config.appOrigin ? new URL(config.appOrigin).host.toLowerCase() : null
   const grantCache = createCache(now)
   const routeCache = createCache(now)
-  const bootstrapFailures = new Map() // routeId (or "*") → { count, windowStart }
+  const bootstrapFailures = new Map() // routeId (or GLOBAL_FAILURE_KEY) → { count, windowStart }
   const grantSockets = new Map() // grant key → Set<socket> of live proxied connections
   const stats = { requests: 0, upgrades: 0, bootstraps: 0, denied: 0, revokedSockets: 0 }
 
@@ -167,7 +191,7 @@ export function createGateway({ convex, config, logger = console, now = () => Da
   }
 
   function ownOrigin(req) {
-    return `${config.secureCookies === false ? "http" : "https"}://${String(req.headers.host).toLowerCase()}`
+    return `${scheme}://${String(req.headers.host).toLowerCase()}`
   }
 
   /** TTL for a cached grant/route: at most 5 s, never past the record's own expiry. */
@@ -229,10 +253,14 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     return attrs.join("; ")
   }
 
-  function windowEntry(key) {
+  function grantCookieFor(grant) {
+    return cookieHeader(`${grant.grantId}.${grant.verifier}`)
+  }
+
+  function failureWindow(key) {
     const entry = bootstrapFailures.get(key)
     if (!entry) return null
-    if (now() - entry.windowStart > 60_000) {
+    if (now() - entry.windowStart > BOOTSTRAP_FAILURE_WINDOW_MS) {
       bootstrapFailures.delete(key)
       return null
     }
@@ -241,18 +269,18 @@ export function createGateway({ convex, config, logger = console, now = () => Da
 
   /** Failures are counted per route (the thing being guessed at) and globally, not per client address. */
   function bootstrapRateLimited(routeId) {
-    const perRoute = windowEntry(routeId)
-    const global = windowEntry("*")
+    const perRoute = failureWindow(routeId)
+    const global = failureWindow(GLOBAL_FAILURE_KEY)
     return Boolean((perRoute && perRoute.count >= BOOTSTRAP_FAILURE_LIMIT) || (global && global.count >= BOOTSTRAP_GLOBAL_FAILURE_LIMIT))
   }
 
   function recordBootstrapFailure(routeId) {
-    for (const key of [routeId, "*"]) {
-      const entry = windowEntry(key)
+    for (const key of [routeId, GLOBAL_FAILURE_KEY]) {
+      const entry = failureWindow(key)
       if (!entry) bootstrapFailures.set(key, { count: 1, windowStart: now() })
       else entry.count += 1
     }
-    if (bootstrapFailures.size > 10_000) bootstrapFailures.clear()
+    if (bootstrapFailures.size > BOOTSTRAP_FAILURE_MAP_MAX) bootstrapFailures.clear()
   }
 
   async function checkGrant(endpoint, parsed, cookieValue) {
@@ -265,7 +293,7 @@ export function createGateway({ convex, config, logger = console, now = () => Da
         routeId: endpoint.routeId,
         scope: endpoint.scope,
       })
-      grantCache.set(key, result, result.ok ? cacheTtl(result.expiresAt) : 1000)
+      grantCache.set(key, result, result.ok ? cacheTtl(result.expiresAt) : DENIED_GRANT_CACHE_TTL_MS)
     }
     return result
   }
@@ -307,13 +335,13 @@ export function createGateway({ convex, config, logger = console, now = () => Da
   function requestRewrite(req, endpoint) {
     return (headers) => {
       for (const name of Object.keys(headers)) {
-        if (STRIPPED_REQUEST_HEADERS.has(name) || name.startsWith("x-llp-")) delete headers[name]
+        if (STRIPPED_REQUEST_HEADERS.has(name) || name.startsWith(PLATFORM_HEADER_PREFIX)) delete headers[name]
       }
       const cookies = stripPlatformCookie(headers.cookie, cookieName)
       if (cookies) headers.cookie = cookies
       else delete headers.cookie
       headers["x-forwarded-host"] = req.headers.host
-      headers["x-forwarded-proto"] = config.secureCookies === false ? "http" : "https"
+      headers["x-forwarded-proto"] = scheme
       headers["x-llp-scope"] = endpoint.scope
       return headers
     }
@@ -330,7 +358,7 @@ export function createGateway({ convex, config, logger = console, now = () => Da
         if (kept.length) headers["set-cookie"] = kept
         else delete headers["set-cookie"]
       }
-      for (const name of Object.keys(headers)) if (name.startsWith("x-llp-")) delete headers[name]
+      for (const name of Object.keys(headers)) if (name.startsWith(PLATFORM_HEADER_PREFIX)) delete headers[name]
       headers["content-security-policy"] = `frame-ancestors 'self' ${config.appOrigin}`
       headers["referrer-policy"] = "no-referrer"
       return headers
@@ -372,7 +400,7 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     const grant = await consumeBootstrap(code, endpoint)
     if (!grant) return json(res, 401, { error: "bootstrap failed" })
     res.writeHead(204, {
-      "set-cookie": cookieHeader(`${grant.grantId}.${grant.verifier}`),
+      "set-cookie": grantCookieFor(grant),
       "cache-control": "no-store",
       "referrer-policy": "no-referrer",
     })
@@ -430,6 +458,10 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     }
   }
 
+  function appUpstreamTarget(req) {
+    return { host: config.appUpstream.host, port: config.appUpstream.port, rewriteRequestHeaders: appRewrite(req) }
+  }
+
   /** Adds credentialed CORS headers for the app origin to every response on an endpoint host. */
   function applyCors(req, res) {
     if (req.headers.origin !== config.appOrigin) return
@@ -447,93 +479,143 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     }
   }
 
+  /**
+   * Everything a request or an upgrade on an endpoint host must pass before
+   * it is proxied: an allowed Origin (when `originRequired`), a valid grant
+   * cookie, and a running session to proxy to. Returns { ok, auth, upstream }
+   * or a refusal { ok: false, status, message, statusText, retryAfter? }: the
+   * HTTP status, the JSON error message, the upgrade status text, and (for
+   * "not running" only) the Retry-After seconds. Only Origin and grant
+   * refusals count as denied; "not running" is a transient 503 the client
+   * retries.
+   */
+  async function admit(req, endpoint, { originRequired }) {
+    if (originRequired && !originAllowed(req, endpoint)) {
+      stats.denied += 1
+      return { ok: false, status: 403, message: "origin not allowed", statusText: "Origin Not Allowed" }
+    }
+    const auth = await authorize(req, endpoint)
+    if (auth.status !== 200) {
+      stats.denied += 1
+      const forbidden = auth.status === 403
+      return {
+        ok: false,
+        status: auth.status,
+        message: forbidden ? "forbidden" : "not authorized",
+        statusText: forbidden ? "Forbidden" : "Unauthorized",
+      }
+    }
+    const route = await resolveRoute(endpoint.routeId)
+    const upstream = upstreamFor(route, endpoint.scope)
+    if (!upstream) {
+      return {
+        ok: false,
+        status: 503,
+        message: "session is not running",
+        statusText: "Session Not Running",
+        retryAfter: NOT_RUNNING_RETRY_AFTER_SECONDS,
+      }
+    }
+    return { ok: true, auth, upstream }
+  }
+
+  // --- HTTP ------------------------------------------------------------------
+
   async function handleRequest(req, res) {
     stats.requests += 1
-    let url
-    try {
-      url = new URL(req.url, "http://gateway")
-    } catch {
-      return json(res, 400, { error: "malformed request target" })
-    }
+    const url = parseRequestUrl(req)
+    if (!url) return json(res, 400, { error: "malformed request target" })
     const endpoint = parseEndpointHost(req.headers.host, config.hostSuffix)
-    if (url.pathname === "/__llp/health") {
-      // Stats only for the operator-facing host; endpoint hosts answer {ok} alone.
-      const withStats = !endpoint && (!req.headers.host || isAppHost(req.headers.host))
-      return json(res, 200, withStats ? { ok: true, stats } : { ok: true })
-    }
-
-    if (!endpoint) {
-      if (config.appUpstream && isAppHost(req.headers.host)) {
-        return proxyHttp(req, res, { host: config.appUpstream.host, port: config.appUpstream.port, rewriteRequestHeaders: appRewrite(req) })
-      }
-      return json(res, 404, { error: "unknown host" })
-    }
+    if (url.pathname === HEALTH_PATH) return handleHealth(req, res, endpoint)
+    if (!endpoint) return handleNonEndpointHost(req, res)
     // CORS for the app origin only (ADR 0004: exact origins, credentials
     // allowed, no wildcards). The frontend bootstraps, polls /ready and runs
     // step verification on the ws- host from app.<suffix>.
     applyCors(req, res)
-    if (req.method === "OPTIONS") {
-      if (req.headers.origin !== config.appOrigin) return json(res, 403, { error: "origin not allowed" })
-      res.writeHead(204, {
-        "access-control-allow-methods": "GET, POST, OPTIONS",
-        "access-control-allow-headers": req.headers["access-control-request-headers"] ?? "content-type",
-        "access-control-max-age": "600",
-        "cache-control": "no-store",
-      })
-      return res.end()
-    }
+    if (req.method === "OPTIONS") return handlePreflight(req, res)
     try {
-      if (url.pathname.startsWith("/__llp/")) {
-        if (url.pathname === "/__llp/bootstrap" && req.method === "POST") return await handleBootstrap(req, res, endpoint)
-        if (url.pathname === "/__llp/logout" && req.method === "POST") return await handleLogout(req, res, endpoint)
-        if (url.pathname === "/__llp/dev" && config.devPage && endpoint.scope === "workspace") {
-          const code = url.searchParams.get("code")
-          if (code) {
-            // A code in a URL must be the developer's own navigation (typed or
-            // pasted), never a link from another site (session fixation).
-            const site = req.headers["sec-fetch-site"]
-            if (site !== undefined && site !== "none" && site !== "same-site" && site !== "same-origin") {
-              stats.denied += 1
-              return json(res, 403, { error: "cross-site navigation not allowed" })
-            }
-            if (bootstrapRateLimited(endpoint.routeId)) return json(res, 429, { error: "too many attempts" })
-            const grant = await consumeBootstrap(code, endpoint)
-            if (!grant) return json(res, 401, { error: "bootstrap failed" })
-            res.writeHead(303, { location: "/__llp/dev", "set-cookie": cookieHeader(`${grant.grantId}.${grant.verifier}`), "cache-control": "no-store" })
-            return res.end()
-          }
-          const auth = await authorize(req, endpoint)
-          if (auth.status !== 200) return json(res, auth.status, { error: "not authorized" })
-          const page = await readFile(DEV_PAGE)
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
-          return res.end(page)
-        }
-        return json(res, 404, { error: "not found" })
-      }
-      if (!SAFE_METHODS.has(req.method) && !originAllowed(req, endpoint)) {
-        stats.denied += 1
-        return json(res, 403, { error: "origin not allowed" })
-      }
-      const auth = await authorize(req, endpoint)
-      if (auth.status !== 200) {
-        stats.denied += 1
-        return json(res, auth.status, { error: auth.status === 403 ? "forbidden" : "not authorized" })
-      }
-      const route = await resolveRoute(endpoint.routeId)
-      const upstream = upstreamFor(route, endpoint.scope)
-      if (!upstream) return json(res, 503, { error: "session is not running" }, { "retry-after": "3" })
-      trackSocket(auth.key, req.socket)
-      return proxyHttp(req, res, {
-        ...upstream,
-        rewriteRequestHeaders: requestRewrite(req, endpoint),
-        rewriteResponseHeaders: responseRewrite(),
-      })
+      if (url.pathname.startsWith(RESERVED_PREFIX)) return await handleReservedPath(req, res, endpoint, url)
+      return await proxyToSession(req, res, endpoint)
     } catch (error) {
       logger.error?.(`[gateway] ${req.method} ${req.headers.host}${url.pathname}: ${error.stack ?? error}`)
       if (!res.headersSent) json(res, 502, { error: "gateway error" })
       else res.destroy()
     }
   }
+
+  /** Stats only for the operator-facing host; endpoint hosts answer {ok} alone. */
+  function handleHealth(req, res, endpoint) {
+    const withStats = !endpoint && (!req.headers.host || isAppHost(req.headers.host))
+    return json(res, 200, withStats ? { ok: true, stats } : { ok: true })
+  }
+
+  function handleNonEndpointHost(req, res) {
+    if (config.appUpstream && isAppHost(req.headers.host)) {
+      return proxyHttp(req, res, appUpstreamTarget(req))
+    }
+    return json(res, 404, { error: "unknown host" })
+  }
+
+  function handlePreflight(req, res) {
+    if (req.headers.origin !== config.appOrigin) return json(res, 403, { error: "origin not allowed" })
+    res.writeHead(204, {
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": req.headers["access-control-request-headers"] ?? "content-type",
+      "access-control-max-age": PREFLIGHT_MAX_AGE_SECONDS,
+      "cache-control": "no-store",
+    })
+    return res.end()
+  }
+
+  function handleReservedPath(req, res, endpoint, url) {
+    if (url.pathname === BOOTSTRAP_PATH && req.method === "POST") return handleBootstrap(req, res, endpoint)
+    if (url.pathname === LOGOUT_PATH && req.method === "POST") return handleLogout(req, res, endpoint)
+    if (url.pathname === DEV_PATH && config.devPage && endpoint.scope === "workspace") return handleDevPage(req, res, endpoint, url)
+    return json(res, 404, { error: "not found" })
+  }
+
+  async function handleDevPage(req, res, endpoint, url) {
+    const code = url.searchParams.get("code")
+    if (code) return bootstrapFromDevUrl(req, res, endpoint, code)
+    const auth = await authorize(req, endpoint)
+    if (auth.status !== 200) return json(res, auth.status, { error: "not authorized" })
+    const page = await readFile(DEV_PAGE)
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
+    return res.end(page)
+  }
+
+  /**
+   * A code in a URL must be the developer's own navigation (typed or pasted),
+   * never a link from another site (session fixation).
+   */
+  async function bootstrapFromDevUrl(req, res, endpoint, code) {
+    const site = req.headers["sec-fetch-site"]
+    if (site !== undefined && !SAME_SITE_NAVIGATION.has(site)) {
+      stats.denied += 1
+      return json(res, 403, { error: "cross-site navigation not allowed" })
+    }
+    if (bootstrapRateLimited(endpoint.routeId)) return json(res, 429, { error: "too many attempts" })
+    const grant = await consumeBootstrap(code, endpoint)
+    if (!grant) return json(res, 401, { error: "bootstrap failed" })
+    res.writeHead(303, { location: DEV_PATH, "set-cookie": grantCookieFor(grant), "cache-control": "no-store" })
+    return res.end()
+  }
+
+  async function proxyToSession(req, res, endpoint) {
+    const admission = await admit(req, endpoint, { originRequired: !SAFE_METHODS.has(req.method) })
+    if (!admission.ok) {
+      const extra = admission.retryAfter ? { "retry-after": admission.retryAfter } : {}
+      return json(res, admission.status, { error: admission.message }, extra)
+    }
+    trackSocket(admission.auth.key, req.socket)
+    return proxyHttp(req, res, {
+      ...admission.upstream,
+      rewriteRequestHeaders: requestRewrite(req, endpoint),
+      rewriteResponseHeaders: responseRewrite(),
+    })
+  }
+
+  // --- WebSocket upgrades ---------------------------------------------------
 
   function rejectUpgrade(socket, status, text) {
     if (!socket.destroyed) socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
@@ -543,43 +625,35 @@ export function createGateway({ convex, config, logger = console, now = () => Da
     stats.upgrades += 1
     socket.on("error", () => {})
     const endpoint = parseEndpointHost(req.headers.host, config.hostSuffix)
-    if (!endpoint) {
-      if (config.appUpstream && isAppHost(req.headers.host)) {
-        return proxyUpgrade(req, socket, head, { host: config.appUpstream.host, port: config.appUpstream.port, rewriteRequestHeaders: appRewrite(req) })
-      }
-      return rejectUpgrade(socket, 404, "Not Found")
-    }
-    let url
+    if (!endpoint) return upgradeNonEndpointHost(req, socket, head)
+    const url = parseRequestUrl(req)
+    if (!url) return rejectUpgrade(socket, 400, "Bad Request")
+    if (url.pathname.startsWith(RESERVED_PREFIX)) return rejectUpgrade(socket, 404, "Not Found")
     try {
-      url = new URL(req.url, "http://gateway")
-    } catch {
-      return rejectUpgrade(socket, 400, "Bad Request")
-    }
-    if (url.pathname.startsWith("/__llp/")) return rejectUpgrade(socket, 404, "Not Found")
-    try {
-      if (!originAllowed(req, endpoint)) {
-        stats.denied += 1
-        return rejectUpgrade(socket, 403, "Origin Not Allowed")
-      }
-      const auth = await authorize(req, endpoint)
-      if (auth.status !== 200) {
-        stats.denied += 1
-        return rejectUpgrade(socket, auth.status, auth.status === 403 ? "Forbidden" : "Unauthorized")
-      }
-      const route = await resolveRoute(endpoint.routeId)
-      const upstream = upstreamFor(route, endpoint.scope)
-      if (!upstream) return rejectUpgrade(socket, 503, "Session Not Running")
-      trackSocket(auth.key, socket)
-      return proxyUpgrade(req, socket, head, { ...upstream, rewriteRequestHeaders: requestRewrite(req, endpoint) })
+      await upgradeToSession(req, socket, head, endpoint)
     } catch (error) {
       logger.error?.(`[gateway] upgrade ${req.headers.host}${url.pathname}: ${error.stack ?? error}`)
       rejectUpgrade(socket, 502, "Bad Gateway")
     }
   }
 
+  function upgradeNonEndpointHost(req, socket, head) {
+    if (config.appUpstream && isAppHost(req.headers.host)) {
+      return proxyUpgrade(req, socket, head, appUpstreamTarget(req))
+    }
+    return rejectUpgrade(socket, 404, "Not Found")
+  }
+
+  async function upgradeToSession(req, socket, head, endpoint) {
+    const admission = await admit(req, endpoint, { originRequired: true })
+    if (!admission.ok) return rejectUpgrade(socket, admission.status, admission.statusText)
+    trackSocket(admission.auth.key, socket)
+    return proxyUpgrade(req, socket, head, { ...admission.upstream, rewriteRequestHeaders: requestRewrite(req, endpoint) })
+  }
+
   const server = createServer(handleRequest)
-  server.headersTimeout = 30_000
-  server.requestTimeout = 600_000
+  server.headersTimeout = HEADERS_TIMEOUT_MS
+  server.requestTimeout = REQUEST_TIMEOUT_MS
   server.on("upgrade", handleUpgrade)
   server.on("clientError", (error, socket) => {
     if (error.code === "ECONNRESET" || !socket.writable) return socket.destroy()
