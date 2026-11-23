@@ -86,7 +86,9 @@ The operator or CI role using the backend needs narrowly scoped permissions:
 - `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`, and `kms:DescribeKey` on the state KMS key.
 
 Do not grant `s3:DeleteObject` for state objects. S3 versioning is a recovery
-control, not permission to overwrite state outside Terraform.
+control, not permission to overwrite state outside Terraform. The one
+exception is the [Teardown](#teardown) below, which needs an administrator
+identity.
 
 ## Recovery and operations
 
@@ -119,3 +121,58 @@ the window expires. Test decrypt access to a copied state version before
 resuming. If the key is permanently lost, the encrypted state versions cannot
 be recovered, so account-level KMS controls and independently tested state
 backups are required.
+
+## Teardown
+
+Destroy this stack last, after every root that keeps state in the bucket
+(`environments/dev`, `account-security`) has been destroyed and its state is
+empty. It was last destroyed on 2026-11-23. The bucket holds this stack's
+own state, so move that back to a local file first:
+
+1. Keep a backup outside the repository, delete the ignored `backend.tf`,
+   and migrate. Terraform
+   asks whether to copy the existing state to the local backend; answer
+   `yes`. Then check that the local state holds the bucket and the key:
+
+   ```sh
+   terraform -chdir=infra/aws/bootstrap/terraform-backend state pull > ~/bootstrap-state-backup.json
+   rm infra/aws/bootstrap/terraform-backend/backend.tf
+   terraform -chdir=infra/aws/bootstrap/terraform-backend init -migrate-state
+   terraform -chdir=infra/aws/bootstrap/terraform-backend state list
+   ```
+
+   This only works where `.terraform/` still remembers the S3 backend. On a
+   fresh clone, first recreate `backend.tf` and `bootstrap.s3.tfbackend`
+   from their examples ([Bootstrap](#bootstrap)) and run
+   `init -backend-config=bootstrap.s3.tfbackend`, then start this step. Do
+   not go on if `state list` is empty: a destroy against empty state removes
+   nothing and reports success.
+
+2. In a working copy only (do not commit this), set both
+   `prevent_destroy = true` in `main.tf` to `false` and add
+   `force_destroy = true` to `aws_s3_bucket.terraform_state`, then record the
+   bucket change in state so the destroy may empty the versioned bucket (the
+   bucket policy denies writes without the stack's KMS key, but not deletes):
+
+   ```sh
+   terraform -chdir=infra/aws/bootstrap/terraform-backend apply -target=aws_s3_bucket.terraform_state
+   ```
+
+3. Destroy, then restore `main.tf` and clean up the local leftovers:
+
+   ```sh
+   terraform -chdir=infra/aws/bootstrap/terraform-backend destroy
+   git checkout -- infra/aws/bootstrap/terraform-backend/main.tf
+   rm infra/aws/bootstrap/terraform-backend/terraform.tfstate* \
+     infra/aws/bootstrap/terraform-backend/bootstrap.s3.tfbackend
+   ```
+
+   Also delete the ignored `account-security.s3.tfbackend` and
+   `dev.s3.tfbackend` in the other two roots, or remember to refill them:
+   they name the KMS key that is now going away.
+
+This permanently deletes every stored state version. The KMS key is scheduled
+for deletion after 30 days. The next bootstrap starts from
+[Bootstrap](#bootstrap) with no backend block, like the first one, but it
+creates a new KMS key; what has to be updated for that is listed under
+[Bringing it back](../../README.md#bringing-it-back).

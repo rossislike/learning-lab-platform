@@ -21,7 +21,9 @@ Decisions: [`docs/decisions/`](docs/decisions/) (0005–0007 are the redesign).
 
 Legend: ✅ done · 🔧 in progress · 🔜 next · ⏳ not started · ❌ dropped
 
-**You are here:** Phases 0–6 are complete. `main` deploys itself to dev (`https://app.dev.learning-lab-platform.rumothy.com`) through GitHub Actions; the dispatcher, reaper and alarms watch the cluster; operators administer it from `/admin`. What's next is the "Later" list — Kubernetes-API scenarios via `vcluster`, organizations/teams, an author-facing publishing workflow, and quotas/abuse prevention before any public access.
+**You are here:** Phases 0-6 are complete. When dev is deployed, `main` deploys itself to it (`https://app.dev.learning-lab-platform.rumothy.com`) through GitHub Actions; the dispatcher, reaper and alarms watch the cluster; operators administer it from `/admin`. What's next is the "Later" list: Kubernetes-API scenarios via `vcluster`, organizations/teams, an author-facing publishing workflow, and quotas/abuse prevention before any public access.
+
+**2026-11-23: dev is torn down.** `environments/dev` was destroyed on 2026-10-30, `account-security` and the state backend on 2026-11-23 ([Full teardown](infra/aws/README.md#full-teardown)). CI now deploys only while the repository variable `AWS_DEPLOY_ROLE_ARN` is set, so pushes to `main` run the checks and skip the deploy until dev is [brought back](infra/aws/README.md#bringing-it-back).
 
 ---
 

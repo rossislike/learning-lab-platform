@@ -1,5 +1,12 @@
 # The `dev` environment (EKS)
 
+> **Not deployed right now.** `dev` was destroyed on 2026-10-30, and the
+> account-security and state-backend roots followed on 2026-11-23
+> ([Full teardown](../infra/aws/README.md#full-teardown) lists what is left).
+> Everything below describes the environment as it runs once the roots are
+> applied again
+> ([Bringing it back](../infra/aws/README.md#bringing-it-back)).
+
 `dev` is the one hosted environment (ADR 0007): EKS Auto Mode in account
 `442359104502`, region `us-east-2`, the frontend on S3 + CloudFront, Convex
 `prod:upbeat-crab-254`, and the Clerk development instance (required).
@@ -255,6 +262,10 @@ over Docker). On `main`, when all of that passes, `deploy-dev.yml` runs
 never apply it). Images are built for `linux/amd64` in CI, tagged with the
 commit SHA, with the BuildKit layer cache in the GitHub Actions cache.
 
+- The deploy runs only while the repository variable `AWS_DEPLOY_ROLE_ARN`
+  is set. It is deleted while dev is torn down, and a "deploy to dev" job
+  shown as skipped on a green `main` run means it is unset. It has to be a
+  repository-level variable: one set on the `dev` environment does not count.
 - Pull-request runs hold no secrets: no Convex deploy key, no AWS role.
   `convex/_generated` is committed for that reason (`convex codegen` needs a
   deployment); `npx convex dev` keeps it current locally — commit its changes.
@@ -274,8 +285,8 @@ commit SHA, with the BuildKit layer cache in the GitHub Actions cache.
   `aws kms get-key-policy --key-id <terraform_state_kms_key_arn> --policy-name default`
   shows the `arn:aws:iam::442359104502:root` statement.
 
-One-time GitHub setup (Settings → Secrets and variables → Actions, and an
-environment named `dev`):
+One-time GitHub setup (Settings → Secrets and variables → Actions, all at
+repository level, and an environment named `dev`):
 
 | kind | name | value |
 |---|---|---|
@@ -299,7 +310,8 @@ only thing that stops another branch from deploying.
 
 `deploy-dev.yml` can also be run by hand (*Run workflow*) with one
 subcommand (`all`, `convex`, `chart`, `dns`, `scenarios`, `frontend`,
-`status`); the environment rule above applies to those runs too. `chart` on
+`status`); the environment rule above applies to those runs too, but the
+`AWS_DEPLOY_ROLE_ARN` check does not. `chart` on
 its own deploys the images CI pushed for that commit. Infrastructure changes
 (`infra:dev:apply`) stay a manual, local step; the workflow only reads the
 state.
@@ -374,6 +386,11 @@ jobs -l app.kubernetes.io/name=llp-reaper` lists the reaper runs.
   npm run deploy:dev -- teardown    # helm uninstall → wait for the Ingress and ALB to go → delete the *.dev CNAME
   npm run infra:dev:destroy         # buckets and ECR repositories are force_destroy; nothing has deletion protection
   ```
+
+  This leaves `account-security` (CloudTrail, alarms, alert emails) and the
+  state backend running, and CI still deploying on the next push to `main`.
+  For a full removal see
+  [Full teardown](../infra/aws/README.md#full-teardown).
 
 ## Known gaps (tracked in ROADMAP)
 

@@ -66,7 +66,8 @@ their ECS-specific mechanics are replaced by ADR 0005.
 Full detail in [`config/hosted-environments.json`](config/hosted-environments.json)
 and ADR 0007. AWS infrastructure lives under [`infra/aws/`](infra/aws/README.md);
 setting up and deploying `dev` is [`docs/dev-environment.md`](docs/dev-environment.md)
-(`npm run infra:dev:apply`, then `npm run deploy:dev`).
+(`npm run infra:dev:apply`, then `npm run deploy:dev`). `dev` is not deployed
+right now: see [Full teardown](infra/aws/README.md#full-teardown).
 
 ## Repository layout
 
@@ -139,6 +140,9 @@ Every pull request runs lint, types, unit tests, Terraform/Helm checks and the
 session-image integration test (`.github/workflows/ci.yml`). A push to `main`
 that passes deploys to dev (`deploy-dev.yml` → `npm run deploy:dev`) through a
 GitHub OIDC role; infrastructure (`npm run infra:dev:apply`) stays manual.
+The deploy runs only while the repository-level variable
+`AWS_DEPLOY_ROLE_ARN` is set; a skipped "deploy to dev" job means it is unset
+(as it is while dev is torn down).
 Details and the one-time repository variables/secrets:
 [`docs/dev-environment.md`](docs/dev-environment.md#ci-main-deploys-to-dev).
 

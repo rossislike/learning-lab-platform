@@ -11,6 +11,9 @@
 # restricted to `main` (REQUIRED: the AWS role trusts only the `dev`
 # environment's OIDC subject, so that rule is what keeps other branches —
 # including a hand-run of this workflow on another ref — from deploying).
+# AWS_DEPLOY_ROLE_ARN must be a repository-level variable: ci.yml calls this
+# workflow only while it is set, and that check cannot see variables defined
+# on the `dev` environment. A hand-run of this workflow is not gated by it.
 name: deploy-dev
 
 on:

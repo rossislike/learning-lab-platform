@@ -1,5 +1,6 @@
 # CI (ROADMAP Phase 6): every pull request and push runs the checks; a push to
-# main that passes them deploys to dev (ADR 0007: main deploys to dev).
+# main that passes them deploys to dev (ADR 0007: main deploys to dev) when
+# the repository variable AWS_DEPLOY_ROLE_ARN is set.
 # Pull-request runs never see a deploy key or AWS role: secrets are only used
 # by deploy-dev.yml, which runs in the `dev` environment.
 name: ci
@@ -115,7 +116,12 @@ jobs:
 
   deploy-dev:
     name: deploy to dev
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # vars.AWS_DEPLOY_ROLE_ARN is the "dev exists" switch: it is unset while
+    # the dev environment is torn down (infra/aws/README.md), so a push to
+    # main runs the checks and skips the deploy instead of failing it. It has
+    # to be a repository (or organization) variable: this job names no
+    # environment, so a variable set on the `dev` environment is not seen here.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
     needs: [checks, infra, session-image]
     # A called workflow can only get the permissions its caller grants; the
     # workflow-level default above is contents: read.
